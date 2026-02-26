@@ -128,12 +128,18 @@ export interface ShellBody {
 export interface Provider {
   id: string;
   name: string;
-  models: ProviderModel[];
+  source?: string;
+  env?: string[];
+  models: Record<string, ProviderModel>;
 }
 
 export interface ProviderModel {
   id: string;
   name: string;
+  providerID?: string;
+  family?: string;
+  status?: string;
+  [key: string]: any;
 }
 
 export interface ProvidersInfo {

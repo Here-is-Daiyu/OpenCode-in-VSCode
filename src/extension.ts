@@ -560,7 +560,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
         if (connectedProviders.length > 0) {
           items.push({ label: "已连接", description: "", providerID: "", modelID: "", kind: vscode.QuickPickItemKind.Separator });
           for (const provider of connectedProviders) {
-            for (const model of provider.models || []) {
+            const models = provider.models ? Object.values(provider.models) : [];
+            for (const model of models) {
               const fullId = `${provider.id}/${model.id}`;
               const isCurrent = currentModel === fullId;
               items.push({
@@ -578,7 +579,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
         if (disconnectedProviders.length > 0) {
           items.push({ label: "未连接", description: "", providerID: "", modelID: "", kind: vscode.QuickPickItemKind.Separator });
           for (const provider of disconnectedProviders) {
-            for (const model of provider.models || []) {
+            const models = provider.models ? Object.values(provider.models) : [];
+            for (const model of models) {
               items.push({
                 label: `${provider.name || provider.id}/${model.name || model.id}`,
                 description: "未连接 - 需要配置 API Key",

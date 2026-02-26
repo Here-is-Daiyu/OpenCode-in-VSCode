@@ -828,14 +828,120 @@ export class ChatPanel {
       gap: 6px;
       margin-bottom: 6px;
     }
-    .input-toolbar select {
+
+    /* ---- 自定义下拉框 ---- */
+    .custom-select {
+      position: relative;
+      display: inline-block;
+      min-width: 100px;
+      max-width: 220px;
+      font-size: 11px;
+    }
+    .custom-select-trigger {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 4px;
       background: var(--bg-input);
       color: var(--fg-primary);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 2px 6px;
+      padding: 3px 6px;
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .custom-select-trigger:hover {
+      border-color: var(--accent);
+    }
+    .custom-select-trigger .arrow {
+      flex-shrink: 0;
+      font-size: 8px;
+      opacity: 0.6;
+      transition: transform 0.15s;
+    }
+    .custom-select.open .custom-select-trigger .arrow {
+      transform: rotate(180deg);
+    }
+    .custom-select-trigger .trigger-text {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .custom-select-dropdown {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 4px);
+      left: 0;
+      min-width: 100%;
+      max-width: 360px;
+      max-height: 320px;
+      overflow-y: auto;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+    }
+    .custom-select.open .custom-select-dropdown {
+      display: block;
+    }
+    .custom-select-dropdown::-webkit-scrollbar { width: 5px; }
+    .custom-select-dropdown::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+    .custom-select-search {
+      display: block;
+      width: 100%;
+      padding: 6px 8px;
+      background: var(--bg-input);
+      color: var(--fg-primary);
+      border: none;
+      border-bottom: 1px solid var(--border);
       font-size: 11px;
-      max-width: 180px;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .custom-select-group-label {
+      padding: 4px 8px 2px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--fg-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      user-select: none;
+    }
+    .custom-select-option {
+      padding: 5px 8px;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--fg-primary);
+    }
+    .custom-select-option:hover {
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+    .custom-select-option.selected {
+      background: color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    .custom-select-option.disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .custom-select-option.disabled:hover {
+      background: none;
+      color: var(--fg-primary);
+    }
+    .custom-select-option.hidden {
+      display: none;
+    }
+    .custom-select-empty {
+      padding: 8px;
+      text-align: center;
+      color: var(--fg-secondary);
+      font-size: 11px;
     }
     .input-wrapper {
       display: flex;
@@ -961,12 +1067,26 @@ export class ChatPanel {
   <!-- 输入区域 -->
   <div class="input-area">
     <div class="input-toolbar">
-      <select id="agentSelect" title="选择 Agent">
-        <option value="">默认 Agent</option>
-      </select>
-      <select id="modelSelect" title="选择模型">
-        <option value="">默认模型</option>
-      </select>
+      <div class="custom-select" id="agentSelect" title="选择 Agent">
+        <div class="custom-select-trigger">
+          <span class="trigger-text">默认 Agent</span>
+          <span class="arrow">▼</span>
+        </div>
+        <div class="custom-select-dropdown">
+          <input class="custom-select-search" placeholder="搜索 Agent..." />
+          <div class="custom-select-options"></div>
+        </div>
+      </div>
+      <div class="custom-select" id="modelSelect" title="选择模型">
+        <div class="custom-select-trigger">
+          <span class="trigger-text">默认模型</span>
+          <span class="arrow">▼</span>
+        </div>
+        <div class="custom-select-dropdown">
+          <input class="custom-select-search" placeholder="搜索模型..." />
+          <div class="custom-select-options"></div>
+        </div>
+      </div>
     </div>
     <div class="input-wrapper">
       <textarea
@@ -994,6 +1114,161 @@ export class ChatPanel {
       streamingParts: {},  // 正在流式更新的 Part
     };
 
+    // ---- 自定义下拉框组件 ----
+    class CustomSelect {
+      constructor(el, opts = {}) {
+        this.el = el;
+        this.value = '';
+        this.onChange = opts.onChange || null;
+        this.trigger = el.querySelector('.custom-select-trigger');
+        this.triggerText = el.querySelector('.trigger-text');
+        this.dropdown = el.querySelector('.custom-select-dropdown');
+        this.optionsContainer = el.querySelector('.custom-select-options');
+        this.searchInput = el.querySelector('.custom-select-search');
+        this._options = [];  // { value, label, group, disabled }
+        this._setup();
+      }
+
+      _setup() {
+        // 点击触发器切换下拉
+        this.trigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (this.el.classList.contains('open')) {
+            this.close();
+          } else {
+            // 先关闭其他已打开的下拉框
+            document.querySelectorAll('.custom-select.open').forEach(s => {
+              if (s !== this.el) s.classList.remove('open');
+            });
+            this.open();
+          }
+        });
+
+        // 搜索过滤
+        this.searchInput.addEventListener('input', () => {
+          const query = this.searchInput.value.toLowerCase();
+          this.optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
+            const text = (opt.textContent || '').toLowerCase();
+            opt.classList.toggle('hidden', query && !text.includes(query));
+          });
+          // 隐藏空分组标签
+          this.optionsContainer.querySelectorAll('.custom-select-group-label').forEach(lbl => {
+            const next = [];
+            let sib = lbl.nextElementSibling;
+            while (sib && !sib.classList.contains('custom-select-group-label')) {
+              if (sib.classList.contains('custom-select-option')) next.push(sib);
+              sib = sib.nextElementSibling;
+            }
+            const allHidden = next.every(n => n.classList.contains('hidden'));
+            lbl.style.display = allHidden ? 'none' : '';
+          });
+          // 显示空状态
+          let emptyEl = this.optionsContainer.querySelector('.custom-select-empty');
+          const allHidden = Array.from(this.optionsContainer.querySelectorAll('.custom-select-option')).every(o => o.classList.contains('hidden'));
+          if (allHidden) {
+            if (!emptyEl) {
+              emptyEl = document.createElement('div');
+              emptyEl.className = 'custom-select-empty';
+              emptyEl.textContent = '无匹配项';
+              this.optionsContainer.appendChild(emptyEl);
+            }
+            emptyEl.style.display = '';
+          } else if (emptyEl) {
+            emptyEl.style.display = 'none';
+          }
+        });
+
+        // 阻止搜索框事件冒泡
+        this.searchInput.addEventListener('click', (e) => e.stopPropagation());
+        this.searchInput.addEventListener('keydown', (e) => e.stopPropagation());
+
+        // 点击外部关闭
+        document.addEventListener('click', (e) => {
+          if (!this.el.contains(e.target)) this.close();
+        });
+      }
+
+      open() {
+        this.el.classList.add('open');
+        this.searchInput.value = '';
+        this.searchInput.dispatchEvent(new Event('input'));
+        setTimeout(() => this.searchInput.focus(), 0);
+      }
+
+      close() {
+        this.el.classList.remove('open');
+      }
+
+      setValue(val) {
+        this.value = val;
+        // 更新选中高亮
+        this.optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
+          opt.classList.toggle('selected', opt.dataset.value === val);
+        });
+      }
+
+      setLabel(text) {
+        this.triggerText.textContent = text;
+      }
+
+      setOptions(groups) {
+        // groups: [{ label?, options: [{ value, label, disabled?, selected? }] }]
+        this.optionsContainer.innerHTML = '';
+        this._options = [];
+        let firstSelected = null;
+
+        for (const group of groups) {
+          if (group.label) {
+            const lbl = document.createElement('div');
+            lbl.className = 'custom-select-group-label';
+            lbl.textContent = group.label;
+            this.optionsContainer.appendChild(lbl);
+          }
+          for (const opt of (group.options || [])) {
+            const el = document.createElement('div');
+            el.className = 'custom-select-option' + (opt.disabled ? ' disabled' : '');
+            el.textContent = opt.label;
+            el.dataset.value = opt.value;
+            if (opt.selected) {
+              el.classList.add('selected');
+              firstSelected = opt;
+            }
+            if (!opt.disabled) {
+              el.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.value = opt.value;
+                this.triggerText.textContent = opt.label;
+                // 更新选中高亮
+                this.optionsContainer.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
+                el.classList.add('selected');
+                this.close();
+                if (this.onChange) this.onChange(opt.value, opt);
+              });
+            }
+            this.optionsContainer.appendChild(el);
+            this._options.push(opt);
+          }
+        }
+
+        if (firstSelected) {
+          this.value = firstSelected.value;
+          this.triggerText.textContent = firstSelected.label;
+        }
+      }
+    }
+
+    // 初始化自定义下拉框实例
+    const modelSelectEl = new CustomSelect(document.getElementById('modelSelect'), {
+      onChange(val) {
+        if (val) {
+          const [providerID, modelID] = val.split('::');
+          vscode.postMessage({ type: 'config:setModel', providerID, modelID });
+        }
+      }
+    });
+
+    const agentSelectEl = new CustomSelect(document.getElementById('agentSelect'));
+
     const app = {
       init() {
         this.setupInput();
@@ -1006,15 +1281,6 @@ export class ChatPanel {
         document.getElementById('btnViewDiff').addEventListener('click', () => app.viewDiff());
         document.getElementById('btnShowCommands').addEventListener('click', () => app.showCommands());
         document.getElementById('sendBtn').addEventListener('click', () => app.handleSendClick());
-
-        // 模型切换时通知扩展端更新配置
-        document.getElementById('modelSelect').addEventListener('change', (e) => {
-          const val = e.target.value;
-          if (val) {
-            const [providerID, modelID] = val.split('::');
-            vscode.postMessage({ type: 'config:setModel', providerID, modelID });
-          }
-        });
       },
 
       handleSendClick() {
@@ -1074,16 +1340,14 @@ export class ChatPanel {
       },
 
       getSelectedModel() {
-        const sel = document.getElementById('modelSelect');
-        const val = sel.value;
+        const val = modelSelectEl.value;
         if (!val) return undefined;
         const [providerID, modelID] = val.split('::');
         return { providerID, modelID };
       },
 
       getSelectedAgent() {
-        const sel = document.getElementById('agentSelect');
-        return sel.value || undefined;
+        return agentSelectEl.value || undefined;
       },
 
       setBusy(busy) {
@@ -1465,57 +1729,56 @@ export class ChatPanel {
       updateProviders(data, currentModel, enabledProviders, disabledProviders) {
         state.providers = data;
         state.currentModel = currentModel || '';
-        const select = document.getElementById('modelSelect');
-        select.innerHTML = '';
-
-        // 默认选项
-        const defaultOpt = document.createElement('option');
-        defaultOpt.value = '';
-        defaultOpt.textContent = '默认模型' + (currentModel ? ' (' + currentModel + ')' : '');
-        select.appendChild(defaultOpt);
 
         const connected = data.connected || [];
+        const groups = [];
+        let selectedValue = '';
+
+        // 默认选项分组
+        const defaultLabel = '默认模型' + (currentModel ? ' (' + currentModel + ')' : '');
+        groups.push({ options: [{ value: '', label: defaultLabel, selected: !currentModel }] });
 
         if (data.all) {
-          // 只显示已连接的 Provider 的模型
           const connectedProviders = data.all.filter(p => connected.includes(p.id));
           const disconnectedProviders = data.all.filter(p => !connected.includes(p.id));
 
           if (connectedProviders.length > 0) {
-            const connGroup = document.createElement('optgroup');
-            connGroup.label = '已连接';
+            const opts = [];
             for (const provider of connectedProviders) {
-              for (const model of (provider.models || [])) {
-                const modelVal = provider.id + '::' + model.id;
-                const modelLabel = provider.id + '/' + (model.name || model.id);
-                const opt = document.createElement('option');
-                opt.value = modelVal;
-                opt.textContent = modelLabel;
-                // 高亮当前模型
-                if (currentModel === provider.id + '/' + model.id) {
-                  opt.selected = true;
-                }
-                connGroup.appendChild(opt);
+              const models = provider.models ? Object.values(provider.models) : [];
+              for (const model of models) {
+                const val = provider.id + '::' + model.id;
+                const label = provider.id + '/' + (model.name || model.id);
+                const isCurrent = currentModel === provider.id + '/' + model.id;
+                if (isCurrent) selectedValue = val;
+                opts.push({ value: val, label, selected: isCurrent });
               }
             }
-            select.appendChild(connGroup);
+            groups.push({ label: '已连接', options: opts });
           }
 
-          // 也列出未连接的（灰色标注）供参考
           if (disconnectedProviders.length > 0) {
-            const disconnGroup = document.createElement('optgroup');
-            disconnGroup.label = '未连接';
+            const opts = [];
             for (const provider of disconnectedProviders) {
-              for (const model of (provider.models || [])) {
-                const opt = document.createElement('option');
-                opt.value = provider.id + '::' + model.id;
-                opt.textContent = provider.id + '/' + (model.name || model.id) + ' (未连接)';
-                opt.disabled = true;
-                disconnGroup.appendChild(opt);
+              const models = provider.models ? Object.values(provider.models) : [];
+              for (const model of models) {
+                opts.push({
+                  value: provider.id + '::' + model.id,
+                  label: provider.id + '/' + (model.name || model.id) + ' (未连接)',
+                  disabled: true,
+                });
               }
             }
-            select.appendChild(disconnGroup);
+            groups.push({ label: '未连接', options: opts });
           }
+        }
+
+        modelSelectEl.setOptions(groups);
+        if (selectedValue) {
+          modelSelectEl.setValue(selectedValue);
+        } else {
+          modelSelectEl.setValue('');
+          modelSelectEl.setLabel(defaultLabel);
         }
 
         // 更新状态栏模型信息
@@ -1524,45 +1787,43 @@ export class ChatPanel {
 
       updateAgents(agents, defaultAgent) {
         state.agents = agents;
-        const select = document.getElementById('agentSelect');
-        select.innerHTML = '';
 
-        // 过滤掉隐藏的系统 Agent (compaction, title, summary 等)
         const visibleAgents = agents.filter(a => !a.hidden);
         const primaryAgents = visibleAgents.filter(a => a.mode !== 'subagent');
         const subAgents = visibleAgents.filter(a => a.mode === 'subagent');
 
-        // 默认选项
-        const defaultOpt = document.createElement('option');
-        defaultOpt.value = '';
-        defaultOpt.textContent = '默认 Agent' + (defaultAgent ? ' (' + defaultAgent + ')' : '');
-        select.appendChild(defaultOpt);
+        const groups = [];
+        const defaultLabel = '默认 Agent' + (defaultAgent ? ' (' + defaultAgent + ')' : '');
+        groups.push({ options: [{ value: '', label: defaultLabel, selected: !defaultAgent }] });
 
-        // Primary agents 分组
         if (primaryAgents.length > 0) {
-          const primaryGroup = document.createElement('optgroup');
-          primaryGroup.label = '主要 Agent';
+          const opts = [];
           for (const agent of primaryAgents) {
-            const opt = document.createElement('option');
-            opt.value = agent.id;
-            opt.textContent = (agent.name || agent.id) + (agent.description ? ' - ' + agent.description : '');
-            if (agent.id === defaultAgent) opt.selected = true;
-            primaryGroup.appendChild(opt);
+            const label = (agent.name || agent.id) + (agent.description ? ' - ' + agent.description : '');
+            opts.push({ value: agent.id, label, selected: agent.id === defaultAgent });
           }
-          select.appendChild(primaryGroup);
+          groups.push({ label: '主要 Agent', options: opts });
         }
 
-        // Subagent 分组
         if (subAgents.length > 0) {
-          const subGroup = document.createElement('optgroup');
-          subGroup.label = '子 Agent (@mention)';
+          const opts = [];
           for (const agent of subAgents) {
-            const opt = document.createElement('option');
-            opt.value = agent.id;
-            opt.textContent = (agent.name || agent.id) + (agent.description ? ' - ' + agent.description : '');
-            subGroup.appendChild(opt);
+            const label = (agent.name || agent.id) + (agent.description ? ' - ' + agent.description : '');
+            opts.push({ value: agent.id, label });
           }
-          select.appendChild(subGroup);
+          groups.push({ label: '子 Agent (@mention)', options: opts });
+        }
+
+        agentSelectEl.setOptions(groups);
+        if (defaultAgent) {
+          const found = visibleAgents.find(a => a.id === defaultAgent);
+          if (found) {
+            agentSelectEl.setValue(defaultAgent);
+            agentSelectEl.setLabel((found.name || found.id) + (found.description ? ' - ' + found.description : ''));
+          }
+        } else {
+          agentSelectEl.setValue('');
+          agentSelectEl.setLabel(defaultLabel);
         }
       },
 
