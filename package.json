@@ -1,0 +1,289 @@
+{
+  "name": "opencode-complete",
+  "displayName": "OpenCode Complete",
+  "description": "完整的 OpenCode AI 编程助手集成 - 支持聊天、会话管理、文件操作、权限管理等所有功能",
+  "version": "0.1.0",
+  "publisher": "opencode-community",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anomalyco/opencode"
+  },
+  "license": "MIT",
+  "icon": "images/icon.png",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "opencode",
+    "ai",
+    "coding",
+    "agent",
+    "chat",
+    "copilot"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencode",
+          "title": "OpenCode",
+          "icon": "images/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencode": [
+        {
+          "id": "opencode.sessions",
+          "name": "会话列表",
+          "type": "tree"
+        },
+        {
+          "id": "opencode.status",
+          "name": "服务状态",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "opencode.openChat",
+        "title": "OpenCode: 打开聊天面板",
+        "icon": {
+          "light": "images/icon-dark.svg",
+          "dark": "images/icon-light.svg"
+        }
+      },
+      {
+        "command": "opencode.newSession",
+        "title": "OpenCode: 新建会话",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencode.deleteSession",
+        "title": "OpenCode: 删除会话",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencode.refreshSessions",
+        "title": "OpenCode: 刷新会话列表",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencode.shareSession",
+        "title": "OpenCode: 分享会话",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "opencode.forkSession",
+        "title": "OpenCode: 分叉会话",
+        "icon": "$(repo-forked)"
+      },
+      {
+        "command": "opencode.abortSession",
+        "title": "OpenCode: 中止会话",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "opencode.startServer",
+        "title": "OpenCode: 启动服务器"
+      },
+      {
+        "command": "opencode.stopServer",
+        "title": "OpenCode: 停止服务器"
+      },
+      {
+        "command": "opencode.restartServer",
+        "title": "OpenCode: 重启服务器"
+      },
+      {
+        "command": "opencode.openTerminal",
+        "title": "OpenCode: 打开 TUI 终端",
+        "icon": {
+          "light": "images/icon-dark.svg",
+          "dark": "images/icon-light.svg"
+        }
+      },
+      {
+        "command": "opencode.addFileToPrompt",
+        "title": "OpenCode: 插入文件引用到聊天"
+      },
+      {
+        "command": "opencode.addSelectionToPrompt",
+        "title": "OpenCode: 插入选中代码到聊天"
+      },
+      {
+        "command": "opencode.viewDiff",
+        "title": "OpenCode: 查看会话 Diff"
+      },
+      {
+        "command": "opencode.undoChanges",
+        "title": "OpenCode: 撤销更改"
+      },
+      {
+        "command": "opencode.searchFiles",
+        "title": "OpenCode: 搜索文件"
+      },
+      {
+        "command": "opencode.searchText",
+        "title": "OpenCode: 搜索文本"
+      },
+      {
+        "command": "opencode.selectModel",
+        "title": "OpenCode: 选择模型"
+      },
+      {
+        "command": "opencode.selectAgent",
+        "title": "OpenCode: 选择 Agent"
+      },
+      {
+        "command": "opencode.showConfig",
+        "title": "OpenCode: 查看配置"
+      },
+      {
+        "command": "opencode.connectProvider",
+        "title": "OpenCode: 连接 AI 提供商"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "opencode.newSession",
+          "when": "view == opencode.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.refreshSessions",
+          "when": "view == opencode.sessions",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "opencode.deleteSession",
+          "when": "view == opencode.sessions && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "command": "opencode.shareSession",
+          "when": "view == opencode.sessions && viewItem == session"
+        },
+        {
+          "command": "opencode.forkSession",
+          "when": "view == opencode.sessions && viewItem == session"
+        },
+        {
+          "command": "opencode.abortSession",
+          "when": "view == opencode.sessions && viewItem == sessionBusy"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "opencode.openChat",
+          "group": "navigation"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "opencode.addSelectionToPrompt",
+          "group": "opencode@1"
+        },
+        {
+          "command": "opencode.addFileToPrompt",
+          "group": "opencode@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "opencode.openChat",
+        "key": "ctrl+escape",
+        "mac": "cmd+escape"
+      },
+      {
+        "command": "opencode.newSession",
+        "key": "ctrl+shift+escape",
+        "mac": "cmd+shift+escape"
+      },
+      {
+        "command": "opencode.addFileToPrompt",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k"
+      },
+      {
+        "command": "opencode.addSelectionToPrompt",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l"
+      },
+      {
+        "command": "opencode.abortSession",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c"
+      }
+    ],
+    "configuration": {
+      "title": "OpenCode",
+      "properties": {
+        "opencode.server.hostname": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "OpenCode 服务器主机地址"
+        },
+        "opencode.server.port": {
+          "type": "number",
+          "default": 0,
+          "description": "OpenCode 服务器端口 (0 = 自动分配)"
+        },
+        "opencode.server.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "启动 VSCode 时自动启动 OpenCode 服务器"
+        },
+        "opencode.server.executablePath": {
+          "type": "string",
+          "default": "opencode",
+          "description": "OpenCode 可执行文件路径"
+        },
+        "opencode.chat.fontSize": {
+          "type": "number",
+          "default": 14,
+          "description": "聊天面板字体大小"
+        },
+        "opencode.chat.showTimestamps": {
+          "type": "boolean",
+          "default": true,
+          "description": "在消息中显示时间戳"
+        },
+        "opencode.chat.wordWrap": {
+          "type": "boolean",
+          "default": true,
+          "description": "聊天消息自动换行"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run package",
+    "compile": "npm run check-types && node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "package": "npm run check-types && node esbuild.js --production",
+    "check-types": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@types/node": "20.x",
+    "@types/vscode": "^1.94.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.8.0"
+  }
+}
