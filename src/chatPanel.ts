@@ -516,6 +516,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.setModel(msg.providerID, msg.modelID);
         break;
 
+      case "config:setReasoningEffort":
+        await this.setReasoningEffort(msg.reasoningEffort);
+        break;
+
       case "copy":
         await vscode.env.clipboard.writeText(msg.text);
         break;
@@ -705,6 +709,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.client.getConfig().catch(() => ({})),
       ]);
       const currentModel = (config as any)?.model || "";
+      const currentReasoningEffort =
+        (config as any)?.reasoning_effort ||
+        (config as any)?.reasoningEffort ||
+        "";
       const enabledProviders = (config as any)?.enabled_providers || [];
       const disabledProviders = (config as any)?.disabled_providers || [];
       const connected = providers.connected || [];
@@ -723,6 +731,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         type: "providers:list",
         providers: filteredProviders,
         currentModel,
+        currentReasoningEffort,
         enabledProviders,
         disabledProviders,
       });
@@ -792,6 +801,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.postMessage({
         type: "error",
         message: `切换模型失败: ${error.message}`,
+      });
+    }
+  }
+
+  private async setReasoningEffort(reasoningEffort?: string): Promise<void> {
+    if (!this.client) return;
+    try {
+      const raw = (reasoningEffort || "").trim().toLowerCase();
+      const normalized = raw === "auto" ? "" : raw;
+      await this.client.updateConfig({
+        reasoning_effort: normalized || null,
+      });
+      this.postMessage({
+        type: "reasoningEffort:updated",
+        reasoningEffort: normalized,
+      });
+    } catch (error: any) {
+      this.postMessage({
+        type: "error",
+        message: `设置推理强度失败: ${error.message}`,
       });
     }
   }
@@ -912,6 +941,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     :root {
       --bg-primary: var(--vscode-editor-background);
       --bg-secondary: var(--vscode-sideBar-background);
+      --bg-tertiary: color-mix(in srgb, var(--bg-secondary) 84%, var(--bg-primary));
       --bg-input: var(--vscode-input-background);
       --fg-primary: var(--vscode-editor-foreground);
       --fg-secondary: var(--vscode-descriptionForeground);
@@ -928,7 +958,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       --font-family: var(--vscode-editor-font-family, 'Cascadia Code', 'Fira Code', monospace);
       --radius: 6px;
     }
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      scrollbar-width: thin;
+      scrollbar-color: var(--scrollbar) transparent;
+    }
+    *::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    *::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    *::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--scrollbar) 82%, transparent);
+      border-radius: 999px;
+    }
+    *::-webkit-scrollbar-button {
+      width: 0;
+      height: 0;
+      display: none;
+    }
     body {
       font-family: var(--vscode-font-family, sans-serif);
       font-size: var(--font-size);
@@ -974,52 +1026,61 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .messages {
       flex: 1;
       overflow-y: auto;
-      padding: 12px;
+      padding: 12px 12px 18px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
     }
-    .messages::-webkit-scrollbar { width: 6px; }
-    .messages::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
 
     .message {
-      max-width: 95%;
-      padding: 10px 14px;
-      border-radius: var(--radius);
-      line-height: 1.5;
+      width: 100%;
+      max-width: 100%;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-secondary);
+      line-height: 1.55;
       word-wrap: break-word;
       overflow-wrap: break-word;
     }
     .message.user {
-      align-self: flex-end;
-      background: var(--accent);
-      color: var(--accent-fg);
+      border-left: 3px solid var(--accent);
+      background: color-mix(in srgb, var(--accent) 10%, var(--bg-secondary));
     }
     .message.assistant {
-      align-self: flex-start;
-      background: var(--bg-secondary);
-      border: 1px solid var(--border);
+      border-left: 3px solid color-mix(in srgb, var(--success) 75%, var(--border));
+      background: var(--bg-tertiary);
     }
     .message.system {
-      align-self: center;
-      background: none;
+      border-style: dashed;
+      background: transparent;
       color: var(--fg-secondary);
       font-size: 12px;
-      font-style: italic;
+      text-align: center;
     }
     .message-meta {
       font-size: 11px;
       color: var(--fg-secondary);
-      margin-bottom: 4px;
+      margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 8px;
     }
     .message-role {
       font-weight: 600;
-      text-transform: uppercase;
       font-size: 10px;
-      letter-spacing: 0.5px;
+      border-radius: 999px;
+      padding: 1px 7px;
+      background: color-mix(in srgb, var(--fg-secondary) 22%, transparent);
+      color: var(--fg-primary);
+    }
+    .message.user .message-role {
+      background: color-mix(in srgb, var(--accent) 24%, transparent);
+      color: color-mix(in srgb, var(--accent) 72%, var(--fg-primary));
+    }
+    .message.assistant .message-role {
+      background: color-mix(in srgb, var(--success) 22%, transparent);
+      color: color-mix(in srgb, var(--success) 75%, var(--fg-primary));
     }
     .message-content { white-space: normal; }
     .message-content code {
@@ -1211,35 +1272,112 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     /* ---- 工具调用 ---- */
     .tool-call {
-      margin: 6px 0;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
+      margin: 8px 0;
+      border: 1px solid color-mix(in srgb, var(--border) 76%, var(--accent));
+      border-radius: 8px;
       overflow: hidden;
+      background: color-mix(in srgb, var(--bg-tertiary) 86%, var(--bg-primary));
+    }
+    .tool-call.tool-running {
+      border-color: color-mix(in srgb, var(--warning) 52%, var(--border));
+    }
+    .tool-call.tool-error {
+      border-color: color-mix(in srgb, var(--error) 58%, var(--border));
     }
     .tool-header {
       display: flex;
       align-items: center;
-      gap: 6px;
-      padding: 6px 10px;
-      background: rgba(128,128,128,0.08);
+      gap: 8px;
+      padding: 8px 10px;
       cursor: pointer;
       font-size: 12px;
+      background: color-mix(in srgb, var(--fg-secondary) 10%, transparent);
+      user-select: none;
     }
-    .tool-status { font-size: 12px; }
-    .tool-status.running { color: var(--warning); }
-    .tool-status.success { color: var(--success); }
-    .tool-status.error { color: var(--error); }
-    .tool-name { font-weight: 600; }
-    .tool-body {
-      padding: 8px 10px;
-      font-size: 12px;
+    .tool-badge {
+      flex-shrink: 0;
+      padding: 1px 6px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      color: var(--fg-secondary);
+      background: color-mix(in srgb, var(--fg-secondary) 10%, transparent);
+    }
+    .tool-badge.running {
+      color: color-mix(in srgb, var(--warning) 90%, var(--fg-primary));
+      border-color: color-mix(in srgb, var(--warning) 52%, var(--border));
+      background: color-mix(in srgb, var(--warning) 18%, transparent);
+    }
+    .tool-badge.completed {
+      color: color-mix(in srgb, var(--success) 88%, var(--fg-primary));
+      border-color: color-mix(in srgb, var(--success) 52%, var(--border));
+      background: color-mix(in srgb, var(--success) 18%, transparent);
+    }
+    .tool-badge.error {
+      color: color-mix(in srgb, var(--error) 88%, var(--fg-primary));
+      border-color: color-mix(in srgb, var(--error) 52%, var(--border));
+      background: color-mix(in srgb, var(--error) 18%, transparent);
+    }
+    .tool-name {
       font-family: var(--font-family);
-      white-space: pre-wrap;
-      max-height: 200px;
-      overflow-y: auto;
-      display: none;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 40%;
     }
-    .tool-call.expanded .tool-body { display: block; }
+    .tool-summary {
+      flex: 1;
+      color: var(--fg-secondary);
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tool-toggle {
+      flex-shrink: 0;
+      font-size: 11px;
+      color: var(--fg-secondary);
+    }
+    .tool-body {
+      border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+      padding: 8px 10px;
+      display: none;
+      background: color-mix(in srgb, var(--bg-primary) 82%, transparent);
+    }
+    .tool-call.expanded .tool-body {
+      display: block;
+    }
+    .tool-section + .tool-section {
+      margin-top: 8px;
+    }
+    .tool-section-title {
+      font-size: 10px;
+      color: var(--fg-secondary);
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .tool-section-content {
+      font-family: var(--font-family);
+      font-size: 12px;
+      line-height: 1.45;
+      white-space: pre-wrap;
+      border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
+      border-radius: 6px;
+      padding: 6px 8px;
+      max-height: 240px;
+      overflow: auto;
+      background: color-mix(in srgb, var(--bg-secondary) 88%, transparent);
+    }
+    .tool-section-content.error {
+      border-color: color-mix(in srgb, var(--error) 58%, var(--border));
+      color: var(--error);
+      background: color-mix(in srgb, var(--error) 8%, transparent);
+    }
 
     /* ---- Diff 显示 ---- */
     .diff-block {
@@ -1309,7 +1447,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     /* ---- Token 用量条 ---- */
     .token-bar-container {
-      padding: 6px 12px 4px;
+      padding: 6px 12px;
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
       flex-shrink: 0;
@@ -1336,14 +1474,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       width: 100%;
       border-radius: 3px;
       background: color-mix(in srgb, var(--fg-secondary) 15%, transparent);
-      overflow: hidden;
+      overflow: visible;
       display: flex;
+      position: relative;
     }
     .token-bar-segment {
       height: 100%;
       transition: flex-basis 0.3s ease, height 0.15s ease;
       min-width: 0;
       position: relative;
+    }
+    .token-bar-segment:first-child {
+      border-top-left-radius: 3px;
+      border-bottom-left-radius: 3px;
+    }
+    .token-bar-segment:last-child {
+      border-top-right-radius: 3px;
+      border-bottom-right-radius: 3px;
     }
     .token-bar-track:hover .token-bar-segment {
       height: 8px;
@@ -1354,32 +1501,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .token-bar-segment[data-cat="reasoning"] { background: #a855f7; }
     .token-bar-segment[data-cat="cache_read"] { background: var(--success); }
     .token-bar-segment[data-cat="cache_write"] { background: var(--warning); }
-    .token-bar-legend {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 4px;
+    .token-bar-segment::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      left: 50%;
+      bottom: calc(100% + 8px);
+      transform: translate(-50%, 4px);
+      background: color-mix(in srgb, var(--bg-secondary) 90%, #000);
+      color: var(--fg-primary);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 4px 6px;
       font-size: 10px;
-      color: var(--fg-secondary);
-      line-height: 1;
+      line-height: 1.2;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.14s ease, transform 0.14s ease;
+      z-index: 2;
     }
-    .token-bar-legend-item {
-      display: flex;
-      align-items: center;
-      gap: 3px;
-      cursor: default;
+    .token-bar-segment:hover::after {
+      opacity: 1;
+      transform: translate(-50%, 0);
     }
-    .token-bar-legend-dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 2px;
-      flex-shrink: 0;
-    }
-    .token-bar-legend-dot[data-cat="input"] { background: #0ea5e9; }
-    .token-bar-legend-dot[data-cat="output"] { background: #ec4899; }
-    .token-bar-legend-dot[data-cat="reasoning"] { background: #a855f7; }
-    .token-bar-legend-dot[data-cat="cache_read"] { background: var(--success); }
-    .token-bar-legend-dot[data-cat="cache_write"] { background: var(--warning); }
 
     /* ---- 输入区域 ---- */
     .input-area {
@@ -1420,6 +1564,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .custom-select-trigger-input {
+      width: 100%;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: var(--fg-primary);
+      font-size: 11px;
+      line-height: 1.2;
+    }
+    .custom-select-trigger-input::placeholder {
+      color: color-mix(in srgb, var(--fg-secondary) 90%, transparent);
+    }
     .custom-select-trigger:hover {
       border-color: var(--accent);
     }
@@ -1431,6 +1588,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     .custom-select.open .custom-select-trigger .arrow {
       transform: rotate(180deg);
+    }
+    .custom-select.without-search .custom-select-search {
+      display: none;
     }
     .custom-select-trigger .trigger-text {
       overflow: hidden;
@@ -1509,6 +1669,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       text-align: center;
       color: var(--fg-secondary);
       font-size: 11px;
+    }
+    #modelSelect {
+      flex: 1;
+      max-width: none;
+      min-width: 140px;
+    }
+    #modelSelect .custom-select-trigger {
+      padding-right: 6px;
+    }
+    #reasoningEffortSelect {
+      min-width: 92px;
     }
 
     /* ---- 斜杠命令面板 ---- */
@@ -1595,36 +1766,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       line-height: 1.4;
       overflow-y: hidden;
       scrollbar-width: thin;
-      scrollbar-color: color-mix(in srgb, var(--accent) 55%, transparent) transparent;
+      scrollbar-color: var(--scrollbar) transparent;
     }
     .input-wrapper textarea:focus { border-color: var(--accent); }
     .input-wrapper textarea.is-scrollable {
       overflow-y: auto;
     }
     .input-wrapper textarea::-webkit-scrollbar {
-      width: 10px;
+      width: 8px;
     }
     .input-wrapper textarea::-webkit-scrollbar-track {
       background: transparent;
-      margin: 6px 0;
     }
     .input-wrapper textarea::-webkit-scrollbar-thumb {
-      background: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--accent) 72%, transparent),
-        color-mix(in srgb, var(--accent) 42%, transparent)
-      );
+      background: color-mix(in srgb, var(--scrollbar) 82%, transparent);
       border-radius: 999px;
-      border: 2px solid transparent;
-      background-clip: padding-box;
+      border: none;
     }
     .input-wrapper textarea::-webkit-scrollbar-thumb:hover {
-      background: linear-gradient(
-        180deg,
-        color-mix(in srgb, var(--accent) 86%, transparent),
-        color-mix(in srgb, var(--accent) 60%, transparent)
-      );
-      background-clip: padding-box;
+      background: color-mix(in srgb, var(--scrollbar) 95%, transparent);
     }
     .send-btn {
       background: var(--accent);
@@ -1731,21 +1891,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div class="input-toolbar">
       <div class="custom-select" id="agentSelect" title="选择 Agent">
         <div class="custom-select-trigger">
-          <span class="trigger-text">默认 Agent</span>
+          <span class="trigger-text">Agent</span>
           <span class="arrow">▼</span>
         </div>
         <div class="custom-select-dropdown">
-          <input class="custom-select-search" placeholder="搜索 Agent..." />
+          <input class="custom-select-search" placeholder="搜索 Agent（输入后匹配全部）..." />
           <div class="custom-select-options"></div>
         </div>
       </div>
       <div class="custom-select" id="modelSelect" title="选择模型">
         <div class="custom-select-trigger">
-          <span class="trigger-text">默认模型</span>
+          <input class="custom-select-trigger-input" placeholder="搜索模型..." />
           <span class="arrow">▼</span>
         </div>
         <div class="custom-select-dropdown">
-          <input class="custom-select-search" placeholder="搜索模型..." />
+          <div class="custom-select-options"></div>
+        </div>
+      </div>
+      <div class="custom-select" id="reasoningEffortSelect" title="推理强度">
+        <div class="custom-select-trigger">
+          <span class="trigger-text">推理: 自动</span>
+          <span class="arrow">▼</span>
+        </div>
+        <div class="custom-select-dropdown">
+          <input class="custom-select-search" placeholder="搜索推理强度..." />
           <div class="custom-select-options"></div>
         </div>
       </div>
@@ -1766,7 +1935,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       <span class="token-percent" id="tokenPercent"></span>
     </div>
     <div class="token-bar-track" id="tokenBarTrack"></div>
-    <div class="token-bar-legend" id="tokenBarLegend"></div>
   </div>
 
   <script nonce="${nonce}">
@@ -1788,6 +1956,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       tokenCost: 0,
       contextLimit: 0,   // 当前模型的上下文窗口大小
       modelLimits: {},    // { 'provider/model': { context, output } }
+      currentReasoningEffort: '',
       // 代码高亮状态
       _hlIdCounter: 0,
       _pendingHighlights: [],
@@ -1801,12 +1970,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.el = el;
         this.value = '';
         this.onChange = opts.onChange || null;
+        this.onSearchTermChange = opts.onSearchTermChange || null;
+        this.searchInTrigger = !!opts.searchInTrigger;
+        this.showSearch = opts.showSearch !== false;
         this.trigger = el.querySelector('.custom-select-trigger');
         this.triggerText = el.querySelector('.trigger-text');
+        this.triggerInput = el.querySelector('.custom-select-trigger-input');
         this.dropdown = el.querySelector('.custom-select-dropdown');
         this.optionsContainer = el.querySelector('.custom-select-options');
-        this.searchInput = el.querySelector('.custom-select-search');
+        this.searchInput = this.searchInTrigger
+          ? this.triggerInput
+          : el.querySelector('.custom-select-search');
         this._options = [];  // { value, label, group, disabled }
+        this._selectedLabel = '';
+        this.el.__customSelectInstance = this;
+        if (!this.searchInTrigger && !this.showSearch) {
+          this.el.classList.add('without-search');
+        }
         this._setup();
       }
 
@@ -1814,62 +1994,62 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 点击触发器切换下拉
         this.trigger.addEventListener('click', (e) => {
           e.stopPropagation();
+          if (this.searchInTrigger) {
+            if (
+              this.el.classList.contains('open') &&
+              e.target &&
+              e.target.classList &&
+              e.target.classList.contains('arrow')
+            ) {
+              this.close();
+              return;
+            }
+            if (!this.el.classList.contains('open')) {
+              this.open();
+            }
+            if (this.triggerInput) {
+              this.triggerInput.focus();
+            }
+            return;
+          }
           if (this.el.classList.contains('open')) {
             this.close();
           } else {
-            // 先关闭其他已打开的下拉框
-            document.querySelectorAll('.custom-select.open').forEach(s => {
-              if (s !== this.el) s.classList.remove('open');
-            });
             this.open();
           }
         });
 
-        // 搜索过滤（多关键词：空格分隔，引号内为整体短语）
-        this.searchInput.addEventListener('input', () => {
-          const raw = this.searchInput.value.trim().toLowerCase();
-          // 解析关键词：提取引号短语，剩余按空格拆分
-          const keywords = [];
-          const regex = /"([^"]+)"|(\S+)/g;
-          let m;
-          while ((m = regex.exec(raw)) !== null) {
-            keywords.push(m[1] || m[2]);
-          }
-          this.optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
-            const text = (opt.textContent || '').toLowerCase();
-            const visible = keywords.length === 0 || keywords.every(kw => text.includes(kw));
-            opt.classList.toggle('hidden', !visible);
+        if (this.searchInput) {
+          this.searchInput.addEventListener('input', () => {
+            this.applyFilter(this.searchInput.value || '');
           });
-          // 隐藏空分组标签
-          this.optionsContainer.querySelectorAll('.custom-select-group-label').forEach(lbl => {
-            const next = [];
-            let sib = lbl.nextElementSibling;
-            while (sib && !sib.classList.contains('custom-select-group-label')) {
-              if (sib.classList.contains('custom-select-option')) next.push(sib);
-              sib = sib.nextElementSibling;
-            }
-            const allHidden = next.every(n => n.classList.contains('hidden'));
-            lbl.style.display = allHidden ? 'none' : '';
-          });
-          // 显示空状态
-          let emptyEl = this.optionsContainer.querySelector('.custom-select-empty');
-          const allHidden = Array.from(this.optionsContainer.querySelectorAll('.custom-select-option')).every(o => o.classList.contains('hidden'));
-          if (allHidden) {
-            if (!emptyEl) {
-              emptyEl = document.createElement('div');
-              emptyEl.className = 'custom-select-empty';
-              emptyEl.textContent = '无匹配项';
-              this.optionsContainer.appendChild(emptyEl);
-            }
-            emptyEl.style.display = '';
-          } else if (emptyEl) {
-            emptyEl.style.display = 'none';
-          }
-        });
 
-        // 阻止搜索框事件冒泡
-        this.searchInput.addEventListener('click', (e) => e.stopPropagation());
-        this.searchInput.addEventListener('keydown', (e) => e.stopPropagation());
+          // 阻止搜索框事件冒泡
+          this.searchInput.addEventListener('click', (e) => e.stopPropagation());
+          this.searchInput.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Escape') {
+              e.preventDefault();
+              this.close();
+              return;
+            }
+            if (e.key === 'Enter') {
+              const selected = this.selectFirstVisibleOption();
+              if (selected) {
+                e.preventDefault();
+                return;
+              }
+            }
+          });
+
+          if (this.searchInTrigger) {
+            this.searchInput.addEventListener('focus', () => {
+              if (!this.el.classList.contains('open')) {
+                this.open();
+              }
+            });
+          }
+        }
 
         // 点击外部关闭
         document.addEventListener('click', (e) => {
@@ -1878,26 +2058,69 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
 
       open() {
+        document.querySelectorAll('.custom-select.open').forEach(s => {
+          if (s === this.el) return;
+          const instance = s.__customSelectInstance;
+          if (instance && typeof instance.close === 'function') {
+            instance.close();
+          } else {
+            s.classList.remove('open');
+          }
+        });
         this.el.classList.add('open');
-        this.searchInput.value = '';
-        this.searchInput.dispatchEvent(new Event('input'));
-        setTimeout(() => this.searchInput.focus(), 0);
+        if (this.searchInput && this.searchInTrigger) {
+          this.searchInput.value = '';
+          this.applyFilter('');
+          setTimeout(() => this.searchInput.focus(), 0);
+          return;
+        }
+        if (this.searchInput && this.showSearch) {
+          this.searchInput.value = '';
+          this.applyFilter('');
+          setTimeout(() => this.searchInput.focus(), 0);
+          return;
+        }
+        this.applyFilter('');
       }
 
       close() {
         this.el.classList.remove('open');
+        if (this.searchInTrigger && this.searchInput) {
+          this.searchInput.value = this._selectedLabel || '';
+        }
+        this.applyFilter('');
       }
 
       setValue(val) {
-        this.value = val;
+        this.value = val || '';
+        let selectedEl = null;
         // 更新选中高亮
         this.optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
-          opt.classList.toggle('selected', opt.dataset.value === val);
+          const isSelected = opt.dataset.value === this.value;
+          opt.classList.toggle('selected', isSelected);
+          if (isSelected) {
+            selectedEl = opt;
+          }
         });
+        if (selectedEl) {
+          this._selectedLabel = selectedEl.dataset.label || selectedEl.textContent || '';
+        }
+        if (this.searchInTrigger && this.triggerInput && !this.el.classList.contains('open')) {
+          this.triggerInput.value = this._selectedLabel || '';
+        }
       }
 
       setLabel(text) {
-        this.triggerText.textContent = text;
+        this._selectedLabel = text || '';
+        if (this.searchInTrigger && this.triggerInput) {
+          if (!this.el.classList.contains('open')) {
+            this.triggerInput.value = this._selectedLabel;
+          }
+          return;
+        }
+        if (this.triggerText) {
+          this.triggerText.textContent = this._selectedLabel;
+        }
       }
 
       setOptions(groups) {
@@ -1918,6 +2141,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             el.className = 'custom-select-option' + (opt.disabled ? ' disabled' : '');
             el.textContent = opt.label;
             el.dataset.value = opt.value;
+            el.dataset.label = opt.label;
+            el.dataset.searchOnly = opt.searchOnly ? 'true' : 'false';
             if (opt.selected) {
               el.classList.add('selected');
               firstSelected = opt;
@@ -1926,7 +2151,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               el.addEventListener('click', (e) => {
                 e.stopPropagation();
                 this.value = opt.value;
-                this.triggerText.textContent = opt.label;
+                this._selectedLabel = opt.label;
+                if (this.searchInTrigger && this.triggerInput) {
+                  this.triggerInput.value = opt.label;
+                } else if (this.triggerText) {
+                  this.triggerText.textContent = opt.label;
+                }
                 // 更新选中高亮
                 this.optionsContainer.querySelectorAll('.custom-select-option').forEach(o => o.classList.remove('selected'));
                 el.classList.add('selected');
@@ -1941,22 +2171,120 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         if (firstSelected) {
           this.value = firstSelected.value;
-          this.triggerText.textContent = firstSelected.label;
+          this._selectedLabel = firstSelected.label;
+          if (this.searchInTrigger && this.triggerInput) {
+            if (!this.el.classList.contains('open')) {
+              this.triggerInput.value = firstSelected.label;
+            }
+          } else if (this.triggerText) {
+            this.triggerText.textContent = firstSelected.label;
+          }
+        } else if (this.searchInTrigger && this.triggerInput && !this.el.classList.contains('open')) {
+          this.triggerInput.value = this._selectedLabel || '';
         }
+
+        this.applyFilter('');
+      }
+
+      parseKeywords(rawText) {
+        const raw = (rawText || '').trim().toLowerCase();
+        const keywords = [];
+        const regex = /"([^"]+)"|(\S+)/g;
+        let m;
+        while ((m = regex.exec(raw)) !== null) {
+          keywords.push(m[1] || m[2]);
+        }
+        return keywords;
+      }
+
+      applyFilter(rawText) {
+        const keywords = this.parseKeywords(rawText);
+        if (this.onSearchTermChange) {
+          this.onSearchTermChange(keywords.join(' '), keywords);
+        }
+
+        this.optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
+          const text = ((opt.dataset.label || opt.textContent) || '').toLowerCase();
+          const isSelected = opt.classList.contains('selected');
+          const searchOnly = opt.dataset.searchOnly === 'true';
+          const allowScope = !searchOnly || keywords.length > 0 || isSelected;
+          const matches = keywords.length === 0 || keywords.every(kw => text.includes(kw));
+          const visible = allowScope && matches;
+          opt.classList.toggle('hidden', !visible);
+        });
+
+        // 隐藏空分组标签
+        this.optionsContainer.querySelectorAll('.custom-select-group-label').forEach(lbl => {
+          const next = [];
+          let sib = lbl.nextElementSibling;
+          while (sib && !sib.classList.contains('custom-select-group-label')) {
+            if (sib.classList.contains('custom-select-option')) next.push(sib);
+            sib = sib.nextElementSibling;
+          }
+          const allHidden = next.length > 0 && next.every(n => n.classList.contains('hidden'));
+          lbl.style.display = allHidden ? 'none' : '';
+        });
+
+        // 显示空状态
+        let emptyEl = this.optionsContainer.querySelector('.custom-select-empty');
+        const optionEls = Array.from(this.optionsContainer.querySelectorAll('.custom-select-option'));
+        const allHidden = optionEls.length > 0 && optionEls.every(o => o.classList.contains('hidden'));
+        if (allHidden) {
+          if (!emptyEl) {
+            emptyEl = document.createElement('div');
+            emptyEl.className = 'custom-select-empty';
+            emptyEl.textContent = '无匹配项';
+            this.optionsContainer.appendChild(emptyEl);
+          }
+          emptyEl.style.display = '';
+        } else if (emptyEl) {
+          emptyEl.style.display = 'none';
+        }
+      }
+
+      selectFirstVisibleOption() {
+        const first = this.optionsContainer.querySelector(
+          '.custom-select-option:not(.hidden):not(.disabled)'
+        );
+        if (!first) return false;
+        first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        return true;
       }
     }
 
     // 初始化自定义下拉框实例
     const modelSelectEl = new CustomSelect(document.getElementById('modelSelect'), {
+      searchInTrigger: true,
       onChange(val) {
+        const modelInfoEl = document.getElementById('modelInfo');
         if (val) {
           const [providerID, modelID] = val.split('::');
+          const modelKey = providerID + '/' + modelID;
+          state.contextLimit = state.modelLimits[modelKey]?.context || 0;
+          modelInfoEl.textContent = modelKey;
           vscode.postMessage({ type: 'config:setModel', providerID, modelID });
+        } else {
+          state.contextLimit = 0;
+          modelInfoEl.textContent = '-';
         }
+        app.renderTokenBar();
       }
     });
 
     const agentSelectEl = new CustomSelect(document.getElementById('agentSelect'));
+
+    const reasoningEffortSelectEl = new CustomSelect(
+      document.getElementById('reasoningEffortSelect'),
+      {
+        showSearch: false,
+        onChange(val) {
+          vscode.postMessage({
+            type: 'config:setReasoningEffort',
+            reasoningEffort: val || '',
+          });
+        },
+      }
+    );
 
     const app = {
       init() {
@@ -2324,19 +2652,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       renderPart(part, messageInfo) {
+        let el;
         switch (part.type) {
           case 'text':
-            return this.renderTextPart(part);
+            el = this.renderTextPart(part);
+            break;
           case 'tool':
-            return this.renderToolPart(part);
+            el = this.renderToolPart(part);
+            break;
           case 'snapshot':
           case 'patch':
-            return this.renderDiffPart(part);
+            el = this.renderDiffPart(part);
+            break;
           case 'file':
-            return this.renderFilePart(part);
+            el = this.renderFilePart(part);
+            break;
           default:
-            return this.renderGenericPart(part);
+            el = this.renderGenericPart(part);
+            break;
         }
+        if (part.id && el && !el.dataset.partId) {
+          el.dataset.partId = part.id;
+        }
+        return el;
       },
 
       renderTextPart(part) {
@@ -2351,42 +2689,114 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       renderToolPart(part) {
+        const formatValue = (value) => {
+          if (value == null) return '';
+          if (typeof value === 'string') return value;
+          try {
+            return JSON.stringify(value, null, 2);
+          } catch {
+            return String(value);
+          }
+        };
+
+        const summarizeValue = (value) => {
+          const text = formatValue(value).replace(/\s+/g, ' ').trim();
+          if (!text) return '';
+          return text.length > 96 ? text.slice(0, 96) + '...' : text;
+        };
+
+        const status = String(part.state?.status || 'running').toLowerCase();
+        const normalizedStatus =
+          status === 'completed' || status === 'error' ? status : 'running';
+        const statusLabel =
+          normalizedStatus === 'completed'
+            ? '已完成'
+            : normalizedStatus === 'error'
+              ? '失败'
+              : '执行中';
+
         const div = document.createElement('div');
-        div.className = 'tool-call';
+        div.className = 'tool-call tool-' + normalizedStatus;
+        if (normalizedStatus !== 'completed') {
+          div.classList.add('expanded');
+        }
 
         const header = document.createElement('div');
         header.className = 'tool-header';
-        header.onclick = () => div.classList.toggle('expanded');
 
-        const statusIcon = document.createElement('span');
-        statusIcon.className = 'tool-status ' + (part.state?.status || 'running');
-        statusIcon.textContent = part.state?.status === 'completed' ? '✓' :
-                                  part.state?.status === 'error' ? '✗' : '◌';
-        header.appendChild(statusIcon);
+        const badge = document.createElement('span');
+        badge.className = 'tool-badge ' + normalizedStatus;
+        badge.textContent = statusLabel;
+        header.appendChild(badge);
 
         const name = document.createElement('span');
         name.className = 'tool-name';
-        name.textContent = part.tool || 'Tool';
+        name.textContent = part.tool || part.name || 'tool';
         header.appendChild(name);
 
+        const summary = document.createElement('span');
+        summary.className = 'tool-summary';
+        summary.textContent =
+          normalizedStatus === 'error'
+            ? summarizeValue(part.state?.error) || '工具调用失败'
+            : summarizeValue(part.state?.output) ||
+              summarizeValue(part.state?.input) ||
+              (normalizedStatus === 'running' ? '等待输出...' : '无输出');
+        header.appendChild(summary);
+
+        const toggle = document.createElement('span');
+        toggle.className = 'tool-toggle';
+        const syncToggle = () => {
+          toggle.textContent = div.classList.contains('expanded') ? '收起 ▲' : '展开 ▼';
+        };
+        syncToggle();
+        header.appendChild(toggle);
+
+        header.addEventListener('click', () => {
+          div.classList.toggle('expanded');
+          syncToggle();
+        });
         div.appendChild(header);
 
         const body = document.createElement('div');
         body.className = 'tool-body';
-        if (part.state?.input) {
-          body.textContent += '输入: ' + (typeof part.state.input === 'string'
-            ? part.state.input
-            : JSON.stringify(part.state.input, null, 2)) + '\\n\\n';
+
+        const appendSection = (title, value, isError = false) => {
+          const section = document.createElement('div');
+          section.className = 'tool-section';
+
+          const titleEl = document.createElement('div');
+          titleEl.className = 'tool-section-title';
+          titleEl.textContent = title;
+          section.appendChild(titleEl);
+
+          const contentEl = document.createElement('div');
+          contentEl.className = 'tool-section-content' + (isError ? ' error' : '');
+          contentEl.textContent = formatValue(value);
+          section.appendChild(contentEl);
+
+          body.appendChild(section);
+        };
+
+        if (part.state?.input != null && part.state?.input !== '') {
+          appendSection('输入', part.state.input);
         }
-        if (part.state?.output) {
-          body.textContent += '输出: ' + part.state.output;
+        if (part.state?.output != null && part.state?.output !== '') {
+          appendSection('输出', part.state.output);
         }
         if (part.state?.error) {
-          body.textContent += '错误: ' + part.state.error;
-          body.style.color = 'var(--error)';
+          appendSection('错误', part.state.error, true);
         }
-        div.appendChild(body);
 
+        if (body.childElementCount === 0) {
+          appendSection(
+            '状态',
+            normalizedStatus === 'running' ? '执行中，等待返回结果。' : '没有可显示的输入或输出。',
+            normalizedStatus === 'error'
+          );
+        }
+
+        div.appendChild(body);
         return div;
       },
 
@@ -2848,7 +3258,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         const container = document.getElementById('tokenBarContainer');
         const track = document.getElementById('tokenBarTrack');
-        const legend = document.getElementById('tokenBarLegend');
         const countEl = document.getElementById('tokenCount');
         const percentEl = document.getElementById('tokenPercent');
 
@@ -2863,8 +3272,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         countEl.textContent = this.formatNumber(total) + ' tokens';
 
         if (state.contextLimit > 0) {
-          const pct = Math.min(100, Math.round((total / state.contextLimit) * 100));
-          percentEl.textContent = pct + '%';
+          const pct = Math.max(0, Math.round((total / state.contextLimit) * 100));
+          percentEl.textContent =
+            '总计/上下文 ' +
+            this.formatNumber(total) +
+            '/' +
+            this.formatNumber(state.contextLimit) +
+            ' (' +
+            pct +
+            '%)';
         } else {
           percentEl.textContent = '';
         }
@@ -2888,19 +3304,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           el.className = 'token-bar-segment';
           el.dataset.cat = seg.key;
           el.style.flexBasis = pct.toFixed(2) + '%';
-          el.title = seg.label + ': ' + this.formatNumber(seg.value) + ' (' + Math.round(pct) + '%)';
+          el.dataset.tooltip =
+            seg.label + ': ' + this.formatNumber(seg.value) + ' (' + Math.round(pct) + '%)';
+          el.title = el.dataset.tooltip;
+          el.setAttribute('aria-label', el.dataset.tooltip);
           track.appendChild(el);
-        }
-
-        // 渲染图例
-        legend.innerHTML = '';
-        for (const seg of segments) {
-          const pct = segmentTotal > 0 ? Math.round(seg.value / segmentTotal * 100) : 0;
-          const item = document.createElement('span');
-          item.className = 'token-bar-legend-item';
-          item.innerHTML = '<span class="token-bar-legend-dot" data-cat="' + seg.key + '"></span>' +
-            seg.label + ' ' + this.formatNumber(seg.value) + ' (' + pct + '%)';
-          legend.appendChild(item);
         }
 
         // 显示容器
@@ -3177,17 +3585,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       // ---- 更新 UI 组件 ----
 
-      updateProviders(data, currentModel, enabledProviders, disabledProviders) {
+      updateProviders(
+        data,
+        currentModel,
+        currentReasoningEffort,
+        enabledProviders,
+        disabledProviders
+      ) {
         state.providers = data;
         state.currentModel = currentModel || '';
+        state.currentReasoningEffort = (currentReasoningEffort || '').trim();
 
         const connected = data.connected || [];
         const groups = [];
         let selectedValue = '';
-
-        // 默认选项分组
-        const defaultLabel = '默认模型' + (currentModel ? ' (' + currentModel + ')' : '');
-        groups.push({ options: [{ value: '', label: defaultLabel, selected: !currentModel }] });
 
         if (data.all) {
           const connectedProviders = data.all.filter(p => connected.includes(p.id));
@@ -3218,6 +3629,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 更新当前模型的 context limit
         if (currentModel && state.modelLimits[currentModel]) {
           state.contextLimit = state.modelLimits[currentModel].context;
+        } else {
+          state.contextLimit = 0;
         }
 
         modelSelectEl.setOptions(groups);
@@ -3225,11 +3638,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           modelSelectEl.setValue(selectedValue);
         } else {
           modelSelectEl.setValue('');
-          modelSelectEl.setLabel(defaultLabel);
+          modelSelectEl.setLabel(currentModel || '模型');
         }
 
         // 更新状态栏模型信息
         document.getElementById('modelInfo').textContent = currentModel || '-';
+        this.renderTokenBar();
+
+        this.updateReasoningEffort(state.currentReasoningEffort);
+      },
+
+      updateReasoningEffort(currentReasoningEffort) {
+        let normalized = (currentReasoningEffort || '').trim().toLowerCase();
+        if (normalized === 'auto') {
+          normalized = '';
+        }
+        state.currentReasoningEffort = normalized;
+        const effortOptions = [
+          { value: '', label: '推理: 自动' },
+          { value: 'minimal', label: '推理: minimal' },
+          { value: 'low', label: '推理: low' },
+          { value: 'medium', label: '推理: medium' },
+          { value: 'high', label: '推理: high' },
+        ];
+
+        if (normalized && !effortOptions.some(opt => opt.value === normalized)) {
+          effortOptions.push({
+            value: normalized,
+            label: '推理: ' + normalized,
+          });
+        }
+
+        const groups = [{ options: effortOptions.map(opt => ({
+          ...opt,
+          selected: opt.value === normalized,
+        })) }];
+
+        reasoningEffortSelectEl.setOptions(groups);
+        const current = effortOptions.find(opt => opt.value === normalized);
+        if (current) {
+          reasoningEffortSelectEl.setValue(current.value);
+          reasoningEffortSelectEl.setLabel(current.label);
+        } else {
+          reasoningEffortSelectEl.setValue('');
+          reasoningEffortSelectEl.setLabel('推理: 自动');
+        }
       },
 
       updateAgents(agents, defaultAgent) {
@@ -3240,8 +3693,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const subAgents = visibleAgents.filter(a => a.mode === 'subagent');
 
         const groups = [];
-        const defaultLabel = '默认 Agent' + (defaultAgent ? ' (' + defaultAgent + ')' : '');
-        groups.push({ options: [{ value: '', label: defaultLabel, selected: !defaultAgent }] });
+        const defaultLabel = defaultAgent ? ('Agent (' + defaultAgent + ')') : 'Agent';
 
         if (primaryAgents.length > 0) {
           const opts = [];
@@ -3256,9 +3708,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           const opts = [];
           for (const agent of subAgents) {
             const label = (agent.name || agent.id) + (agent.description ? ' - ' + agent.description : '');
-            opts.push({ value: agent.id, label });
+            opts.push({
+              value: agent.id,
+              label,
+              searchOnly: true,
+              selected: agent.id === defaultAgent,
+            });
           }
-          groups.push({ label: '子 Agent (@mention)', options: opts });
+          groups.push({ label: '全部 Agent（输入后匹配）', options: opts });
         }
 
         agentSelectEl.setOptions(groups);
@@ -3336,7 +3793,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           app.setBusy(false);
           break;
         case 'providers:list':
-          app.updateProviders(msg.providers, msg.currentModel, msg.enabledProviders, msg.disabledProviders);
+          app.updateProviders(
+            msg.providers,
+            msg.currentModel,
+            msg.currentReasoningEffort,
+            msg.enabledProviders,
+            msg.disabledProviders
+          );
           break;
         case 'agents:list':
           app.updateAgents(msg.agents, msg.defaultAgent);
@@ -3362,6 +3825,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             dot.className = 'status-dot error';
             txt.textContent = '未连接';
           }
+          break;
+        case 'reasoningEffort:updated':
+          app.updateReasoningEffort(msg.reasoningEffort || '');
           break;
         case 'prompt:append':
           const input = document.getElementById('promptInput');
