@@ -18,7 +18,11 @@ export class ServerManager {
   private _client: OpenCodeClient | null = null;
   private _version: string = "";
   private healthCheckTimer: ReturnType<typeof setInterval> | null = null;
+  private healthCheckFailCount: number = 0;
   private outputChannel: vscode.OutputChannel;
+
+  /** 连续健康检查失败多少次后才标记为 error */
+  private static readonly HEALTH_FAIL_THRESHOLD = 3;
 
   private readonly _onStateChange = new vscode.EventEmitter<ServerState>();
   public readonly onStateChange = this._onStateChange.event;
@@ -70,7 +74,7 @@ export class ServerManager {
         setTimeout(() => {
           disposable.dispose();
           reject(new Error("启动超时"));
-        }, 30000);
+        }, 60000);
       });
     }
 
@@ -109,26 +113,36 @@ export class ServerManager {
 
         let resolved = false;
 
+        // 从 stdout/stderr 中检测就绪消息的公共逻辑
+        const checkReadyMessage = (text: string): void => {
+          if (resolved) return;
+
+          // 匹配多种可能的就绪消息格式
+          const urlMatch =
+            text.match(/opencode server listening on (https?:\/\/[^\s]+)/i) ||
+            text.match(/listening on (https?:\/\/[^\s]+)/i) ||
+            text.match(/(https?:\/\/(?:127\.0\.0\.1|localhost|0\.0\.0\.0):\d+)/i);
+
+          if (urlMatch) {
+            this._url = urlMatch[1];
+            this.outputChannel.appendLine(`[就绪] 服务器地址: ${this._url}`);
+            resolved = true;
+            this.onServerReady(resolve);
+          }
+        };
+
         this.process.stdout?.on("data", (data: Buffer) => {
           const text = data.toString();
           this.outputChannel.appendLine(`[stdout] ${text.trim()}`);
-
-          // 检测服务器就绪消息
-          const urlMatch = text.match(
-            /opencode server listening on (https?:\/\/[^\s]+)/i
-          );
-          if (urlMatch && !resolved) {
-            this._url = urlMatch[1];
-            this.outputChannel.appendLine(`[就绪] 服务器地址: ${this._url}`);
-            this.onServerReady(resolve);
-            resolved = true;
-          }
+          checkReadyMessage(text);
         });
 
         this.process.stderr?.on("data", (data: Buffer) => {
           const text = data.toString().trim();
           if (text) {
             this.outputChannel.appendLine(`[stderr] ${text}`);
+            // stderr 中也可能包含就绪消息（某些日志框架写到 stderr）
+            checkReadyMessage(text);
           }
         });
 
@@ -156,7 +170,7 @@ export class ServerManager {
           }
         });
 
-        // 超时处理：如果 stdout 没有输出就绪消息，使用轮询
+        // 轮询回退：更早开始（3秒），等待更长（30秒）
         setTimeout(async () => {
           if (!resolved) {
             this._url = `http://${this._hostname}:${this._port}`;
@@ -164,16 +178,20 @@ export class ServerManager {
               `[轮询] 未检测到就绪消息，尝试轮询 ${this._url}`
             );
             try {
-              await this.waitForHealth(15000);
-              this.onServerReady(resolve);
-              resolved = true;
+              await this.waitForHealth(30000);
+              if (!resolved) {
+                resolved = true;
+                this.onServerReady(resolve);
+              }
             } catch (e) {
-              this.setState("error");
-              resolved = true;
-              reject(new Error("服务器启动超时"));
+              if (!resolved) {
+                this.setState("error");
+                resolved = true;
+                reject(new Error("服务器启动超时"));
+              }
             }
           }
-        }, 5000);
+        }, 3000);
       } catch (error: any) {
         this.setState("error");
         reject(error);
@@ -187,48 +205,80 @@ export class ServerManager {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this._client = new OpenCodeClient(this._url, workspaceFolder);
 
-    try {
-      const health = await this._client.health();
-      this._version = health.version || "unknown";
-      this.outputChannel.appendLine(`[就绪] 版本: ${this._version}`);
-    } catch {
+    // 带重试的初始健康检查：服务器刚启动可能还没完全就绪
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+      try {
+        const health = await this._client.health();
+        this._version = health.version || "unknown";
+        this.outputChannel.appendLine(`[就绪] 版本: ${this._version}`);
+        lastError = null;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        this.outputChannel.appendLine(
+          `[就绪] 健康检查第 ${attempt + 1} 次失败: ${err.message}, 重试中...`
+        );
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
+    if (lastError) {
       this._version = "unknown";
+      this.outputChannel.appendLine(
+        `[警告] 初始健康检查全部失败，但服务器进程在运行，继续标记为就绪`
+      );
     }
 
     this.setState("running");
+    this.healthCheckFailCount = 0;
     this.startHealthCheck();
     this._onReady.fire(this._client);
     resolve(this._client);
   }
 
   private async waitForHealth(timeout: number): Promise<void> {
-    const interval = 500;
+    const interval = 800;
     const maxAttempts = Math.floor(timeout / interval);
     const client = new OpenCodeClient(this._url);
 
     for (let i = 0; i < maxAttempts; i++) {
       try {
         await client.health();
+        client.dispose();
         return;
       } catch {
         await new Promise((r) => setTimeout(r, interval));
       }
     }
+    client.dispose();
     throw new Error("健康检查超时");
   }
 
   private startHealthCheck(): void {
     this.stopHealthCheck();
+    this.healthCheckFailCount = 0;
     this.healthCheckTimer = setInterval(async () => {
       if (!this._client) return;
       try {
         await this._client.health();
+        // 健康检查成功：重置失败计数，恢复状态
+        this.healthCheckFailCount = 0;
         if (this._state !== "running") {
+          this.outputChannel.appendLine("[恢复] 健康检查恢复正常");
           this.setState("running");
         }
       } catch {
-        if (this._state === "running") {
-          this.outputChannel.appendLine("[警告] 健康检查失败");
+        this.healthCheckFailCount++;
+        this.outputChannel.appendLine(
+          `[警告] 健康检查失败 (${this.healthCheckFailCount}/${ServerManager.HEALTH_FAIL_THRESHOLD})`
+        );
+        // 只有连续多次失败才标记为 error
+        if (
+          this.healthCheckFailCount >= ServerManager.HEALTH_FAIL_THRESHOLD &&
+          this._state === "running"
+        ) {
+          this.outputChannel.appendLine("[错误] 连续健康检查失败，标记为错误状态");
           this.setState("error");
         }
       }
@@ -325,23 +375,36 @@ export class ServerManager {
     const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     this._client = new OpenCodeClient(this._url, workspaceFolder);
 
-    try {
-      const health = await this._client.health();
-      this._version = health.version || "unknown";
-      this.outputChannel.appendLine(
-        `[连接成功] 版本: ${this._version}, 地址: ${this._url}`
-      );
+    // 带重试的连接检查
+    let lastError: Error | null = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        const health = await this._client.health();
+        this._version = health.version || "unknown";
+        this.outputChannel.appendLine(
+          `[连接成功] 版本: ${this._version}, 地址: ${this._url}`
+        );
 
-      this.setState("running");
-      this.startHealthCheck();
-      this._onReady.fire(this._client);
-      return this._client;
-    } catch (error: any) {
-      this._client.dispose();
-      this._client = null;
-      this.setState("error");
-      throw new Error(`无法连接到 ${this._url}: ${error.message}`);
+        this.setState("running");
+        this.healthCheckFailCount = 0;
+        this.startHealthCheck();
+        this._onReady.fire(this._client);
+        return this._client;
+      } catch (error: any) {
+        lastError = error;
+        this.outputChannel.appendLine(
+          `[连接] 第 ${attempt + 1} 次尝试失败: ${error.message}`
+        );
+        if (attempt < 4) {
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      }
     }
+
+    this._client.dispose();
+    this._client = null;
+    this.setState("error");
+    throw new Error(`无法连接到 ${this._url}: ${lastError?.message || "连接失败"}`);
   }
 
   async dispose(): Promise<void> {

@@ -7,21 +7,21 @@ import * as vscode from "vscode";
 import { ServerManager } from "./server";
 import { OpenCodeClient } from "./client";
 import { ChatViewProvider } from "./chatPanel";
-import { SessionTreeProvider, StatusTreeProvider, SettingsTreeProvider } from "./treeViews";
+import { SessionTreeProvider, StatusTreeProvider } from "./treeViews";
+import { SettingsPanel } from "./settingsPanel";
 
 let serverManager: ServerManager;
 let sessionProvider: SessionTreeProvider;
 let statusProvider: StatusTreeProvider;
-let settingsProvider: SettingsTreeProvider;
 let statusBarItem: vscode.StatusBarItem;
 let sseController: AbortController | null = null;
+let sseReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // ---- 初始化核心组件 ----
   serverManager = new ServerManager(context);
   sessionProvider = new SessionTreeProvider();
   statusProvider = new StatusTreeProvider();
-  settingsProvider = new SettingsTreeProvider();
 
   // ---- 注册 TreeView ----
   const chatViewProvider = new ChatViewProvider(context.extensionUri);
@@ -41,18 +41,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     treeDataProvider: statusProvider,
     showCollapseAll: true,
   });
-
-  const settingsTreeView = vscode.window.createTreeView("opencode.settings", {
-    treeDataProvider: settingsProvider,
-    showCollapseAll: false,
-  });
-
-  // 设置变更时刷新设置视图
-  vscode.workspace.onDidChangeConfiguration((e) => {
-    if (e.affectsConfiguration("opencode")) {
-      settingsProvider.refresh();
-    }
-  }, null, context.subscriptions);
 
   // ---- 状态栏 ----
   statusBarItem = vscode.window.createStatusBarItem(
@@ -74,6 +62,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     } else if (state === "stopped" || state === "error") {
       sseController?.abort();
       sseController = null;
+      if (sseReconnectTimer) {
+        clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = null;
+      }
     }
   });
 
@@ -88,23 +80,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   if (autoStart) {
     // 延迟启动，让 VSCode 先完成初始化
     setTimeout(async () => {
+      const config = vscode.workspace.getConfiguration("opencode");
+      const hostname = config.get<string>("server.hostname", "127.0.0.1");
+      const port = config.get<number>("server.port", 0);
+
+      // 策略：如果配置了固定端口，先尝试连接已有实例，避免重复启动
+      if (port > 0) {
+        const endpoint = `http://${hostname}:${port}`;
+        try {
+          await serverManager.connectToExisting(endpoint);
+          return; // 连接成功，无需启动新进程
+        } catch {
+          // 已有实例不可用，继续启动新进程
+        }
+      }
+
       try {
         await serverManager.start();
       } catch (error: any) {
-        const config = vscode.workspace.getConfiguration("opencode");
-        const hostname = config.get<string>("server.hostname", "127.0.0.1");
-        const port = config.get<number>("server.port", 0);
-
-        if (port > 0) {
-          const endpoint = `http://${hostname}:${port}`;
-          try {
-            await serverManager.connectToExisting(endpoint);
-            return;
-          } catch {
-            // 自动回退失败后再提示
-          }
-        }
-
         vscode.window.showWarningMessage(
           `OpenCode 服务器启动失败: ${error.message}。请确保 opencode 已安装。`
         );
@@ -138,13 +131,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     chatViewDisposable,
     sessionTreeView,
     statusTreeView,
-    settingsTreeView,
     statusBarItem,
     { dispose: () => serverManager.dispose() },
     { dispose: () => sessionProvider.dispose() },
     { dispose: () => statusProvider.dispose() },
-    { dispose: () => settingsProvider.dispose() },
-    { dispose: () => sseController?.abort() }
+    { dispose: () => {
+      sseController?.abort();
+      if (sseReconnectTimer) {
+        clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = null;
+      }
+    } }
   );
 }
 
@@ -163,12 +160,34 @@ function onServerReady(client: OpenCodeClient): void {
     ChatViewProvider.instance.setClient(client);
   }
 
-  // 订阅 SSE 事件
+  // 订阅 SSE 事件（带断线重连）
+  subscribeSSE(client);
+}
+
+/**
+ * 订阅 SSE 事件流，断线后自动重连
+ */
+function subscribeSSE(client: OpenCodeClient): void {
+  // 清理旧连接
   sseController?.abort();
+  sseController = null;
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer);
+    sseReconnectTimer = null;
+  }
+
   sseController = client.subscribeEvents(
     (event) => handleGlobalEvent(event),
     (error) => {
       console.error("OpenCode SSE 错误:", error);
+      // 仅在服务器仍运行时尝试重连
+      if (serverManager.state === "running") {
+        sseReconnectTimer = setTimeout(() => {
+          if (serverManager.state === "running" && serverManager.client) {
+            subscribeSSE(serverManager.client);
+          }
+        }, 3000);
+      }
     }
   );
 }
@@ -831,11 +850,13 @@ function registerCommands(context: vscode.ExtensionContext): void {
     }],
 
     // ---- 设置 ----
-    ["opencode.openSetting", (settingKey: string) => {
-      vscode.commands.executeCommand(
-        "workbench.action.openSettings",
-        settingKey
-      );
+    ["opencode.openSetting", (_settingKey: string) => {
+      // 旧命令兼容：统一打开设置面板
+      SettingsPanel.open();
+    }],
+
+    ["opencode.openSettings", () => {
+      SettingsPanel.open();
     }],
   ];
 
@@ -887,6 +908,10 @@ function showNotRunning(): void {
 export async function deactivate(): Promise<void> {
   sseController?.abort();
   sseController = null;
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer);
+    sseReconnectTimer = null;
+  }
   if (serverManager) {
     await serverManager.dispose();
   }

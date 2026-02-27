@@ -57,11 +57,6 @@
           "id": "opencode.status",
           "name": "服务状态",
           "type": "tree"
-        },
-        {
-          "id": "opencode.settings",
-          "name": "设置",
-          "type": "tree"
         }
       ]
     },
@@ -171,10 +166,20 @@
       {
         "command": "opencode.openSetting",
         "title": "OpenCode: 打开设置项"
+      },
+      {
+        "command": "opencode.openSettings",
+        "title": "OpenCode: 打开设置",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
       "view/title": [
+        {
+          "command": "opencode.openSettings",
+          "when": "view == opencode.chatView",
+          "group": "navigation@100"
+        },
         {
           "command": "opencode.newSession",
           "when": "view == opencode.sessions",

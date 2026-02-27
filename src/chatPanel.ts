@@ -128,8 +128,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this.extensionUri],
     };
 
-    webviewView.webview.html = this.getHtmlContent();
-
     // 监听来自 Webview 的消息
     webviewView.webview.onDidReceiveMessage(
       (msg) => this.handleWebviewMessage(msg),
@@ -142,6 +140,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.sseController?.abort();
       this.sseController = null;
     }, null, this.disposables);
+
+    // 在注入 HTML 前先绑定消息监听，避免丢失 webview 启动早期消息（如 ready）
+    webviewView.webview.html = this.getHtmlContent();
 
     // 如果已有 client，订阅 SSE 事件
     if (this.client) {
@@ -170,7 +171,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 如果 webview 已经就绪，触发初始化
     if (this._webviewReady) {
-      this.onWebviewReady().catch(() => {});
+      this.onWebviewReady().catch((err) => {
+        console.error("[OpenCode ChatPanel] onWebviewReady 异常:", err);
+      });
     }
   }
 
@@ -2274,6 +2277,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
+    // 立即通知后端 webview 已就绪（在任何其他初始化之前）
+    vscode.postMessage({ type: 'ready' });
+
     // 应用状态
     const state = {
       sessionId: null,
@@ -2673,7 +2679,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       init() {
         this.setupInput();
         this.setupButtons();
-        vscode.postMessage({ type: 'ready' });
+        // ready 消息已在脚本顶部提前发送
       },
 
       setupButtons() {
@@ -3398,7 +3404,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             // 只读工具输出可能很长，截断显示
             const outputStr = formatValue(part.state.output);
             if (outputStr.length > 2000) {
-              appendSection('输出（截断）', outputStr.slice(0, 2000) + '\n... (共 ' + outputStr.length + ' 字符)');
+              appendSection('输出（截断）', outputStr.slice(0, 2000) + '\\n... (共 ' + outputStr.length + ' 字符)');
             } else {
               appendSection('输出', part.state.output);
             }
@@ -4587,7 +4593,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
 
     // 启动
-    app.init();
+    try {
+      app.init();
+    } catch (e) {
+      console.error('[OpenCode Webview] app.init() 失败:', e);
+    }
   </script>
 </body>
 </html>`;
