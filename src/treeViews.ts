@@ -322,3 +322,64 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
     this._onDidChangeTreeData.dispose();
   }
 }
+
+/**
+ * 设置 TreeView Provider
+ * 在侧边栏显示 OpenCode 扩展的配置项入口
+ */
+
+class SettingItem extends vscode.TreeItem {
+  constructor(
+    label: string,
+    description: string,
+    public readonly settingKey: string
+  ) {
+    super(label, vscode.TreeItemCollapsibleState.None);
+    this.description = description;
+    this.iconPath = new vscode.ThemeIcon("settings-gear");
+    this.command = {
+      command: "opencode.openSetting",
+      title: "打开设置",
+      arguments: [settingKey],
+    };
+  }
+}
+
+/** 配置项映射表：key → 显示名称 */
+const SETTING_ENTRIES: Array<{ key: string; label: string }> = [
+  { key: "opencode.server.hostname", label: "服务器主机地址" },
+  { key: "opencode.server.port", label: "服务器端口" },
+  { key: "opencode.server.autoStart", label: "自动启动服务器" },
+  { key: "opencode.server.executablePath", label: "可执行文件路径" },
+  { key: "opencode.chat.fontSize", label: "聊天字体大小" },
+  { key: "opencode.chat.showTimestamps", label: "显示时间戳" },
+  { key: "opencode.chat.wordWrap", label: "自动换行" },
+  { key: "opencode.chat.toolCallsCollapsed", label: "工具调用默认折叠" },
+  { key: "opencode.chat.showDiffOnWrite", label: "写入时显示 Diff" },
+];
+
+export class SettingsTreeProvider implements vscode.TreeDataProvider<SettingItem> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<SettingItem | undefined>();
+  readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
+
+  refresh(): void {
+    this._onDidChangeTreeData.fire(undefined);
+  }
+
+  getTreeItem(element: SettingItem): vscode.TreeItem {
+    return element;
+  }
+
+  getChildren(): SettingItem[] {
+    const config = vscode.workspace.getConfiguration();
+    return SETTING_ENTRIES.map((entry) => {
+      const value = config.get(entry.key);
+      const desc = value == null ? "未设置" : String(value);
+      return new SettingItem(entry.label, desc, entry.key);
+    });
+  }
+
+  dispose(): void {
+    this._onDidChangeTreeData.dispose();
+  }
+}

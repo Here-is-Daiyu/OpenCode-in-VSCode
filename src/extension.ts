@@ -7,11 +7,12 @@ import * as vscode from "vscode";
 import { ServerManager } from "./server";
 import { OpenCodeClient } from "./client";
 import { ChatViewProvider } from "./chatPanel";
-import { SessionTreeProvider, StatusTreeProvider } from "./treeViews";
+import { SessionTreeProvider, StatusTreeProvider, SettingsTreeProvider } from "./treeViews";
 
 let serverManager: ServerManager;
 let sessionProvider: SessionTreeProvider;
 let statusProvider: StatusTreeProvider;
+let settingsProvider: SettingsTreeProvider;
 let statusBarItem: vscode.StatusBarItem;
 let sseController: AbortController | null = null;
 
@@ -20,6 +21,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   serverManager = new ServerManager(context);
   sessionProvider = new SessionTreeProvider();
   statusProvider = new StatusTreeProvider();
+  settingsProvider = new SettingsTreeProvider();
 
   // ---- 注册 TreeView ----
   const chatViewProvider = new ChatViewProvider(context.extensionUri);
@@ -39,6 +41,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     treeDataProvider: statusProvider,
     showCollapseAll: true,
   });
+
+  const settingsTreeView = vscode.window.createTreeView("opencode.settings", {
+    treeDataProvider: settingsProvider,
+    showCollapseAll: false,
+  });
+
+  // 设置变更时刷新设置视图
+  vscode.workspace.onDidChangeConfiguration((e) => {
+    if (e.affectsConfiguration("opencode")) {
+      settingsProvider.refresh();
+    }
+  }, null, context.subscriptions);
 
   // ---- 状态栏 ----
   statusBarItem = vscode.window.createStatusBarItem(
@@ -124,10 +138,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     chatViewDisposable,
     sessionTreeView,
     statusTreeView,
+    settingsTreeView,
     statusBarItem,
     { dispose: () => serverManager.dispose() },
     { dispose: () => sessionProvider.dispose() },
     { dispose: () => statusProvider.dispose() },
+    { dispose: () => settingsProvider.dispose() },
     { dispose: () => sseController?.abort() }
   );
 }
@@ -812,6 +828,14 @@ function registerCommands(context: vscode.ExtensionContext): void {
       } catch (error: any) {
         vscode.window.showErrorMessage(error.message);
       }
+    }],
+
+    // ---- 设置 ----
+    ["opencode.openSetting", (settingKey: string) => {
+      vscode.commands.executeCommand(
+        "workbench.action.openSettings",
+        settingKey
+      );
     }],
   ];
 

@@ -57,6 +57,11 @@
           "id": "opencode.status",
           "name": "服务状态",
           "type": "tree"
+        },
+        {
+          "id": "opencode.settings",
+          "name": "设置",
+          "type": "tree"
         }
       ]
     },
@@ -162,6 +167,10 @@
       {
         "command": "opencode.connectToEndpoint",
         "title": "OpenCode: 连接到指定服务器"
+      },
+      {
+        "command": "opencode.openSetting",
+        "title": "OpenCode: 打开设置项"
       }
     ],
     "menus": {
@@ -277,6 +286,16 @@
           "type": "boolean",
           "default": true,
           "description": "聊天消息自动换行"
+        },
+        "opencode.chat.toolCallsCollapsed": {
+          "type": "boolean",
+          "default": false,
+          "description": "工具调用默认折叠显示"
+        },
+        "opencode.chat.showDiffOnWrite": {
+          "type": "boolean",
+          "default": true,
+          "description": "写入工具完成后自动在编辑器中显示 Diff"
         }
       }
     }

@@ -139,6 +139,11 @@ export interface ProviderModel {
   providerID?: string;
   family?: string;
   status?: string;
+  limit?: { context?: number; output?: number };
+  capabilities?: {
+    input?: { image?: boolean };
+    reasoning?: boolean;
+  };
   [key: string]: any;
 }
 
@@ -291,10 +296,21 @@ export class OpenCodeClient {
       return error;
     }
     if (typeof error === "string") {
-      return new Error(error);
+      return new Error(error || "未知错误");
+    }
+    if (error && typeof error === "object") {
+      // 处理 { message: string } 或 { error: string } 等对象格式
+      const obj = error as Record<string, any>;
+      if (typeof obj.message === "string" && obj.message) {
+        return new Error(obj.message);
+      }
+      if (typeof obj.error === "string" && obj.error) {
+        return new Error(obj.error);
+      }
     }
     try {
-      return new Error(JSON.stringify(error));
+      const str = JSON.stringify(error);
+      return new Error(str && str !== "{}" ? str : "未知错误");
     } catch {
       return new Error("未知错误");
     }

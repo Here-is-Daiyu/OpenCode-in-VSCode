@@ -504,6 +504,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.openFile(msg.path, msg.line);
         break;
 
+      case "file:diff":
+        await this.showFileDiff(msg.path, msg.oldContent, msg.newContent);
+        break;
+
       case "todo:get":
         await this.sendTodoList();
         break;
@@ -518,6 +522,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       case "config:setReasoningEffort":
         await this.setReasoningEffort(msg.reasoningEffort);
+        break;
+
+      case "config:setAgent":
+        await this.setDefaultAgent(msg.agentID);
         break;
 
       case "copy":
@@ -562,6 +570,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!this.client) {
       return;
     }
+
+    // 发送扩展设置到 webview
+    this.sendSettings();
     
     // 发送初始数据
     await this.sendSessionList();
@@ -577,6 +588,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.sendTodoList(),
       ]);
     }
+  }
+
+  private sendSettings(): void {
+    const config = vscode.workspace.getConfiguration("opencode");
+    this.postMessage({
+      type: "settings:update",
+      settings: {
+        toolCallsCollapsed: config.get<boolean>("chat.toolCallsCollapsed", false),
+        showDiffOnWrite: config.get<boolean>("chat.showDiffOnWrite", true),
+      },
+    });
   }
 
   private async sendPrompt(
@@ -653,8 +675,129 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async sendCommand(command: string, args?: string): Promise<void> {
-    if (!this.currentSessionId || !this.client) return;
+    if (!this.client) return;
 
+    // 本地处理的命令：无需发给后端
+    switch (command) {
+      case "model":
+        // 触发模型选择器 UI
+        this.postMessage({ type: "selector:show", selector: "model" });
+        this.postMessage({ type: "command:done" });
+        return;
+      case "agent":
+        // 触发 Agent 选择器 UI
+        this.postMessage({ type: "selector:show", selector: "agent" });
+        this.postMessage({ type: "command:done" });
+        return;
+      case "new":
+        await this.createSession();
+        this.postMessage({ type: "command:done" });
+        return;
+      case "clear":
+        // 清除 UI 消息（不影响后端）
+        this.postMessage({ type: "messages:clear" });
+        this.postMessage({ type: "command:done" });
+        return;
+      case "fork":
+        await this.forkCurrentSession();
+        this.postMessage({ type: "command:done" });
+        return;
+      case "compact":
+        if (!this.currentSessionId) return;
+        try {
+          // compact 使用 summarize 端点
+          await this.client.summarizeSession(
+            this.currentSessionId,
+            args || "", // providerID（可选，空串让后端自动选择）
+            ""          // modelID（可选）
+          );
+          this.postMessage({ type: "info", message: "上下文已压缩" });
+          // 刷新消息
+          await this.refreshCurrentSession();
+        } catch (error: any) {
+          this.postMessage({
+            type: "error",
+            message: `压缩上下文失败: ${error?.message || String(error)}`,
+          });
+        }
+        this.postMessage({ type: "command:done" });
+        return;
+      case "share":
+        if (!this.currentSessionId) return;
+        try {
+          await this.client.shareSession(this.currentSessionId);
+          this.postMessage({ type: "info", message: "会话已分享" });
+        } catch (error: any) {
+          this.postMessage({
+            type: "error",
+            message: `分享失败: ${error?.message || String(error)}`,
+          });
+        }
+        this.postMessage({ type: "command:done" });
+        return;
+      case "unshare":
+        if (!this.currentSessionId) return;
+        try {
+          await this.client.unshareSession(this.currentSessionId);
+          this.postMessage({ type: "info", message: "已取消分享" });
+        } catch (error: any) {
+          this.postMessage({
+            type: "error",
+            message: `取消分享失败: ${error?.message || String(error)}`,
+          });
+        }
+        this.postMessage({ type: "command:done" });
+        return;
+      case "diff":
+        try {
+          await vscode.commands.executeCommand("opencode.viewDiff");
+        } catch (error: any) {
+          this.postMessage({
+            type: "error",
+            message: `查看 Diff 失败: ${error?.message || String(error)}`,
+          });
+        }
+        this.postMessage({ type: "command:done" });
+        return;
+      case "undo":
+        if (!this.currentSessionId) return;
+        try {
+          const messages = await this.client.listMessages(this.currentSessionId);
+          const lastAssistant = [...messages].reverse().find(
+            (m) => m.info.role === "assistant"
+          );
+          if (lastAssistant) {
+            await this.client.revertMessage(this.currentSessionId, lastAssistant.info.id);
+            this.postMessage({ type: "info", message: "已撤销最近的更改" });
+            await this.refreshCurrentSession();
+          } else {
+            this.postMessage({ type: "info", message: "没有可撤销的更改" });
+          }
+        } catch (error: any) {
+          this.postMessage({
+            type: "error",
+            message: `撤销失败: ${error?.message || String(error)}`,
+          });
+        }
+        this.postMessage({ type: "command:done" });
+        return;
+      case "redo":
+        if (!this.currentSessionId) return;
+        try {
+          await this.unrevertMessages();
+          this.postMessage({ type: "info", message: "已重做" });
+        } catch (error: any) {
+          this.postMessage({
+            type: "error",
+            message: `重做失败: ${error?.message || String(error)}`,
+          });
+        }
+        this.postMessage({ type: "command:done" });
+        return;
+    }
+
+    // 非本地命令：发给后端 API
+    if (!this.currentSessionId) return;
     try {
       const result = await this.client.sendCommand(this.currentSessionId, {
         command,
@@ -662,11 +805,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       });
       this.postMessage({ type: "command:result", result });
     } catch (error: any) {
+      const errMsg = error?.message || String(error) || "未知错误";
       this.postMessage({
         type: "error",
-        message: `命令执行失败: ${error.message}`,
+        message: `命令执行失败: ${errMsg}`,
       });
     }
+    this.postMessage({ type: "command:done" });
   }
 
   private async createSession(title?: string): Promise<void> {
@@ -846,6 +991,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private async setDefaultAgent(agentID: string): Promise<void> {
+    if (!this.client) return;
+    try {
+      await this.client.updateConfig({ default_agent: agentID });
+    } catch (error: any) {
+      this.postMessage({
+        type: "error",
+        message: `设置 Agent 失败: ${error.message}`,
+      });
+    }
+  }
+
   private async sendHealthStatus(): Promise<void> {
     if (!this.client) return;
     try {
@@ -941,6 +1098,47 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (error: any) {
       vscode.window.showErrorMessage(`无法打开文件: ${error.message}`);
+    }
+  }
+
+  private async showFileDiff(
+    filePath: string,
+    oldContent?: string,
+    newContent?: string
+  ): Promise<void> {
+    try {
+      const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri;
+      if (!workspaceFolder) return;
+
+      // 如果有 oldContent 和 newContent，展示内容 diff
+      if (oldContent != null && newContent != null) {
+        const oldUri = vscode.Uri.parse(
+          `untitled:${filePath}.原始`
+        );
+        const newUri = vscode.Uri.parse(
+          `untitled:${filePath}.修改后`
+        );
+        await vscode.commands.executeCommand(
+          "vscode.diff",
+          oldUri,
+          newUri,
+          `${filePath} (变更对比)`
+        );
+        return;
+      }
+
+      // 否则打开 git diff（如果有 git）
+      const fileUri = vscode.Uri.joinPath(workspaceFolder, filePath);
+      const gitUri = fileUri.with({ scheme: "git", query: "HEAD" });
+      await vscode.commands.executeCommand(
+        "vscode.diff",
+        gitUri,
+        fileUri,
+        `${filePath} (Git 变更)`
+      );
+    } catch (error: any) {
+      // 回退到直接打开文件
+      await this.openFile(filePath);
     }
   }
 
@@ -1353,6 +1551,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       font-size: 11px;
       color: var(--fg-secondary);
     }
+    .tool-actions {
+      display: flex;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .tool-action-btn {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: var(--accent);
+      color: var(--fg-primary);
+      cursor: pointer;
+      white-space: nowrap;
+      opacity: 0.85;
+      transition: opacity 0.15s;
+    }
+    .tool-action-btn:hover {
+      opacity: 1;
+    }
     .tool-body {
       border-top: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
       padding: 8px 10px;
@@ -1416,19 +1633,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .diff-line.del { background: rgba(255,0,0,0.1); color: var(--error); }
     .diff-line.hunk { color: var(--fg-secondary); font-style: italic; }
 
-    /* ---- 待办列表 ---- */
-    .todo-list { margin: 6px 0; }
+    /* ---- 底部待办面板 ---- */
+    .todo-panel {
+      display: none;
+      border-top: 1px solid var(--border);
+      background: var(--bg-secondary);
+      flex-shrink: 0;
+      max-height: 200px;
+      overflow: hidden;
+    }
+    .todo-panel.visible { display: block; }
+    .todo-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 12px;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--fg-secondary);
+      user-select: none;
+    }
+    .todo-panel-header:hover { color: var(--fg-primary); }
+    .todo-panel-toggle {
+      font-size: 10px;
+      transition: transform 0.15s ease;
+    }
+    .todo-panel.collapsed .todo-panel-toggle { transform: rotate(180deg); }
+    .todo-panel-body {
+      padding: 0 12px 6px;
+      overflow-y: auto;
+      max-height: 170px;
+    }
+    .todo-panel.collapsed .todo-panel-body { display: none; }
     .todo-item {
       display: flex;
       align-items: center;
       gap: 6px;
-      padding: 3px 0;
+      padding: 2px 0;
       font-size: 12px;
     }
-    .todo-status { width: 12px; text-align: center; }
+    .todo-status { width: 12px; text-align: center; flex-shrink: 0; }
     .todo-status.completed { color: var(--success); }
     .todo-status.in_progress { color: var(--warning); }
     .todo-status.pending { color: var(--fg-secondary); }
+    .todo-status.cancelled { color: var(--error); }
 
     /* ---- 状态指示 ---- */
     .status-bar {
@@ -1507,9 +1756,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       height: 8px;
       margin-top: -1px;
     }
-    .token-bar-segment[data-cat="tool_calls"] { background: #ec4899; }
+    .token-bar-segment[data-cat="input"] { background: #0ea5e9; }
+    .token-bar-segment[data-cat="output"] { background: #ec4899; }
     .token-bar-segment[data-cat="reasoning"] { background: #a855f7; }
-    .token-bar-segment[data-cat="user_input"] { background: #0ea5e9; }
+    .token-bar-segment[data-cat="cache"] { background: #f59e0b; }
     .token-bar-segment[data-cat="remaining"] { background: color-mix(in srgb, var(--fg-secondary) 18%, transparent); }
     .token-bar-segment::after {
       content: attr(data-tooltip);
@@ -1747,6 +1997,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     #modelSelect .custom-select-trigger {
       padding-right: 6px;
     }
+    #agentSelect {
+      min-width: 100px;
+      max-width: 180px;
+    }
+    #agentSelect .custom-select-trigger {
+      padding-right: 6px;
+    }
     #reasoningEffortSelect {
       min-width: 92px;
     }
@@ -1954,17 +2211,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span id="modelInfo">-</span>
   </div>
 
+  <!-- 底部 Todo 面板 -->
+  <div class="todo-panel" id="todoPanel">
+    <div class="todo-panel-header" id="todoPanelHeader">
+      <span class="todo-panel-title" id="todoPanelTitle">待办列表</span>
+      <span class="todo-panel-toggle" id="todoPanelToggle">▲</span>
+    </div>
+    <div class="todo-panel-body" id="todoPanelBody"></div>
+  </div>
+
   <!-- 输入区域 -->
   <div class="input-area">
     <div class="slash-popover" id="slashPopover"></div>
     <div class="input-toolbar">
       <div class="custom-select" id="agentSelect" title="选择 Agent">
         <div class="custom-select-trigger">
-          <span class="trigger-text">Agent</span>
+          <input class="custom-select-trigger-input" placeholder="搜索 Agent..." />
           <span class="arrow">▼</span>
         </div>
         <div class="custom-select-dropdown">
-          <input class="custom-select-search" placeholder="搜索 Agent（输入后匹配全部）..." />
           <div class="custom-select-options"></div>
         </div>
       </div>
@@ -2025,9 +2290,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       tokenCost: 0,
       contextLimit: 0,   // 当前模型的上下文窗口大小
       modelLimits: {},    // { 'provider/model': { context, output } }
-      modelCapabilities: {},  // { 'provider/model': { attachment, imageInput } }
+      modelCapabilities: {},  // { 'provider/model': { imageInput } }
       attachedImages: [],     // [ { dataUrl, filename } ]
       currentReasoningEffort: '',
+      // 设置
+      settings: { toolCallsCollapsed: false, showDiffOnWrite: true },
       // 代码高亮状态
       _hlIdCounter: 0,
       _pendingHighlights: [],
@@ -2375,11 +2642,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     });
 
     const agentSelectEl = new CustomSelect(document.getElementById('agentSelect'), {
+      searchInTrigger: true,
       onChange(val, opt) {
         // 选中后 trigger 只显示名称，不含描述
         const agent = (state.agents || []).find(a => a.id === val);
         if (agent) {
           agentSelectEl.setLabel(agent.name || agent.id);
+        }
+        // 通知后端设置默认 Agent
+        if (val) {
+          vscode.postMessage({ type: 'config:setAgent', agentID: val });
         }
       },
     });
@@ -2515,7 +2787,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const [providerID, modelID] = val.split('::');
         const key = providerID + '/' + modelID;
         const cap = state.modelCapabilities[key];
-        return cap && (cap.attachment || cap.imageInput);
+        return cap && cap.imageInput;
       },
 
       showToast(message) {
@@ -2945,11 +3217,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         };
 
-        const summarizeValue = (value) => {
+        const summarizeValue = (value, maxLen = 96) => {
           const text = formatValue(value).replace(/\s+/g, ' ').trim();
           if (!text) return '';
-          return text.length > 96 ? text.slice(0, 96) + '...' : text;
+          return text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
         };
+
+        // 解析输入为对象
+        const parseInput = (input) => {
+          if (input == null) return {};
+          if (typeof input === 'object') return input;
+          if (typeof input === 'string') {
+            try { return JSON.parse(input); } catch { return { raw: input }; }
+          }
+          return { raw: String(input) };
+        };
+
+        const toolName = (part.tool || part.name || 'tool').toLowerCase();
+
+        // ---- 工具分类 ----
+        const READONLY_TOOLS = ['read', 'read_file', 'glob', 'grep', 'search', 'list_directory', 'list_files', 'find_files'];
+        const WRITE_TOOLS = ['write', 'write_file', 'create_file', 'edit', 'edit_file', 'patch', 'replace', 'insert'];
+        const EXEC_TOOLS = ['bash', 'execute', 'shell', 'run_command'];
+
+        let toolCategory = 'generic';
+        if (READONLY_TOOLS.includes(toolName)) toolCategory = 'readonly';
+        else if (WRITE_TOOLS.includes(toolName)) toolCategory = 'write';
+        else if (EXEC_TOOLS.includes(toolName)) toolCategory = 'exec';
 
         const status = String(part.state?.status || 'running').toLowerCase();
         const normalizedStatus =
@@ -2962,8 +3256,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               : '执行中';
 
         const div = document.createElement('div');
-        div.className = 'tool-call tool-' + normalizedStatus;
+        div.className = 'tool-call tool-' + normalizedStatus + ' tool-cat-' + toolCategory;
+        // 未完成的工具默认展开；已完成的根据设置决定
         if (normalizedStatus !== 'completed') {
+          div.classList.add('expanded');
+        } else if (!state.settings.toolCallsCollapsed) {
           div.classList.add('expanded');
         }
 
@@ -2980,15 +3277,79 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         name.textContent = part.tool || part.name || 'tool';
         header.appendChild(name);
 
+        // ---- 按工具类型生成不同的摘要 ----
         const summary = document.createElement('span');
         summary.className = 'tool-summary';
-        summary.textContent =
-          normalizedStatus === 'error'
-            ? summarizeValue(part.state?.error) || '工具调用失败'
-            : summarizeValue(part.state?.output) ||
-              summarizeValue(part.state?.input) ||
-              (normalizedStatus === 'running' ? '等待输出...' : '无输出');
+        const inputObj = parseInput(part.state?.input);
+
+        if (toolCategory === 'readonly') {
+          // 只读工具：显示文件路径或搜索模式
+          const filePath = inputObj.path || inputObj.filePath || inputObj.file || inputObj.pattern || '';
+          summary.textContent = filePath
+            ? filePath
+            : summarizeValue(part.state?.input) || (normalizedStatus === 'running' ? '读取中...' : '');
+        } else if (toolCategory === 'write') {
+          // 写入工具：显示目标文件路径
+          const filePath = inputObj.path || inputObj.filePath || inputObj.file || '';
+          summary.textContent = filePath || summarizeValue(part.state?.input) || '';
+        } else if (toolCategory === 'exec') {
+          // 执行工具：显示命令
+          const cmd = inputObj.command || inputObj.cmd || '';
+          summary.textContent = cmd
+            ? (cmd.length > 80 ? cmd.slice(0, 80) + '...' : cmd)
+            : summarizeValue(part.state?.input) || '';
+        } else {
+          // 通用/MCP 工具
+          summary.textContent =
+            normalizedStatus === 'error'
+              ? summarizeValue(part.state?.error) || '工具调用失败'
+              : summarizeValue(part.state?.output) ||
+                summarizeValue(part.state?.input) ||
+                (normalizedStatus === 'running' ? '等待输出...' : '无输出');
+        }
         header.appendChild(summary);
+
+        // ---- 操作按钮区域 ----
+        const actions = document.createElement('span');
+        actions.className = 'tool-actions';
+
+        if (toolCategory === 'readonly' && normalizedStatus === 'completed') {
+          const filePath = inputObj.path || inputObj.filePath || inputObj.file || '';
+          if (filePath) {
+            const openBtn = document.createElement('span');
+            openBtn.className = 'tool-action-btn';
+            openBtn.textContent = '打开';
+            openBtn.title = '在编辑器中打开此文件';
+            openBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const line = inputObj.line || inputObj.offset || inputObj.startLine || 0;
+              vscode.postMessage({ type: 'file:open', path: filePath, line: Number(line) || 0 });
+            });
+            actions.appendChild(openBtn);
+          }
+        }
+
+        if (toolCategory === 'write' && normalizedStatus === 'completed') {
+          const filePath = inputObj.path || inputObj.filePath || inputObj.file || '';
+          if (filePath) {
+            const diffBtn = document.createElement('span');
+            diffBtn.className = 'tool-action-btn';
+            diffBtn.textContent = '查看 Diff';
+            diffBtn.title = '在编辑器中查看变更';
+            diffBtn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              vscode.postMessage({
+                type: 'file:diff',
+                path: filePath,
+                oldContent: inputObj.oldContent || inputObj.old_string || inputObj.oldString || '',
+                newContent: inputObj.newContent || inputObj.new_string || inputObj.newString || inputObj.content || '',
+              });
+            });
+            actions.appendChild(diffBtn);
+          }
+        }
+
+        header.appendChild(actions);
 
         const toggle = document.createElement('span');
         toggle.className = 'tool-toggle';
@@ -3024,12 +3385,71 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           body.appendChild(section);
         };
 
-        if (part.state?.input != null && part.state?.input !== '') {
-          appendSection('输入', part.state.input);
+        // ---- 按工具类型生成不同的详情内容 ----
+        if (toolCategory === 'readonly') {
+          // 只读工具：简洁展示，不展示大段输出
+          const filePath = inputObj.path || inputObj.filePath || inputObj.file || '';
+          const pattern = inputObj.pattern || inputObj.query || inputObj.regex || '';
+          if (filePath) appendSection('文件', filePath);
+          if (pattern) appendSection('模式', pattern);
+          if (inputObj.offset || inputObj.line) appendSection('行号', inputObj.offset || inputObj.line);
+          if (inputObj.limit) appendSection('行数', inputObj.limit);
+          if (part.state?.output != null && part.state?.output !== '') {
+            // 只读工具输出可能很长，截断显示
+            const outputStr = formatValue(part.state.output);
+            if (outputStr.length > 2000) {
+              appendSection('输出（截断）', outputStr.slice(0, 2000) + '\n... (共 ' + outputStr.length + ' 字符)');
+            } else {
+              appendSection('输出', part.state.output);
+            }
+          }
+        } else if (toolCategory === 'write') {
+          // 写入工具：显示文件路径和变更摘要
+          const filePath = inputObj.path || inputObj.filePath || inputObj.file || '';
+          if (filePath) appendSection('文件', filePath);
+          const oldStr = inputObj.oldContent || inputObj.old_string || inputObj.oldString || '';
+          const newStr = inputObj.newContent || inputObj.new_string || inputObj.newString || inputObj.content || '';
+          if (oldStr) appendSection('原内容', oldStr);
+          if (newStr) appendSection('新内容', newStr);
+          if (!oldStr && !newStr && part.state?.input != null) {
+            appendSection('输入', part.state.input);
+          }
+          if (part.state?.output != null && part.state?.output !== '') {
+            appendSection('输出', part.state.output);
+          }
+        } else if (toolCategory === 'exec') {
+          // 执行工具：显示命令和完整输出
+          const cmd = inputObj.command || inputObj.cmd || '';
+          if (cmd) appendSection('命令', cmd);
+          if (inputObj.workdir || inputObj.cwd) appendSection('工作目录', inputObj.workdir || inputObj.cwd);
+          if (part.state?.output != null && part.state?.output !== '') {
+            appendSection('输出', part.state.output);
+          }
+          if (!cmd && part.state?.input != null) {
+            appendSection('输入', part.state.input);
+          }
+        } else {
+          // 通用/MCP 工具：格式化显示输入参数
+          if (part.state?.input != null && part.state?.input !== '') {
+            if (typeof part.state.input === 'object') {
+              // 格式化显示每个参数
+              const entries = Object.entries(part.state.input);
+              if (entries.length > 0) {
+                for (const [key, val] of entries) {
+                  appendSection('参数: ' + key, val);
+                }
+              } else {
+                appendSection('输入', part.state.input);
+              }
+            } else {
+              appendSection('输入', part.state.input);
+            }
+          }
+          if (part.state?.output != null && part.state?.output !== '') {
+            appendSection('输出', part.state.output);
+          }
         }
-        if (part.state?.output != null && part.state?.output !== '') {
-          appendSection('输出', part.state.output);
-        }
+
         if (part.state?.error) {
           appendSection('错误', part.state.error, true);
         }
@@ -3525,12 +3945,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           percentEl.textContent = '';
         }
 
-        // 构建分段（桌面风格：工具调用 / 推理 / 用户输入 / 剩余）
+        // 构建分段：用户输入 / 模型输出 / 推理 / 缓存 / 剩余
+        const cacheTotal = cacheRead + cacheWrite;
         const remaining = (state.contextLimit > 0) ? Math.max(0, state.contextLimit - total) : 0;
         const segments = [
-          { key: 'tool_calls', label: '工具调用', value: output },
+          { key: 'input', label: '输入', value: input },
+          { key: 'output', label: '输出', value: output },
           { key: 'reasoning', label: '推理', value: reasoning },
-          { key: 'user_input', label: '用户输入', value: input },
+          { key: 'cache', label: '缓存', value: cacheTotal },
           { key: 'remaining', label: '剩余', value: remaining },
         ].filter(s => s.value > 0);
 
@@ -3788,28 +4210,78 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       renderTodos(todos) {
-        // 查找或创建 todo container
-        let container = document.getElementById('todoContainer');
-        if (!container) {
-          container = document.createElement('div');
-          container.id = 'todoContainer';
-          container.className = 'todo-list';
-          document.getElementById('messages').appendChild(container);
+        const panel = document.getElementById('todoPanel');
+        const body = document.getElementById('todoPanelBody');
+        const titleEl = document.getElementById('todoPanelTitle');
+        const header = document.getElementById('todoPanelHeader');
+
+        if (!todos || todos.length === 0) {
+          panel.classList.remove('visible');
+          state._currentTodos = [];
+          return;
         }
-        container.innerHTML = '<div style="font-size:12px;font-weight:600;margin-bottom:4px;">待办列表:</div>';
+
+        state._currentTodos = todos;
+
+        // 统计
+        const completed = todos.filter(t => t.status === 'completed').length;
+        const inProgress = todos.find(t => t.status === 'in_progress');
+        const total = todos.length;
+
+        panel.classList.add('visible');
+
+        // 折叠模式：只显示标题摘要
+        const isCollapsed = panel.classList.contains('collapsed');
+        if (isCollapsed && inProgress) {
+          titleEl.textContent = '待办 (' + completed + '/' + total + ') — ' + inProgress.content;
+        } else {
+          titleEl.textContent = '待办列表 (' + completed + '/' + total + ')';
+        }
+
+        // 渲染列表
+        body.innerHTML = '';
         for (const todo of todos) {
           const item = document.createElement('div');
           item.className = 'todo-item';
           const statusEl = document.createElement('span');
           statusEl.className = 'todo-status ' + (todo.status || 'pending');
           statusEl.textContent = todo.status === 'completed' ? '✓' :
-                                  todo.status === 'in_progress' ? '◌' : '○';
+                                  todo.status === 'in_progress' ? '◌' :
+                                  todo.status === 'cancelled' ? '✗' : '○';
           item.appendChild(statusEl);
           const text = document.createElement('span');
           text.textContent = todo.content;
           if (todo.status === 'completed') text.style.textDecoration = 'line-through';
+          if (todo.status === 'cancelled') {
+            text.style.textDecoration = 'line-through';
+            text.style.opacity = '0.5';
+          }
           item.appendChild(text);
-          container.appendChild(item);
+          body.appendChild(item);
+        }
+
+        // 绑定切换事件（只绑定一次）
+        if (!panel._toggleBound) {
+          panel._toggleBound = true;
+          header.addEventListener('click', () => {
+            panel.classList.toggle('collapsed');
+            // 更新折叠状态的标题（使用当前 state 中的 todos）
+            this.updateTodoPanelTitle();
+          });
+        }
+      },
+
+      updateTodoPanelTitle() {
+        const panel = document.getElementById('todoPanel');
+        const titleEl = document.getElementById('todoPanelTitle');
+        const todos = state._currentTodos || [];
+        const completed = todos.filter(t => t.status === 'completed').length;
+        const total = todos.length;
+        const inProgress = todos.find(t => t.status === 'in_progress');
+        if (panel.classList.contains('collapsed') && inProgress) {
+          titleEl.textContent = '待办 (' + completed + '/' + total + ') — ' + inProgress.content;
+        } else {
+          titleEl.textContent = '待办列表 (' + completed + '/' + total + ')';
         }
       },
 
@@ -3850,11 +4322,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     output: model.limit.output || 0,
                   };
                 }
-                // 收集模型的图片能力
-                const hasAttachment = !!model.attachment;
-                const hasImageInput = !!(model.modalities && model.modalities.input && model.modalities.input.includes('image'));
+                // 收集模型的图片能力（使用 capabilities.input.image）
+                const hasImageInput = !!(model.capabilities && model.capabilities.input && model.capabilities.input.image);
                 state.modelCapabilities[provider.id + '/' + model.id] = {
-                  attachment: hasAttachment,
                   imageInput: hasImageInput,
                 };
               }
@@ -4052,6 +4522,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
           app.setBusy(false);
           break;
+        case 'command:done':
+          app.setBusy(false);
+          break;
+        case 'messages:clear':
+          app.clearMessages();
+          app.resetTokenBar();
+          break;
+        case 'selector:show':
+          if (msg.selector === 'model') {
+            modelSelectEl.open();
+          } else if (msg.selector === 'agent') {
+            agentSelectEl.open();
+          }
+          break;
+        case 'info':
+          app.addMessageToUI({
+            info: { id: 'info-' + Date.now(), role: 'assistant', createdAt: new Date().toISOString() },
+            parts: [{ id: 'ip-' + Date.now(), type: 'text', text: 'ℹ️ ' + msg.message }],
+          });
+          break;
         case 'health:status':
           const dot = document.getElementById('statusDot');
           const txt = document.getElementById('statusText');
@@ -4077,6 +4567,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'highlight:result':
           app.applyHighlightResult(msg.id, msg.html);
+          break;
+        case 'settings:update':
+          if (msg.settings) {
+            Object.assign(state.settings, msg.settings);
+          }
           break;
         case 'todo:list':
           if (msg.todos) app.renderTodos(msg.todos);
