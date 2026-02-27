@@ -54,7 +54,7 @@ npm run watch     # 监听构建
 
 ## 设计约束
 
-- 不使用 `@opencode-ai/sdk`，统一走 `src/client.ts` 的轻量 HTTP 客户端
+- `src/client.ts` 基于 `@opencode-ai/sdk/client` 封装，SDK 未覆盖的端点通过 `rawRequest` 回退
 - Webview 使用严格 CSP（`script-src 'nonce-...'`），禁止内联事件处理器
 - 用户可见文案默认使用中文
 

@@ -449,7 +449,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case "prompt:sendAsync":
-        await this.sendPromptAsync(msg.text, msg.model, msg.agent);
+        await this.sendPromptAsync(msg.text, msg.model, msg.agent, msg.images);
         break;
 
       case "command:send":
@@ -609,7 +609,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async sendPromptAsync(
     text: string,
     model?: { providerID: string; modelID: string },
-    agent?: string
+    agent?: string,
+    images?: Array<{ dataUrl: string; filename: string; mediaType: string }>
   ): Promise<void> {
     if (!this.client) return;
     if (!this.currentSessionId) {
@@ -618,8 +619,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!this.currentSessionId) return;
 
     try {
+      const parts: Array<
+        | { type: "text"; text: string }
+        | { type: "file"; mediaType: string; filename: string; url: string }
+      > = [];
+      if (text) {
+        parts.push({ type: "text", text });
+      }
+      if (images && images.length > 0) {
+        for (const img of images) {
+          parts.push({
+            type: "file",
+            mediaType: img.mediaType,
+            filename: img.filename,
+            url: img.dataUrl,
+          });
+        }
+      }
+      if (parts.length === 0) {
+        parts.push({ type: "text", text: "" });
+      }
       await this.client.sendPromptAsync(this.currentSessionId, {
-        parts: [{ type: "text", text }],
+        parts,
         model,
         agent,
       });
@@ -878,7 +899,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       await this.client.revertMessage(this.currentSessionId, messageId, partId);
       await this.loadMessages(this.currentSessionId);
-      vscode.window.showInformationMessage("已撤销更改");
+      // 静默成功 — 不弹出通知
     } catch (error: any) {
       this.postMessage({
         type: "error",
@@ -892,7 +913,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       await this.client.unrevertMessages(this.currentSessionId);
       await this.loadMessages(this.currentSessionId);
-      vscode.window.showInformationMessage("已恢复更改");
+      // 静默成功 — 不弹出通知
     } catch (error: any) {
       this.postMessage({
         type: "error",
@@ -1066,22 +1087,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       align-items: center;
       gap: 8px;
     }
-    .message-role {
-      font-weight: 600;
-      font-size: 10px;
-      border-radius: 999px;
-      padding: 1px 7px;
-      background: color-mix(in srgb, var(--fg-secondary) 22%, transparent);
-      color: var(--fg-primary);
-    }
-    .message.user .message-role {
-      background: color-mix(in srgb, var(--accent) 24%, transparent);
-      color: color-mix(in srgb, var(--accent) 72%, var(--fg-primary));
-    }
-    .message.assistant .message-role {
-      background: color-mix(in srgb, var(--success) 22%, transparent);
-      color: color-mix(in srgb, var(--success) 75%, var(--fg-primary));
-    }
+    /* 角色标签已移除，通过消息容器 CSS 类名区分 user/assistant */
     .message-content { white-space: normal; }
     .message-content code {
       background: rgba(128,128,128,0.15);
@@ -1254,21 +1260,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .message-content a:hover {
       text-decoration: underline;
     }
-    .message-actions {
-      display: flex;
-      gap: 6px;
-      margin-top: 6px;
+    /* 内联操作按钮已移除，改为右键上下文菜单 */
+    .ctx-menu {
+      position: fixed;
+      z-index: 9999;
+      min-width: 120px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 0;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
     }
-    .msg-action-btn {
-      background: none;
-      border: none;
-      color: var(--fg-secondary);
+    .ctx-menu-item {
+      padding: 6px 14px;
+      font-size: 12px;
       cursor: pointer;
-      font-size: 11px;
-      padding: 2px 6px;
-      border-radius: 3px;
+      color: var(--fg-primary);
     }
-    .msg-action-btn:hover { background: rgba(128,128,128,0.2); color: var(--fg-primary); }
+    .ctx-menu-item:hover {
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+    }
 
     /* ---- 工具调用 ---- */
     .tool-call {
@@ -1496,11 +1507,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       height: 8px;
       margin-top: -1px;
     }
-    .token-bar-segment[data-cat="input"] { background: #0ea5e9; }
-    .token-bar-segment[data-cat="output"] { background: #ec4899; }
+    .token-bar-segment[data-cat="tool_calls"] { background: #ec4899; }
     .token-bar-segment[data-cat="reasoning"] { background: #a855f7; }
-    .token-bar-segment[data-cat="cache_read"] { background: var(--success); }
-    .token-bar-segment[data-cat="cache_write"] { background: var(--warning); }
+    .token-bar-segment[data-cat="user_input"] { background: #0ea5e9; }
+    .token-bar-segment[data-cat="remaining"] { background: color-mix(in srgb, var(--fg-secondary) 18%, transparent); }
     .token-bar-segment::after {
       content: attr(data-tooltip);
       position: absolute;
@@ -1532,6 +1542,60 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
       flex-shrink: 0;
+    }
+    #attachedImages {
+      display: none;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 6px;
+    }
+    .attached-image-thumb {
+      position: relative;
+      width: 48px;
+      height: 48px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .attached-image-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .attached-image-remove {
+      position: absolute;
+      top: -2px;
+      right: -2px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: var(--error);
+      color: #fff;
+      border: none;
+      font-size: 10px;
+      line-height: 16px;
+      text-align: center;
+      cursor: pointer;
+      padding: 0;
+    }
+    .webview-toast {
+      position: fixed;
+      bottom: 60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--bg-secondary);
+      color: var(--fg-primary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      z-index: 9999;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+      animation: toast-fade-in 0.2s ease;
+    }
+    @keyframes toast-fade-in {
+      from { opacity: 0; transform: translateX(-50%) translateY(8px); }
+      to { opacity: 1; transform: translateX(-50%) translateY(0); }
     }
     .input-toolbar {
       display: flex;
@@ -1652,6 +1716,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
     .custom-select-option.selected {
       background: color-mix(in srgb, var(--accent) 30%, transparent);
+    }
+    .custom-select-option.kb-highlight {
+      background: color-mix(in srgb, var(--accent) 18%, transparent);
+      outline: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+      outline-offset: -1px;
     }
     .custom-select-option.disabled {
       opacity: 0.5;
@@ -1956,6 +2025,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       tokenCost: 0,
       contextLimit: 0,   // 当前模型的上下文窗口大小
       modelLimits: {},    // { 'provider/model': { context, output } }
+      modelCapabilities: {},  // { 'provider/model': { attachment, imageInput } }
+      attachedImages: [],     // [ { dataUrl, filename } ]
       currentReasoningEffort: '',
       // 代码高亮状态
       _hlIdCounter: 0,
@@ -1983,6 +2054,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           : el.querySelector('.custom-select-search');
         this._options = [];  // { value, label, group, disabled }
         this._selectedLabel = '';
+        this._highlightIdx = -1;  // 方向键导航索引
         this.el.__customSelectInstance = this;
         if (!this.searchInTrigger && !this.showSearch) {
           this.el.classList.add('without-search');
@@ -2033,11 +2105,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               this.close();
               return;
             }
-            if (e.key === 'Enter') {
-              const selected = this.selectFirstVisibleOption();
-              if (selected) {
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              const visibleOpts = Array.from(
+                this.optionsContainer.querySelectorAll('.custom-select-option:not(.hidden):not(.disabled)')
+              );
+              if (visibleOpts.length === 0) return;
+              // 移除旧高亮
+              visibleOpts.forEach(o => o.classList.remove('kb-highlight'));
+              if (e.key === 'ArrowDown') {
+                this._highlightIdx = (this._highlightIdx + 1) % visibleOpts.length;
+              } else {
+                this._highlightIdx = (this._highlightIdx - 1 + visibleOpts.length) % visibleOpts.length;
+              }
+              const target = visibleOpts[this._highlightIdx];
+              if (target) {
+                target.classList.add('kb-highlight');
+                target.scrollIntoView({ block: 'nearest' });
+              }
+              return;
+            }
+            if (e.key === 'Enter' || e.key === 'Tab') {
+              // 优先选中键盘高亮项
+              const highlighted = this.optionsContainer.querySelector('.custom-select-option.kb-highlight');
+              if (highlighted) {
                 e.preventDefault();
+                highlighted.dispatchEvent(new MouseEvent('click', { bubbles: true }));
                 return;
+              }
+              // 兜底：选中第一个可见项
+              if (e.key === 'Enter') {
+                const selected = this.selectFirstVisibleOption();
+                if (selected) {
+                  e.preventDefault();
+                  return;
+                }
               }
             }
           });
@@ -2198,6 +2300,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
 
       applyFilter(rawText) {
+        this._highlightIdx = -1;  // 重置键盘导航索引
         const keywords = this.parseKeywords(rawText);
         if (this.onSearchTermChange) {
           this.onSearchTermChange(keywords.join(' '), keywords);
@@ -2271,7 +2374,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
     });
 
-    const agentSelectEl = new CustomSelect(document.getElementById('agentSelect'));
+    const agentSelectEl = new CustomSelect(document.getElementById('agentSelect'), {
+      onChange(val, opt) {
+        // 选中后 trigger 只显示名称，不含描述
+        const agent = (state.agents || []).find(a => a.id === val);
+        if (agent) {
+          agentSelectEl.setLabel(agent.name || agent.id);
+        }
+      },
+    });
 
     const reasoningEffortSelectEl = new CustomSelect(
       document.getElementById('reasoningEffortSelect'),
@@ -2353,7 +2464,107 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           this.slashDetect(input.value);
         });
 
+        // 粘贴事件：优先文本，图片作为附件
+        input.addEventListener('paste', (e) => {
+          const clipboardData = e.clipboardData;
+          if (!clipboardData) return;
+
+          // 如果剪贴板有纯文本，让浏览器默认处理
+          const text = clipboardData.getData('text/plain');
+          if (text) return;
+
+          // 检查图片文件
+          const items = Array.from(clipboardData.items || []);
+          for (const item of items) {
+            if (item.type.startsWith('image/')) {
+              e.preventDefault();
+
+              // 检查当前模型是否支持图片
+              if (!this.currentModelSupportsImage()) {
+                this.showToast('当前模型不支持图片输入');
+                return;
+              }
+
+              const file = item.getAsFile();
+              if (!file) return;
+
+              const reader = new FileReader();
+              reader.onload = () => {
+                const dataUrl = reader.result;
+                if (typeof dataUrl === 'string') {
+                  state.attachedImages.push({
+                    dataUrl,
+                    filename: 'clipboard-' + Date.now() + '.' + (item.type.split('/')[1] || 'png'),
+                    mediaType: item.type,
+                  });
+                  this.renderAttachedImages();
+                }
+              };
+              reader.readAsDataURL(file);
+              return;
+            }
+          }
+        });
+
         this.syncInputHeight();
+      },
+
+      currentModelSupportsImage() {
+        const val = modelSelectEl.value;
+        if (!val) return false;
+        const [providerID, modelID] = val.split('::');
+        const key = providerID + '/' + modelID;
+        const cap = state.modelCapabilities[key];
+        return cap && (cap.attachment || cap.imageInput);
+      },
+
+      showToast(message) {
+        // 简易 toast 提示
+        let toast = document.querySelector('.webview-toast');
+        if (toast) toast.remove();
+        toast = document.createElement('div');
+        toast.className = 'webview-toast';
+        toast.textContent = message;
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      },
+
+      renderAttachedImages() {
+        let container = document.getElementById('attachedImages');
+        if (!container) {
+          container = document.createElement('div');
+          container.id = 'attachedImages';
+          const inputArea = document.querySelector('.input-area');
+          if (inputArea) {
+            inputArea.insertBefore(container, inputArea.firstChild);
+          }
+        }
+        container.innerHTML = '';
+        if (state.attachedImages.length === 0) {
+          container.style.display = 'none';
+          return;
+        }
+        container.style.display = 'flex';
+        for (let i = 0; i < state.attachedImages.length; i++) {
+          const img = state.attachedImages[i];
+          const wrapper = document.createElement('div');
+          wrapper.className = 'attached-image-thumb';
+
+          const imgEl = document.createElement('img');
+          imgEl.src = img.dataUrl;
+          wrapper.appendChild(imgEl);
+
+          const removeBtn = document.createElement('button');
+          removeBtn.className = 'attached-image-remove';
+          removeBtn.textContent = '×';
+          removeBtn.addEventListener('click', () => {
+            state.attachedImages.splice(i, 1);
+            this.renderAttachedImages();
+          });
+          wrapper.appendChild(removeBtn);
+
+          container.appendChild(wrapper);
+        }
       },
 
       syncInputHeight() {
@@ -2498,7 +2709,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       send() {
         const input = document.getElementById('promptInput');
         const text = input.value.trim();
-        if (!text) return;
+        if (!text && state.attachedImages.length === 0) return;
 
         // 检查是否是命令
         if (text.startsWith('/')) {
@@ -2509,9 +2720,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         } else {
           const model = this.getSelectedModel();
           const agent = this.getSelectedAgent();
-          vscode.postMessage({ type: 'prompt:sendAsync', text, model, agent });
+          // 收集图片附件
+          const images = state.attachedImages.map(img => ({
+            dataUrl: img.dataUrl,
+            filename: img.filename,
+            mediaType: img.mediaType,
+          }));
+          vscode.postMessage({ type: 'prompt:sendAsync', text: text || '', model, agent, images });
 
           // 立即显示用户消息
+          const uiParts = [];
+          if (text) uiParts.push({ id: 'p1', type: 'text', text });
+          for (let i = 0; i < images.length; i++) {
+            uiParts.push({ id: 'pimg' + i, type: 'file', mediaType: images[i].mediaType, filename: images[i].filename, url: images[i].dataUrl });
+          }
           this.addMessageToUI({
             info: {
               id: 'temp-' + Date.now(),
@@ -2519,8 +2741,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               role: 'user',
               createdAt: new Date().toISOString(),
             },
-            parts: [{ id: 'p1', type: 'text', text }],
+            parts: uiParts.length > 0 ? uiParts : [{ id: 'p1', type: 'text', text: '' }],
           });
+          // 清空附件
+          state.attachedImages = [];
+          this.renderAttachedImages();
         }
 
         input.value = '';
@@ -2590,11 +2815,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 元信息
         const meta = document.createElement('div');
         meta.className = 'message-meta';
-        const roleSpan = document.createElement('span');
-        roleSpan.className = 'message-role';
-        roleSpan.textContent = info.role === 'user' ? '你' : 'AI';
-        meta.appendChild(roleSpan);
-
         if (info.model || (info.providerID && info.modelID)) {
           const model = info.model || { providerID: info.providerID, modelID: info.modelID };
           const modelSpan = document.createElement('span');
@@ -2624,28 +2844,54 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           div.appendChild(errDiv);
         }
 
-        // 操作按钮
+        // 右键上下文菜单（替代内联操作按钮）
         if (info.role === 'assistant') {
-          const actions = document.createElement('div');
-          actions.className = 'message-actions';
+          div.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            // 移除已存在的上下文菜单
+            document.querySelectorAll('.ctx-menu').forEach(m => m.remove());
 
-          const copyBtn = this.createActionBtn('复制', () => {
-            const text = parts.filter(p => p.type === 'text').map(p => p.text).join('\\n');
-            vscode.postMessage({ type: 'copy', text });
+            const menu = document.createElement('div');
+            menu.className = 'ctx-menu';
+            menu.style.left = e.clientX + 'px';
+            menu.style.top = e.clientY + 'px';
+
+            const items = [
+              { label: '复制', action: () => {
+                const text = parts.filter(p => p.type === 'text').map(p => p.text).join('\\n');
+                vscode.postMessage({ type: 'copy', text });
+              }},
+              { label: '撤销', action: () => {
+                vscode.postMessage({ type: 'session:revert', messageId: info.id });
+              }},
+              { label: '分叉', action: () => {
+                vscode.postMessage({ type: 'session:fork', messageId: info.id });
+              }},
+            ];
+
+            for (const item of items) {
+              const menuItem = document.createElement('div');
+              menuItem.className = 'ctx-menu-item';
+              menuItem.textContent = item.label;
+              menuItem.addEventListener('click', () => {
+                menu.remove();
+                item.action();
+              });
+              menu.appendChild(menuItem);
+            }
+
+            document.body.appendChild(menu);
+
+            // 点击其他地方关闭菜单
+            const closeMenu = (ev) => {
+              if (!menu.contains(ev.target)) {
+                menu.remove();
+                document.removeEventListener('click', closeMenu, true);
+              }
+            };
+            setTimeout(() => document.addEventListener('click', closeMenu, true), 0);
           });
-          actions.appendChild(copyBtn);
-
-          const revertBtn = this.createActionBtn('撤销', () => {
-            vscode.postMessage({ type: 'session:revert', messageId: info.id });
-          });
-          actions.appendChild(revertBtn);
-
-          const forkBtn = this.createActionBtn('分叉', () => {
-            vscode.postMessage({ type: 'session:fork', messageId: info.id });
-          });
-          actions.appendChild(forkBtn);
-
-          div.appendChild(actions);
         }
 
         return div;
@@ -2857,13 +3103,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return div;
       },
 
-      createActionBtn(label, onclick) {
-        const btn = document.createElement('button');
-        btn.className = 'msg-action-btn';
-        btn.textContent = label;
-        btn.onclick = onclick;
-        return btn;
-      },
+
 
       // ---- 完整 Markdown 渲染 ----
 
@@ -3285,13 +3525,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           percentEl.textContent = '';
         }
 
-        // 构建分段
+        // 构建分段（桌面风格：工具调用 / 推理 / 用户输入 / 剩余）
+        const remaining = (state.contextLimit > 0) ? Math.max(0, state.contextLimit - total) : 0;
         const segments = [
-          { key: 'input', label: '输入', value: input },
-          { key: 'output', label: '输出', value: output },
+          { key: 'tool_calls', label: '工具调用', value: output },
           { key: 'reasoning', label: '推理', value: reasoning },
-          { key: 'cache_read', label: '缓存读取', value: cacheRead },
-          { key: 'cache_write', label: '缓存写入', value: cacheWrite },
+          { key: 'user_input', label: '用户输入', value: input },
+          { key: 'remaining', label: '剩余', value: remaining },
         ].filter(s => s.value > 0);
 
         const segmentTotal = segments.reduce((sum, s) => sum + s.value, 0);
@@ -3427,12 +3667,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               if (msgEl) {
                 const newPartEl = this.renderPart(data, {});
                 newPartEl.dataset.partId = data.id;
-                const actions = msgEl.querySelector('.message-actions');
-                if (actions && actions.parentNode === msgEl) {
-                  msgEl.insertBefore(newPartEl, actions);
-                } else {
-                  msgEl.appendChild(newPartEl);
-                }
+                msgEl.appendChild(newPartEl);
               }
             }
 
@@ -3484,12 +3719,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                 if (msgEl) {
                   const newPartEl = this.renderPart({ id: data.id, type: 'text', text: updatedText }, {});
                   newPartEl.dataset.partId = data.id;
-                  const actions = msgEl.querySelector('.message-actions');
-                  if (actions && actions.parentNode === msgEl) {
-                    msgEl.insertBefore(newPartEl, actions);
-                  } else {
-                    msgEl.appendChild(newPartEl);
-                  }
+                  msgEl.appendChild(newPartEl);
                 }
               }
             }
@@ -3620,6 +3850,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     output: model.limit.output || 0,
                   };
                 }
+                // 收集模型的图片能力
+                const hasAttachment = !!model.attachment;
+                const hasImageInput = !!(model.modalities && model.modalities.input && model.modalities.input.includes('image'));
+                state.modelCapabilities[provider.id + '/' + model.id] = {
+                  attachment: hasAttachment,
+                  imageInput: hasImageInput,
+                };
               }
             }
             groups.push({ label: '已连接', options: opts });
@@ -3723,7 +3960,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           const found = visibleAgents.find(a => a.id === defaultAgent);
           if (found) {
             agentSelectEl.setValue(defaultAgent);
-            agentSelectEl.setLabel((found.name || found.id) + (found.description ? ' - ' + found.description : ''));
+            agentSelectEl.setLabel((found.name || found.id));
           }
         } else {
           agentSelectEl.setValue('');

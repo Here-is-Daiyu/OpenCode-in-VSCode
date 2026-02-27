@@ -1,9 +1,9 @@
 /**
- * OpenCode API 客户端 - 封装所有 HTTP REST API 调用
- * 直接使用 fetch 而不依赖 SDK，保持扩展轻量
+ * OpenCode API 客户端 - 基于 @opencode-ai/sdk 的兼容适配层
+ * 对外保留原有 OpenCodeClient 方法签名，尽量减少上层改动。
  */
 
-import * as vscode from "vscode";
+import { createOpencodeClient, type OpencodeClient as SDKClient } from "@opencode-ai/sdk/client";
 
 // ============================================================
 // 类型定义
@@ -252,11 +252,13 @@ export interface SSEEvent {
 export class OpenCodeClient {
   private baseUrl: string;
   private directory: string;
+  private sdk: SDKClient;
   private abortControllers: Set<AbortController> = new Set();
 
   constructor(baseUrl: string, directory?: string) {
     this.baseUrl = baseUrl.replace(/\/$/, "");
     this.directory = directory || "";
+    this.sdk = this.createSdkClient();
   }
 
   get url(): string {
@@ -265,6 +267,7 @@ export class OpenCodeClient {
 
   updateBaseUrl(url: string): void {
     this.baseUrl = url.replace(/\/$/, "");
+    this.sdk = this.createSdkClient();
   }
 
   dispose(): void {
@@ -272,6 +275,60 @@ export class OpenCodeClient {
       controller.abort();
     }
     this.abortControllers.clear();
+  }
+
+  private createSdkClient(): SDKClient {
+    return createOpencodeClient({
+      baseUrl: this.baseUrl,
+      directory: this.directory || undefined,
+      responseStyle: "data",
+      throwOnError: true,
+    });
+  }
+
+  private toError(error: unknown): Error {
+    if (error instanceof Error) {
+      return error;
+    }
+    if (typeof error === "string") {
+      return new Error(error);
+    }
+    try {
+      return new Error(JSON.stringify(error));
+    } catch {
+      return new Error("未知错误");
+    }
+  }
+
+  private async withAbort<T>(operation: (signal: AbortSignal) => Promise<T>): Promise<T> {
+    const controller = new AbortController();
+    this.abortControllers.add(controller);
+    try {
+      return await operation(controller.signal);
+    } finally {
+      this.abortControllers.delete(controller);
+    }
+  }
+
+  private unwrapSdkResult<T>(result: any): T {
+    if (
+      result &&
+      typeof result === "object" &&
+      "request" in result &&
+      "response" in result &&
+      ("data" in result || "error" in result)
+    ) {
+      if (result.error !== undefined && result.error !== null) {
+        throw this.toError(result.error);
+      }
+      return result.data as T;
+    }
+    return result as T;
+  }
+
+  private async sdkCall<T>(operation: (signal: AbortSignal) => Promise<any>): Promise<T> {
+    const result = await this.withAbort((signal) => operation(signal));
+    return this.unwrapSdkResult<T>(result);
   }
 
   private getHeaders(): Record<string, string> {
@@ -284,27 +341,24 @@ export class OpenCodeClient {
     return headers;
   }
 
-  private async request<T>(
+  private async rawRequest<T>(
     method: string,
     path: string,
     body?: any,
     query?: Record<string, string>
   ): Promise<T> {
-    let url = `${this.baseUrl}${path}`;
-    if (query) {
-      const params = new URLSearchParams(query);
-      url += `?${params.toString()}`;
-    }
+    return this.withAbort(async (signal) => {
+      let url = `${this.baseUrl}${path}`;
+      if (query && Object.keys(query).length > 0) {
+        const params = new URLSearchParams(query);
+        url += `?${params.toString()}`;
+      }
 
-    const controller = new AbortController();
-    this.abortControllers.add(controller);
-
-    try {
       const response = await fetch(url, {
         method,
         headers: this.getHeaders(),
         body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
+        signal,
       });
 
       if (!response.ok) {
@@ -312,7 +366,6 @@ export class OpenCodeClient {
         throw new Error(`API 错误 ${response.status}: ${response.statusText} - ${errorBody}`);
       }
 
-      // 204 无内容
       if (response.status === 204) {
         return undefined as T;
       }
@@ -321,107 +374,245 @@ export class OpenCodeClient {
       if (contentType.includes("application/json")) {
         return (await response.json()) as T;
       }
-
       return (await response.text()) as unknown as T;
-    } finally {
-      this.abortControllers.delete(controller);
+    });
+  }
+
+  private toModelString(model?: { providerID: string; modelID: string }): string | undefined {
+    if (!model?.providerID || !model?.modelID) {
+      return undefined;
     }
+    return `${model.providerID}/${model.modelID}`;
+  }
+
+  private toToolsMap(tools?: string[]): Record<string, boolean> | undefined {
+    if (!tools || tools.length === 0) {
+      return undefined;
+    }
+    return Object.fromEntries(tools.map((tool) => [tool, true]));
+  }
+
+  private mapPromptBody(body: PromptBody): Record<string, any> {
+    const mapped: Record<string, any> = {
+      ...body,
+      tools: this.toToolsMap(body.tools),
+    };
+    if (!mapped.tools) {
+      delete mapped.tools;
+    }
+    return mapped;
+  }
+
+  private normalizePermissionResponse(
+    response: string,
+    remember?: boolean
+  ): "once" | "always" | "reject" {
+    if (response === "deny" || response === "reject") {
+      return "reject";
+    }
+    return remember ? "always" : "once";
+  }
+
+  private normalizeFindText(results: any[]): TextSearchResult[] {
+    return (results || []).map((item) => {
+      const submatches = Array.isArray(item?.submatches)
+        ? item.submatches.map((sub: any) => ({
+            match:
+              typeof sub?.match === "string"
+                ? sub.match
+                : typeof sub?.match?.text === "string"
+                  ? sub.match.text
+                  : "",
+            start: Number(sub?.start ?? 0),
+            end: Number(sub?.end ?? 0),
+          }))
+        : [];
+      return {
+        path:
+          typeof item?.path === "string"
+            ? item.path
+            : typeof item?.path?.text === "string"
+              ? item.path.text
+              : "",
+        lines:
+          typeof item?.lines === "string"
+            ? item.lines
+            : typeof item?.lines?.text === "string"
+              ? item.lines.text
+              : "",
+        line_number: Number(item?.line_number ?? 0),
+        absolute_offset: Number(item?.absolute_offset ?? 0),
+        submatches,
+      };
+    });
+  }
+
+  private normalizeSymbols(symbols: any[]): SymbolInfo[] {
+    return (symbols || []).map((symbol) => {
+      const uri = String(symbol?.location?.uri ?? "");
+      let path = uri;
+      if (uri.startsWith("file://")) {
+        try {
+          const url = new URL(uri);
+          path = decodeURIComponent(url.pathname);
+          if (/^\/[A-Za-z]:\//.test(path)) {
+            path = path.slice(1);
+          }
+        } catch {
+          path = uri.replace(/^file:\/\//, "");
+        }
+      }
+      return {
+        name: String(symbol?.name ?? ""),
+        kind: String(symbol?.kind ?? ""),
+        location: {
+          path,
+          range: {
+            start: {
+              line: Number(symbol?.location?.range?.start?.line ?? 0),
+              character: Number(symbol?.location?.range?.start?.character ?? 0),
+            },
+            end: {
+              line: Number(symbol?.location?.range?.end?.line ?? 0),
+              character: Number(symbol?.location?.range?.end?.character ?? 0),
+            },
+          },
+        },
+      };
+    });
+  }
+
+  private normalizeFileContent(file: any): FileContent {
+    if (typeof file?.diff === "string" && file.diff.length > 0) {
+      return {
+        type: "patch",
+        content: file.diff,
+      };
+    }
+    return {
+      type: "raw",
+      content: typeof file?.content === "string" ? file.content : "",
+    };
+  }
+
+  private normalizeSSEEvent(payload: unknown): SSEEvent {
+    if (!payload || typeof payload !== "object") {
+      return {
+        type: "raw",
+        properties: { data: payload },
+      };
+    }
+    const data = payload as Record<string, any>;
+    return {
+      type: typeof data.type === "string" ? data.type : "unknown",
+      properties:
+        data.properties && typeof data.properties === "object"
+          ? (data.properties as Record<string, any>)
+          : data,
+    };
   }
 
   // ---- Global ----
 
   async health(): Promise<HealthInfo> {
-    return this.request<HealthInfo>("GET", "/global/health");
+    // SDK 当前不暴露 /global/health，保留轻量回退。
+    return this.rawRequest<HealthInfo>("GET", "/global/health");
   }
 
   // ---- Project ----
 
   async listProjects(): Promise<Project[]> {
-    return this.request<Project[]>("GET", "/project");
+    return this.sdkCall<Project[]>((signal) => this.sdk.project.list({ signal }));
   }
 
   async currentProject(): Promise<Project> {
-    return this.request<Project>("GET", "/project/current");
+    return this.sdkCall<Project>((signal) => this.sdk.project.current({ signal }));
   }
 
   // ---- Config ----
 
   async getConfig(): Promise<Record<string, any>> {
-    return this.request<Record<string, any>>("GET", "/config");
+    return this.sdkCall<Record<string, any>>((signal) => this.sdk.config.get({ signal }));
   }
 
   async updateConfig(config: Record<string, any>): Promise<Record<string, any>> {
-    return this.request<Record<string, any>>("PATCH", "/config", config);
+    return this.sdkCall<Record<string, any>>((signal) =>
+      this.sdk.config.update({ body: config, signal })
+    );
   }
 
   async getProviders(): Promise<ProvidersInfo> {
-    return this.request<ProvidersInfo>("GET", "/provider");
+    return this.sdkCall<ProvidersInfo>((signal) => this.sdk.provider.list({ signal }));
   }
 
   async getProviderAuth(): Promise<Record<string, any[]>> {
-    return this.request<Record<string, any[]>>("GET", "/provider/auth");
+    return this.sdkCall<Record<string, any[]>>((signal) => this.sdk.provider.auth({ signal }));
   }
 
   async getConfigProviders(): Promise<ConfigProviders> {
-    return this.request<ConfigProviders>("GET", "/config/providers");
+    return this.sdkCall<ConfigProviders>((signal) => this.sdk.config.providers({ signal }));
   }
 
   // ---- Sessions ----
 
   async listSessions(): Promise<Session[]> {
-    return this.request<Session[]>("GET", "/session");
+    return this.sdkCall<Session[]>((signal) => this.sdk.session.list({ signal }));
   }
 
   async getSession(id: string): Promise<Session> {
-    return this.request<Session>("GET", `/session/${id}`);
+    return this.sdkCall<Session>((signal) => this.sdk.session.get({ path: { id }, signal }));
   }
 
   async createSession(title?: string, parentID?: string): Promise<Session> {
-    return this.request<Session>("POST", "/session", { title, parentID });
+    return this.sdkCall<Session>((signal) =>
+      this.sdk.session.create({ body: { title, parentID }, signal })
+    );
   }
 
   async deleteSession(id: string): Promise<boolean> {
-    return this.request<boolean>("DELETE", `/session/${id}`);
+    return this.sdkCall<boolean>((signal) => this.sdk.session.delete({ path: { id }, signal }));
   }
 
   async updateSession(id: string, title: string): Promise<Session> {
-    return this.request<Session>("PATCH", `/session/${id}`, { title });
+    return this.sdkCall<Session>((signal) =>
+      this.sdk.session.update({ path: { id }, body: { title }, signal })
+    );
   }
 
   async getSessionStatus(): Promise<SessionStatusMap> {
-    return this.request<SessionStatusMap>("GET", "/session/status");
+    return this.sdkCall<SessionStatusMap>((signal) => this.sdk.session.status({ signal }));
   }
 
   async getSessionChildren(id: string): Promise<Session[]> {
-    return this.request<Session[]>("GET", `/session/${id}/children`);
+    return this.sdkCall<Session[]>((signal) => this.sdk.session.children({ path: { id }, signal }));
   }
 
   async getSessionTodo(id: string): Promise<TodoItem[]> {
-    return this.request<TodoItem[]>("GET", `/session/${id}/todo`);
+    return this.sdkCall<TodoItem[]>((signal) => this.sdk.session.todo({ path: { id }, signal }));
   }
 
   async forkSession(id: string, messageID?: string): Promise<Session> {
-    return this.request<Session>("POST", `/session/${id}/fork`, { messageID });
+    return this.sdkCall<Session>((signal) =>
+      this.sdk.session.fork({ path: { id }, body: { messageID }, signal })
+    );
   }
 
   async abortSession(id: string): Promise<boolean> {
-    return this.request<boolean>("POST", `/session/${id}/abort`);
+    return this.sdkCall<boolean>((signal) => this.sdk.session.abort({ path: { id }, signal }));
   }
 
   async shareSession(id: string): Promise<Session> {
-    return this.request<Session>("POST", `/session/${id}/share`);
+    return this.sdkCall<Session>((signal) => this.sdk.session.share({ path: { id }, signal }));
   }
 
   async unshareSession(id: string): Promise<Session> {
-    return this.request<Session>("DELETE", `/session/${id}/share`);
+    return this.sdkCall<Session>((signal) => this.sdk.session.unshare({ path: { id }, signal }));
   }
 
   async getSessionDiff(id: string, messageID?: string): Promise<FileDiff[]> {
-    const query: Record<string, string> = {};
-    if (messageID) {
-      query.messageID = messageID;
-    }
-    return this.request<FileDiff[]>("GET", `/session/${id}/diff`, undefined, query);
+    return this.sdkCall<FileDiff[]>((signal) =>
+      this.sdk.session.diff({ path: { id }, query: { messageID }, signal })
+    );
   }
 
   async summarizeSession(
@@ -429,10 +620,13 @@ export class OpenCodeClient {
     providerID: string,
     modelID: string
   ): Promise<boolean> {
-    return this.request<boolean>("POST", `/session/${id}/summarize`, {
-      providerID,
-      modelID,
-    });
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.session.summarize({
+        path: { id },
+        body: { providerID, modelID },
+        signal,
+      })
+    );
   }
 
   async initSession(
@@ -441,11 +635,13 @@ export class OpenCodeClient {
     providerID: string,
     modelID: string
   ): Promise<boolean> {
-    return this.request<boolean>("POST", `/session/${id}/init`, {
-      messageID,
-      providerID,
-      modelID,
-    });
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.session.init({
+        path: { id },
+        body: { messageID, providerID, modelID },
+        signal,
+      })
+    );
   }
 
   async revertMessage(
@@ -453,14 +649,24 @@ export class OpenCodeClient {
     messageID: string,
     partID?: string
   ): Promise<boolean> {
-    return this.request<boolean>("POST", `/session/${id}/revert`, {
-      messageID,
-      partID,
-    });
+    await this.sdkCall<unknown>((signal) =>
+      this.sdk.session.revert({
+        path: { id },
+        body: { messageID, partID },
+        signal,
+      })
+    );
+    return true;
   }
 
   async unrevertMessages(id: string): Promise<boolean> {
-    return this.request<boolean>("POST", `/session/${id}/unrevert`);
+    await this.sdkCall<unknown>((signal) =>
+      this.sdk.session.unrevert({
+        path: { id },
+        signal,
+      })
+    );
+    return true;
   }
 
   async respondToPermission(
@@ -469,89 +675,123 @@ export class OpenCodeClient {
     response: string,
     remember?: boolean
   ): Promise<boolean> {
-    return this.request<boolean>(
-      "POST",
-      `/session/${sessionID}/permissions/${permissionID}`,
-      { response, remember }
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.postSessionIdPermissionsPermissionId({
+        path: { id: sessionID, permissionID },
+        body: {
+          response: this.normalizePermissionResponse(response, remember),
+        },
+        signal,
+      })
     );
   }
 
   // ---- Messages ----
 
   async listMessages(sessionID: string, limit?: number): Promise<MessageWithParts[]> {
-    const query: Record<string, string> = {};
-    if (limit) {
-      query.limit = String(limit);
-    }
-    return this.request<MessageWithParts[]>(
-      "GET",
-      `/session/${sessionID}/message`,
-      undefined,
-      query
+    return this.sdkCall<MessageWithParts[]>((signal) =>
+      this.sdk.session.messages({
+        path: { id: sessionID },
+        query: limit ? { limit } : undefined,
+        signal,
+      })
     );
   }
 
   async getMessage(sessionID: string, messageID: string): Promise<MessageWithParts> {
-    return this.request<MessageWithParts>(
-      "GET",
-      `/session/${sessionID}/message/${messageID}`
+    return this.sdkCall<MessageWithParts>((signal) =>
+      this.sdk.session.message({
+        path: { id: sessionID, messageID },
+        signal,
+      })
     );
   }
 
   async sendPrompt(sessionID: string, body: PromptBody): Promise<MessageWithParts> {
-    return this.request<MessageWithParts>(
-      "POST",
-      `/session/${sessionID}/message`,
-      body
+    return this.sdkCall<MessageWithParts>((signal) =>
+      this.sdk.session.prompt({
+        path: { id: sessionID },
+        body: this.mapPromptBody(body) as any,
+        signal,
+      })
     );
   }
 
   async sendPromptAsync(sessionID: string, body: PromptBody): Promise<void> {
-    return this.request<void>(
-      "POST",
-      `/session/${sessionID}/prompt_async`,
-      body
+    await this.sdkCall<unknown>((signal) =>
+      this.sdk.session.promptAsync({
+        path: { id: sessionID },
+        body: this.mapPromptBody(body) as any,
+        signal,
+      })
     );
   }
 
   async sendCommand(sessionID: string, body: CommandBody): Promise<MessageWithParts> {
-    return this.request<MessageWithParts>(
-      "POST",
-      `/session/${sessionID}/command`,
-      body
+    const payload: Record<string, any> = {
+      command: body.command,
+      arguments: body.arguments ?? "",
+      agent: body.agent,
+      model: this.toModelString(body.model),
+    };
+    if (!payload.agent) {
+      delete payload.agent;
+    }
+    if (!payload.model) {
+      delete payload.model;
+    }
+    return this.sdkCall<MessageWithParts>((signal) =>
+      this.sdk.session.command({
+        path: { id: sessionID },
+        body: payload as any,
+        signal,
+      })
     );
   }
 
   async runShell(sessionID: string, body: ShellBody): Promise<MessageWithParts> {
-    return this.request<MessageWithParts>(
-      "POST",
-      `/session/${sessionID}/shell`,
-      body
-    );
+    // SDK 类型要求 agent 必填，保留兼容回退以继续支持可选 agent。
+    return this.rawRequest<MessageWithParts>("POST", `/session/${sessionID}/shell`, body);
   }
 
   // ---- Files ----
 
   async listFiles(path?: string): Promise<FileNode[]> {
-    const query: Record<string, string> = {};
-    if (path) {
-      query.path = path;
+    if (!path) {
+      return this.rawRequest<FileNode[]>("GET", "/file");
     }
-    return this.request<FileNode[]>("GET", "/file", undefined, query);
+    return this.sdkCall<FileNode[]>((signal) =>
+      this.sdk.file.list({
+        query: { path },
+        signal,
+      })
+    );
   }
 
   async readFile(path: string): Promise<FileContent> {
-    return this.request<FileContent>("GET", "/file/content", undefined, { path });
+    const data = await this.sdkCall<any>((signal) =>
+      this.sdk.file.read({
+        query: { path },
+        signal,
+      })
+    );
+    return this.normalizeFileContent(data);
   }
 
   async fileStatus(): Promise<any[]> {
-    return this.request<any[]>("GET", "/file/status");
+    return this.sdkCall<any[]>((signal) => this.sdk.file.status({ signal }));
   }
 
   // ---- Find / Search ----
 
   async findText(pattern: string): Promise<TextSearchResult[]> {
-    return this.request<TextSearchResult[]>("GET", "/find", undefined, { pattern });
+    const results = await this.sdkCall<any[]>((signal) =>
+      this.sdk.find.text({
+        query: { pattern },
+        signal,
+      })
+    );
+    return this.normalizeFindText(results as any[]);
   }
 
   async findFiles(
@@ -559,100 +799,152 @@ export class OpenCodeClient {
     type?: "file" | "directory",
     limit?: number
   ): Promise<string[]> {
-    const params: Record<string, string> = { query };
-    if (type) params.type = type;
-    if (limit) params.limit = String(limit);
-    return this.request<string[]>("GET", "/find/file", undefined, params);
+    // 兼容老接口：支持 type + limit。SDK 仅支持 dirs 标记且无 limit。
+    if (typeof limit === "number") {
+      const params: Record<string, string> = { query, limit: String(limit) };
+      if (type) {
+        params.type = type;
+      }
+      return this.rawRequest<string[]>("GET", "/find/file", undefined, params);
+    }
+
+    const dirs = type ? (type === "directory" ? "true" : "false") : undefined;
+    return this.sdkCall<string[]>((signal) =>
+      this.sdk.find.files({
+        query: { query, dirs },
+        signal,
+      })
+    );
   }
 
   async findSymbols(query: string): Promise<SymbolInfo[]> {
-    return this.request<SymbolInfo[]>("GET", "/find/symbol", undefined, { query });
+    const symbols = await this.sdkCall<any[]>((signal) =>
+      this.sdk.find.symbols({
+        query: { query },
+        signal,
+      })
+    );
+    return this.normalizeSymbols(symbols as any[]);
   }
 
   // ---- Agents & Commands ----
 
   async listAgents(): Promise<Agent[]> {
-    return this.request<Agent[]>("GET", "/agent");
+    return this.sdkCall<Agent[]>((signal) => this.sdk.app.agents({ signal }));
   }
 
   async listCommands(): Promise<Command[]> {
-    return this.request<Command[]>("GET", "/command");
+    return this.sdkCall<Command[]>((signal) => this.sdk.command.list({ signal }));
   }
 
   // ---- Auth ----
 
   async setAuth(providerID: string, body: { type: string; key: string }): Promise<boolean> {
-    return this.request<boolean>("PUT", `/auth/${providerID}`, body);
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.auth.set({
+        path: { id: providerID },
+        body: body as any,
+        signal,
+      })
+    );
   }
 
   // ---- MCP ----
 
   async getMCPStatus(): Promise<MCPStatus> {
-    return this.request<MCPStatus>("GET", "/mcp");
+    return this.sdkCall<MCPStatus>((signal) => this.sdk.mcp.status({ signal }));
   }
 
   async addMCP(name: string, config: Record<string, any>): Promise<any> {
-    return this.request<any>("POST", "/mcp", { name, config });
+    return this.sdkCall<any>((signal) =>
+      this.sdk.mcp.add({
+        body: { name, config } as any,
+        signal,
+      })
+    );
   }
 
   // ---- LSP & Formatter ----
 
   async getLSPStatus(): Promise<LSPStatus[]> {
-    return this.request<LSPStatus[]>("GET", "/lsp");
+    return this.sdkCall<LSPStatus[]>((signal) => this.sdk.lsp.status({ signal }));
   }
 
   async getFormatterStatus(): Promise<any[]> {
-    return this.request<any[]>("GET", "/formatter");
+    return this.sdkCall<any[]>((signal) => this.sdk.formatter.status({ signal }));
   }
 
   // ---- Tools ----
 
   async listToolIDs(): Promise<string[]> {
-    return this.request<string[]>("GET", "/experimental/tool/ids");
+    return this.sdkCall<string[]>((signal) => this.sdk.tool.ids({ signal }));
   }
 
   async listTools(provider: string, model: string): Promise<any[]> {
-    return this.request<any[]>("GET", "/experimental/tool", undefined, { provider, model });
+    return this.sdkCall<any[]>((signal) =>
+      this.sdk.tool.list({
+        query: { provider, model },
+        signal,
+      })
+    );
   }
 
   // ---- TUI ----
 
   async tuiAppendPrompt(text: string): Promise<boolean> {
-    return this.request<boolean>("POST", "/tui/append-prompt", { text });
+    return this.sdkCall<boolean>((signal) => this.sdk.tui.appendPrompt({ body: { text }, signal }));
   }
 
   async tuiSubmitPrompt(): Promise<boolean> {
-    return this.request<boolean>("POST", "/tui/submit-prompt");
+    return this.sdkCall<boolean>((signal) => this.sdk.tui.submitPrompt({ signal }));
   }
 
   async tuiClearPrompt(): Promise<boolean> {
-    return this.request<boolean>("POST", "/tui/clear-prompt");
+    return this.sdkCall<boolean>((signal) => this.sdk.tui.clearPrompt({ signal }));
   }
 
   async tuiExecuteCommand(command: string): Promise<boolean> {
-    return this.request<boolean>("POST", "/tui/execute-command", { command });
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.tui.executeCommand({
+        body: { command },
+        signal,
+      })
+    );
   }
 
   async tuiShowToast(message: string, variant?: string, title?: string): Promise<boolean> {
-    return this.request<boolean>("POST", "/tui/show-toast", { message, variant, title });
+    const safeVariant =
+      variant === "success" || variant === "warning" || variant === "error" || variant === "info"
+        ? variant
+        : "info";
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.tui.showToast({
+        body: {
+          message,
+          title,
+          variant: safeVariant,
+        },
+        signal,
+      })
+    );
   }
 
   // ---- VCS ----
 
   async getVcsInfo(): Promise<any> {
-    return this.request<any>("GET", "/vcs");
+    return this.sdkCall<any>((signal) => this.sdk.vcs.get({ signal }));
   }
 
   // ---- Path ----
 
   async getPath(): Promise<any> {
-    return this.request<any>("GET", "/path");
+    return this.sdkCall<any>((signal) => this.sdk.path.get({ signal }));
   }
 
   // ---- Instance ----
 
   async dispose_instance(): Promise<boolean> {
-    return this.request<boolean>("POST", "/instance/dispose");
+    return this.sdkCall<boolean>((signal) => this.sdk.instance.dispose({ signal }));
   }
 
   // ---- Logging ----
@@ -663,7 +955,21 @@ export class OpenCodeClient {
     message: string,
     extra?: Record<string, any>
   ): Promise<boolean> {
-    return this.request<boolean>("POST", "/log", { service, level, message, extra });
+    const safeLevel =
+      level === "debug" || level === "info" || level === "warn" || level === "error"
+        ? level
+        : "info";
+    return this.sdkCall<boolean>((signal) =>
+      this.sdk.app.log({
+        body: {
+          service,
+          level: safeLevel,
+          message,
+          extra,
+        },
+        signal,
+      })
+    );
   }
 
   // ---- SSE 事件订阅 ----
@@ -675,125 +981,37 @@ export class OpenCodeClient {
     const controller = new AbortController();
     this.abortControllers.add(controller);
 
-    const url = `${this.baseUrl}/event`;
-    const headers = this.getHeaders();
-    delete headers["Content-Type"];
-    headers["Accept"] = "text/event-stream";
+    const start = async (): Promise<void> => {
+      try {
+        const { stream } = await this.sdk.event.subscribe({
+          signal: controller.signal,
+          onSseError: (error: unknown) => {
+            if (!controller.signal.aborted) {
+              onError?.(this.toError(error));
+            }
+          },
+        });
 
-    this._connectSSE(url, headers, controller, onEvent, onError);
+        for await (const payload of stream) {
+          if (controller.signal.aborted) {
+            break;
+          }
+          try {
+            onEvent(this.normalizeSSEEvent(payload));
+          } catch (error) {
+            onError?.(this.toError(error));
+          }
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          onError?.(this.toError(error));
+        }
+      } finally {
+        this.abortControllers.delete(controller);
+      }
+    };
 
+    void start();
     return controller;
-  }
-
-  private async _connectSSE(
-    url: string,
-    headers: Record<string, string>,
-    controller: AbortController,
-    onEvent: (event: SSEEvent) => void,
-    onError?: (error: Error) => void,
-    retryDelay: number = 1000
-  ): Promise<void> {
-    try {
-      const response = await fetch(url, {
-        headers,
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`SSE 连接失败: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("无法获取 SSE 响应流");
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let eventType = "";
-      let eventDataLines: string[] = [];
-
-      const flushEvent = (): void => {
-        if (eventDataLines.length === 0) {
-          eventType = "";
-          return;
-        }
-
-        const eventData = eventDataLines.join("\n");
-        try {
-          const parsed = JSON.parse(eventData);
-          onEvent({
-            type: eventType || parsed.type || "unknown",
-            properties: parsed.properties || parsed,
-          });
-        } catch {
-          onEvent({
-            type: eventType || "raw",
-            properties: { data: eventData },
-          });
-        }
-
-        eventType = "";
-        eventDataLines = [];
-      };
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const rawLine of lines) {
-          const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
-          if (line.startsWith(":")) {
-            continue;
-          }
-
-          if (line.startsWith("event:")) {
-            eventType = line.slice(6).trim();
-            continue;
-          }
-
-          if (line.startsWith("data:")) {
-            eventDataLines.push(line.slice(5).trimStart());
-            continue;
-          }
-
-          if (line === "") {
-            // 空行表示事件结束
-            flushEvent();
-          }
-        }
-      }
-
-      const trailing = buffer.trim();
-      if (trailing.startsWith("data:")) {
-        eventDataLines.push(trailing.slice(5).trimStart());
-      }
-      flushEvent();
-
-      // 流正常结束，如果没有被 abort，自动重连
-      if (!controller.signal.aborted) {
-        setTimeout(() => {
-          this._connectSSE(url, headers, controller, onEvent, onError, retryDelay);
-        }, retryDelay);
-      }
-    } catch (error: any) {
-      if (controller.signal.aborted) return;
-      onError?.(error);
-      // 自动重连
-      setTimeout(() => {
-        this._connectSSE(
-          url,
-          headers,
-          controller,
-          onEvent,
-          onError,
-          Math.min(retryDelay * 2, 30000)
-        );
-      }, retryDelay);
-    }
   }
 }

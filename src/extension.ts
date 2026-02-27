@@ -221,7 +221,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
           ChatViewProvider.instance.switchSession(session.id);
         }
 
-        vscode.window.showInformationMessage(`已创建会话: ${session.title || session.id.slice(0, 8)}`);
+        // 面板已切换到新会话，无需额外 toast
       } catch (error: any) {
         vscode.window.showErrorMessage(`创建会话失败: ${error.message}`);
       }
@@ -244,7 +244,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
         try {
           await client.deleteSession(sessionId);
           sessionProvider.refresh();
-          vscode.window.showInformationMessage("会话已删除");
+          // TreeView 已刷新，无需额外 toast
         } catch (error: any) {
           vscode.window.showErrorMessage(`删除失败: ${error.message}`);
         }
@@ -288,7 +288,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
         if (ChatViewProvider.instance) {
           ChatViewProvider.instance.switchSession(newSession.id);
         }
-        vscode.window.showInformationMessage(`已分叉会话: ${newSession.title || newSession.id.slice(0, 8)}`);
+        // 面板已切换到分叉会话，无需额外 toast
       } catch (error: any) {
         vscode.window.showErrorMessage(`分叉失败: ${error.message}`);
       }
@@ -305,7 +305,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
         try {
           await client.abortSession(sessionId);
           sessionProvider.refresh();
-          vscode.window.showInformationMessage("已中止会话");
+          // 状态已刷新，无需额外 toast
         } catch (error: any) {
           vscode.window.showErrorMessage(`中止失败: ${error.message}`);
         }
@@ -328,7 +328,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
     ["opencode.startServer", async () => {
       try {
         await serverManager.start();
-        vscode.window.showInformationMessage("OpenCode 服务器已启动");
+        // 状态栏已更新，无需额外 toast
       } catch (error: any) {
         vscode.window.showErrorMessage(`启动失败: ${error.message}`);
       }
@@ -336,13 +336,13 @@ function registerCommands(context: vscode.ExtensionContext): void {
 
     ["opencode.stopServer", async () => {
       await serverManager.stop();
-      vscode.window.showInformationMessage("OpenCode 服务器已停止");
+      // 状态栏已更新，无需额外 toast
     }],
 
     ["opencode.restartServer", async () => {
       try {
         await serverManager.restart();
-        vscode.window.showInformationMessage("OpenCode 服务器已重启");
+        // 状态栏已更新，无需额外 toast
       } catch (error: any) {
         vscode.window.showErrorMessage(`重启失败: ${error.message}`);
       }
@@ -649,9 +649,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
             await client.updateConfig({
               model: `${selected.providerID}/${selected.modelID}`,
             });
-            vscode.window.showInformationMessage(
-              `已切换模型为: ${selected.label}`
-            );
+            // 面板内 selector 已反映变化，无需额外 toast
             statusProvider.refresh();
           } catch (error: any) {
             vscode.window.showErrorMessage(`切换模型失败: ${error.message}`);
@@ -723,7 +721,7 @@ function registerCommands(context: vscode.ExtensionContext): void {
         if (selected && selected.agentId) {
           try {
             await client.updateConfig({ default_agent: selected.agentId });
-            vscode.window.showInformationMessage(`已切换默认 Agent 为: ${selected.label}`);
+            // 面板内 selector 已反映变化，无需额外 toast
           } catch (error: any) {
             vscode.window.showErrorMessage(`切换 Agent 失败: ${error.message}`);
           }

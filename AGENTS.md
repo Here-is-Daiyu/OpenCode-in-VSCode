@@ -37,9 +37,9 @@ npm run watch        # 开发模式（监听文件变更）
 
 ## 开发规范
 
-- **不使用** `@opencode-ai/sdk` npm 包，使用 `src/client.ts` 中的轻量 HTTP 客户端
+- `src/client.ts` 基于 `@opencode-ai/sdk/client` 封装，对外暴露 `OpenCodeClient` 适配层。SDK 无法覆盖的端点通过 `rawRequest` 回退到手动 fetch
 - Webview 的 CSP 策略为 `script-src 'nonce-...'`，**禁止内联事件处理器**（`onclick` 等），必须使用 `addEventListener`
-- API 类型定义集中在 `src/client.ts` 顶部
+- API 类型定义集中在 `src/client.ts` 顶部（SDK 类型 + 扩展补充类型）
 - 所有用户可见文本使用中文
 
 ## 关键 API 端点
