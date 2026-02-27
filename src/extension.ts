@@ -6,7 +6,7 @@
 import * as vscode from "vscode";
 import { ServerManager } from "./server";
 import { OpenCodeClient } from "./client";
-import { ChatPanel } from "./chatPanel";
+import { ChatViewProvider } from "./chatPanel";
 import { SessionTreeProvider, StatusTreeProvider } from "./treeViews";
 
 let serverManager: ServerManager;
@@ -22,6 +22,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusProvider = new StatusTreeProvider();
 
   // ---- 注册 TreeView ----
+  const chatViewProvider = new ChatViewProvider(context.extensionUri);
+
+  const chatViewDisposable = vscode.window.registerWebviewViewProvider(
+    ChatViewProvider.viewType,
+    chatViewProvider,
+    { webviewOptions: { retainContextWhenHidden: true } }
+  );
+
   const sessionTreeView = vscode.window.createTreeView("opencode.sessions", {
     treeDataProvider: sessionProvider,
     showCollapseAll: false,
@@ -74,8 +82,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }, 2000);
   }
 
+  // ---- 首次安装时将聊天面板移动到辅助侧栏 ----
+  const MOVED_KEY = "opencode.chatViewMovedToAuxiliary";
+  if (!context.globalState.get<boolean>(MOVED_KEY)) {
+    // 延迟执行，等待 views 注册完成
+    setTimeout(async () => {
+      try {
+        await vscode.commands.executeCommand(
+          "workbench.action.moveViewToSecondarySideBar",
+          "opencode.chatView"
+        );
+        // 同时打开辅助侧栏让用户看到
+        await vscode.commands.executeCommand(
+          "workbench.action.focusAuxiliaryBar"
+        );
+        context.globalState.update(MOVED_KEY, true);
+      } catch {
+        // 命令可能在某些 VSCode 版本中不可用，静默忽略
+      }
+    }, 3000);
+  }
+
   // ---- 注册到 subscriptions ----
   context.subscriptions.push(
+    chatViewDisposable,
     sessionTreeView,
     statusTreeView,
     statusBarItem,
@@ -97,8 +127,8 @@ function onServerReady(client: OpenCodeClient): void {
   statusProvider.refresh();
 
   // 更新聊天面板
-  if (ChatPanel.currentPanel) {
-    ChatPanel.currentPanel.updateClient(client);
+  if (ChatViewProvider.instance) {
+    ChatViewProvider.instance.setClient(client);
   }
 
   // 订阅 SSE 事件
@@ -141,13 +171,19 @@ function registerCommands(context: vscode.ExtensionContext): void {
       if (!client) {
         vscode.window.showWarningMessage("OpenCode 服务器未运行，正在启动...");
         serverManager.start().then((c) => {
-          ChatPanel.createOrShow(context.extensionUri, c);
+          if (ChatViewProvider.instance) {
+            ChatViewProvider.instance.setClient(c);
+          }
+          ChatViewProvider.instance?.focus();
         }).catch((e) => {
           vscode.window.showErrorMessage(`启动失败: ${e.message}`);
         });
         return;
       }
-      ChatPanel.createOrShow(context.extensionUri, client);
+      if (ChatViewProvider.instance) {
+        ChatViewProvider.instance.setClient(client);
+      }
+      ChatViewProvider.instance?.focus();
     }],
 
     // ---- 会话管理 ----
@@ -165,8 +201,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
         sessionProvider.refresh();
 
         // 如果聊天面板打开，切换到新会话
-        if (ChatPanel.currentPanel) {
-          ChatPanel.currentPanel.switchSession(session.id);
+        if (ChatViewProvider.instance) {
+          ChatViewProvider.instance.switchSession(session.id);
         }
 
         vscode.window.showInformationMessage(`已创建会话: ${session.title || session.id.slice(0, 8)}`);
@@ -233,8 +269,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
       try {
         const newSession = await client.forkSession(sessionId);
         sessionProvider.refresh();
-        if (ChatPanel.currentPanel) {
-          ChatPanel.currentPanel.switchSession(newSession.id);
+        if (ChatViewProvider.instance) {
+          ChatViewProvider.instance.switchSession(newSession.id);
         }
         vscode.window.showInformationMessage(`已分叉会话: ${newSession.title || newSession.id.slice(0, 8)}`);
       } catch (error: any) {
@@ -264,9 +300,12 @@ function registerCommands(context: vscode.ExtensionContext): void {
       const client = serverManager.client;
       if (!client) return showNotRunning();
 
-      // 打开聊天面板并切换到指定会话
-      const panel = ChatPanel.createOrShow(context.extensionUri, client);
-      panel.switchSession(sessionId);
+      // 聚焦聊天视图并切换到指定会话
+      if (ChatViewProvider.instance) {
+        ChatViewProvider.instance.setClient(client);
+        ChatViewProvider.instance.focus();
+        ChatViewProvider.instance.switchSession(sessionId);
+      }
     }],
 
     // ---- 服务器管理 ----
@@ -331,8 +370,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
         ref += startLine === endLine ? `#L${startLine}` : `#L${startLine}-${endLine}`;
       }
 
-      if (ChatPanel.currentPanel) {
-        ChatPanel.currentPanel.appendToPrompt(ref);
+      if (ChatViewProvider.instance) {
+        ChatViewProvider.instance.appendToPrompt(ref);
       } else {
         // 如果面板没打开，复制到剪贴板
         vscode.env.clipboard.writeText(ref);
@@ -357,8 +396,8 @@ function registerCommands(context: vscode.ExtensionContext): void {
 
       const ref = `\`\`\`\n// ${filePath}#L${startLine}-${endLine}\n${selectedText}\n\`\`\``;
 
-      if (ChatPanel.currentPanel) {
-        ChatPanel.currentPanel.appendToPrompt(ref);
+      if (ChatViewProvider.instance) {
+        ChatViewProvider.instance.appendToPrompt(ref);
       } else {
         vscode.env.clipboard.writeText(ref);
         vscode.window.showInformationMessage("代码片段已复制到剪贴板");
@@ -746,6 +785,38 @@ function registerCommands(context: vscode.ExtensionContext): void {
         vscode.window.showErrorMessage(`连接失败: ${error.message}`);
       }
     }],
+
+    // ---- 手动连接已有实例 ----
+    ["opencode.connectToEndpoint", async () => {
+      const currentUrl = serverManager.url;
+      const url = await vscode.window.showInputBox({
+        prompt: "输入 OpenCode 服务器地址",
+        placeHolder: "http://127.0.0.1:3000",
+        value: currentUrl || "http://127.0.0.1:",
+        validateInput: (v) => {
+          try {
+            const u = new URL(v);
+            if (!["http:", "https:"].includes(u.protocol)) {
+              return "仅支持 http/https 协议";
+            }
+            return undefined;
+          } catch {
+            return "请输入有效的 URL";
+          }
+        },
+      });
+
+      if (!url) return;
+
+      try {
+        await serverManager.connectToExisting(url);
+        vscode.window.showInformationMessage(
+          `已连接到: ${url} (v${serverManager.version})`
+        );
+      } catch (error: any) {
+        vscode.window.showErrorMessage(error.message);
+      }
+    }],
   ];
 
   for (const [id, handler] of commands) {
@@ -760,7 +831,7 @@ function updateStatusBar(state: string): void {
   switch (state) {
     case "running":
       statusBarItem.text = "$(check) OpenCode";
-      statusBarItem.tooltip = `OpenCode 服务器运行中 (v${serverManager.version})\n点击打开聊天面板`;
+      statusBarItem.tooltip = `OpenCode 服务器运行中 (v${serverManager.version})\n${serverManager.url}\n点击打开聊天面板`;
       statusBarItem.backgroundColor = undefined;
       break;
     case "starting":
@@ -793,7 +864,10 @@ function showNotRunning(): void {
   });
 }
 
-export function deactivate(): void {
+export async function deactivate(): Promise<void> {
   sseController?.abort();
-  serverManager?.dispose();
+  sseController = null;
+  if (serverManager) {
+    await serverManager.dispose();
+  }
 }

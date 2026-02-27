@@ -4,7 +4,7 @@
  */
 
 import * as vscode from "vscode";
-import { ChildProcess, spawn } from "child_process";
+import { ChildProcess, spawn, exec } from "child_process";
 import { OpenCodeClient } from "./client";
 
 export type ServerState = "stopped" | "starting" | "running" | "error";
@@ -242,6 +242,8 @@ export class ServerManager {
     }
   }
 
+  private _disposed = false;
+
   async stop(): Promise<void> {
     this.stopHealthCheck();
     this._client?.dispose();
@@ -249,13 +251,40 @@ export class ServerManager {
 
     if (this.process) {
       this.setState("stopped");
-      this.process.kill("SIGTERM");
+      const pid = this.process.pid;
+
+      // Windows 下 shell: true 会创建 cmd.exe → opencode 的进程树
+      // process.kill() 只能杀 cmd.exe，需要 taskkill /T 杀整个树
+      if (pid && process.platform === "win32") {
+        try {
+          await new Promise<void>((resolve, reject) => {
+            exec(`taskkill /pid ${pid} /T /F`, (err) => {
+              if (err) {
+                this.outputChannel.appendLine(
+                  `[警告] taskkill 失败: ${err.message}`
+                );
+              }
+              resolve();
+            });
+          });
+        } catch {
+          // taskkill 失败时回退到普通 kill
+          this.process.kill();
+        }
+      } else {
+        // Unix: 发送 SIGTERM，等待优雅退出
+        this.process.kill("SIGTERM");
+      }
 
       // 等待进程退出
       await new Promise<void>((resolve) => {
         const timeout = setTimeout(() => {
           if (this.process) {
-            this.process.kill("SIGKILL");
+            try {
+              this.process.kill("SIGKILL");
+            } catch {
+              // 进程可能已经退出
+            }
           }
           resolve();
         }, 5000);
@@ -282,8 +311,43 @@ export class ServerManager {
     return this.start();
   }
 
-  dispose(): void {
-    this.stop();
+  /**
+   * 连接到已有的 opencode serve 实例（不启动子进程）
+   */
+  async connectToExisting(url: string): Promise<OpenCodeClient> {
+    // 先停掉现有进程（如果有）
+    await this.stop();
+
+    this._url = url.replace(/\/+$/, ""); // 去掉尾部斜杠
+    this.setState("starting");
+    this.outputChannel.appendLine(`[连接] 尝试连接外部实例: ${this._url}`);
+
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    this._client = new OpenCodeClient(this._url, workspaceFolder);
+
+    try {
+      const health = await this._client.health();
+      this._version = health.version || "unknown";
+      this.outputChannel.appendLine(
+        `[连接成功] 版本: ${this._version}, 地址: ${this._url}`
+      );
+
+      this.setState("running");
+      this.startHealthCheck();
+      this._onReady.fire(this._client);
+      return this._client;
+    } catch (error: any) {
+      this._client.dispose();
+      this._client = null;
+      this.setState("error");
+      throw new Error(`无法连接到 ${this._url}: ${error.message}`);
+    }
+  }
+
+  async dispose(): Promise<void> {
+    if (this._disposed) return;
+    this._disposed = true;
+    await this.stop();
     this._onStateChange.dispose();
     this._onReady.dispose();
   }

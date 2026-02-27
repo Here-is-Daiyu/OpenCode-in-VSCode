@@ -44,6 +44,11 @@
     "views": {
       "opencode": [
         {
+          "id": "opencode.chatView",
+          "name": "聊天",
+          "type": "webview"
+        },
+        {
           "id": "opencode.sessions",
           "name": "会话列表",
           "type": "tree"
@@ -153,6 +158,10 @@
       {
         "command": "opencode.connectProvider",
         "title": "OpenCode: 连接 AI 提供商"
+      },
+      {
+        "command": "opencode.connectToEndpoint",
+        "title": "OpenCode: 连接到指定服务器"
       }
     ],
     "menus": {
@@ -285,5 +294,8 @@
     "@types/vscode": "^1.94.0",
     "esbuild": "^0.25.0",
     "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "highlight.js": "^11.11.1"
   }
 }

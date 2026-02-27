@@ -1,76 +1,171 @@
 /**
  * Webview 聊天面板 - OpenCode 的核心交互界面
- * 使用 VSCode Webview API 实现完整的聊天体验
+ * 使用 WebviewViewProvider 实现，嵌入侧边栏
  */
 
 import * as vscode from "vscode";
 import { OpenCodeClient, Session, MessageWithParts, AnyPart, SSEEvent } from "./client";
+import hljs from "highlight.js/lib/core";
 
-export class ChatPanel {
-  public static currentPanel: ChatPanel | undefined;
-  private readonly panel: vscode.WebviewPanel;
-  private readonly extensionUri: vscode.Uri;
-  private client: OpenCodeClient;
+// 注册常用语言（按需加载，控制 bundle 体积）
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import rust from "highlight.js/lib/languages/rust";
+import go from "highlight.js/lib/languages/go";
+import java from "highlight.js/lib/languages/java";
+import cpp from "highlight.js/lib/languages/cpp";
+import c from "highlight.js/lib/languages/c";
+import csharp from "highlight.js/lib/languages/csharp";
+import ruby from "highlight.js/lib/languages/ruby";
+import php from "highlight.js/lib/languages/php";
+import swift from "highlight.js/lib/languages/swift";
+import kotlin from "highlight.js/lib/languages/kotlin";
+import scala from "highlight.js/lib/languages/scala";
+import css from "highlight.js/lib/languages/css";
+import scss from "highlight.js/lib/languages/scss";
+import less from "highlight.js/lib/languages/less";
+import xml from "highlight.js/lib/languages/xml";
+import json from "highlight.js/lib/languages/json";
+import yaml from "highlight.js/lib/languages/yaml";
+import toml from "highlight.js/lib/languages/ini";
+import markdown from "highlight.js/lib/languages/markdown";
+import bash from "highlight.js/lib/languages/bash";
+import shell from "highlight.js/lib/languages/shell";
+import powershell from "highlight.js/lib/languages/powershell";
+import sql from "highlight.js/lib/languages/sql";
+import dockerfile from "highlight.js/lib/languages/dockerfile";
+import graphql from "highlight.js/lib/languages/graphql";
+import diff from "highlight.js/lib/languages/diff";
+import lua from "highlight.js/lib/languages/lua";
+import r from "highlight.js/lib/languages/r";
+import dart from "highlight.js/lib/languages/dart";
+import elixir from "highlight.js/lib/languages/elixir";
+
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("js", javascript);
+hljs.registerLanguage("jsx", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("ts", typescript);
+hljs.registerLanguage("tsx", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("py", python);
+hljs.registerLanguage("rust", rust);
+hljs.registerLanguage("rs", rust);
+hljs.registerLanguage("go", go);
+hljs.registerLanguage("golang", go);
+hljs.registerLanguage("java", java);
+hljs.registerLanguage("cpp", cpp);
+hljs.registerLanguage("c", c);
+hljs.registerLanguage("csharp", csharp);
+hljs.registerLanguage("cs", csharp);
+hljs.registerLanguage("ruby", ruby);
+hljs.registerLanguage("rb", ruby);
+hljs.registerLanguage("php", php);
+hljs.registerLanguage("swift", swift);
+hljs.registerLanguage("kotlin", kotlin);
+hljs.registerLanguage("kt", kotlin);
+hljs.registerLanguage("scala", scala);
+hljs.registerLanguage("css", css);
+hljs.registerLanguage("scss", scss);
+hljs.registerLanguage("less", less);
+hljs.registerLanguage("html", xml);
+hljs.registerLanguage("xml", xml);
+hljs.registerLanguage("svg", xml);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("yaml", yaml);
+hljs.registerLanguage("yml", yaml);
+hljs.registerLanguage("toml", toml);
+hljs.registerLanguage("ini", toml);
+hljs.registerLanguage("markdown", markdown);
+hljs.registerLanguage("md", markdown);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("sh", bash);
+hljs.registerLanguage("zsh", bash);
+hljs.registerLanguage("shell", shell);
+hljs.registerLanguage("powershell", powershell);
+hljs.registerLanguage("ps1", powershell);
+hljs.registerLanguage("sql", sql);
+hljs.registerLanguage("dockerfile", dockerfile);
+hljs.registerLanguage("docker", dockerfile);
+hljs.registerLanguage("graphql", graphql);
+hljs.registerLanguage("gql", graphql);
+hljs.registerLanguage("diff", diff);
+hljs.registerLanguage("patch", diff);
+hljs.registerLanguage("lua", lua);
+hljs.registerLanguage("r", r);
+hljs.registerLanguage("dart", dart);
+hljs.registerLanguage("elixir", elixir);
+hljs.registerLanguage("ex", elixir);
+
+export class ChatViewProvider implements vscode.WebviewViewProvider {
+  public static readonly viewType = "opencode.chatView";
+  public static instance: ChatViewProvider | undefined;
+
+  private view: vscode.WebviewView | undefined;
+  private extensionUri: vscode.Uri;
+  private client: OpenCodeClient | null = null;
   private currentSessionId: string | null = null;
   private sseController: AbortController | null = null;
   private disposables: vscode.Disposable[] = [];
 
-  private constructor(
-    panel: vscode.WebviewPanel,
-    extensionUri: vscode.Uri,
-    client: OpenCodeClient
-  ) {
-    this.panel = panel;
+  constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
-    this.client = client;
+    ChatViewProvider.instance = this;
+  }
 
-    this.panel.webview.html = this.getHtmlContent();
+  public resolveWebviewView(
+    webviewView: vscode.WebviewView,
+    _context: vscode.WebviewViewResolveContext,
+    _token: vscode.CancellationToken
+  ): void {
+    this.view = webviewView;
+
+    webviewView.webview.options = {
+      enableScripts: true,
+      localResourceRoots: [this.extensionUri],
+    };
+
+    webviewView.webview.html = this.getHtmlContent();
 
     // 监听来自 Webview 的消息
-    this.panel.webview.onDidReceiveMessage(
+    webviewView.webview.onDidReceiveMessage(
       (msg) => this.handleWebviewMessage(msg),
       null,
       this.disposables
     );
 
-    this.panel.onDidDispose(() => this.dispose(), null, this.disposables);
+    webviewView.onDidDispose(() => {
+      this.view = undefined;
+      this.sseController?.abort();
+      this.sseController = null;
+    }, null, this.disposables);
 
-    // 订阅 SSE 事件
-    this.subscribeToEvents();
-  }
-
-  public static createOrShow(
-    extensionUri: vscode.Uri,
-    client: OpenCodeClient
-  ): ChatPanel {
-    const column = vscode.ViewColumn.Beside;
-
-    if (ChatPanel.currentPanel) {
-      ChatPanel.currentPanel.client = client;
-      ChatPanel.currentPanel.panel.reveal(column);
-      return ChatPanel.currentPanel;
+    // 如果已有 client，订阅 SSE 事件
+    if (this.client) {
+      this.subscribeToEvents();
     }
-
-    const panel = vscode.window.createWebviewPanel(
-      "opencode.chat",
-      "OpenCode Chat",
-      column,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [extensionUri],
-      }
-    );
-
-    ChatPanel.currentPanel = new ChatPanel(panel, extensionUri, client);
-    return ChatPanel.currentPanel;
   }
 
-  public updateClient(client: OpenCodeClient): void {
+  /**
+   * 聚焦聊天视图
+   */
+  public focus(): void {
+    if (this.view) {
+      this.view.show?.(true);
+    } else {
+      // 视图尚未 resolve，通过命令聚焦容器
+      vscode.commands.executeCommand("opencode.chatView.focus");
+    }
+  }
+
+  public setClient(client: OpenCodeClient): void {
     this.client = client;
     // 重新订阅事件
     this.sseController?.abort();
-    this.subscribeToEvents();
+    if (this.view) {
+      this.subscribeToEvents();
+    }
   }
 
   /**
@@ -90,6 +185,7 @@ export class ChatPanel {
   }
 
   private subscribeToEvents(): void {
+    if (!this.client) return;
     this.sseController = this.client.subscribeEvents(
       (event) => this.handleSSEEvent(event),
       (error) => {
@@ -140,7 +236,7 @@ export class ChatPanel {
       "始终允许"
     );
 
-    if (!result || !this.currentSessionId) return;
+    if (!result || !this.currentSessionId || !this.client) return;
 
     const response = result === "拒绝" ? "deny" : "allow";
     const remember = result === "始终允许";
@@ -158,6 +254,7 @@ export class ChatPanel {
   }
 
   private async loadMessages(sessionId: string): Promise<void> {
+    if (!this.client) return;
     try {
       const messages = await this.client.listMessages(sessionId);
       this.postMessage({ type: "messages:load", messages });
@@ -250,6 +347,34 @@ export class ChatPanel {
       case "copy":
         await vscode.env.clipboard.writeText(msg.text);
         break;
+
+      case "highlight:request":
+        this.handleHighlightRequest(msg.id, msg.code, msg.lang);
+        break;
+    }
+  }
+
+  private handleHighlightRequest(id: string, code: string, lang: string): void {
+    try {
+      let result: string;
+      const normalizedLang = (lang || "").trim().toLowerCase();
+      const langAliasMap: Record<string, string> = {
+        "c++": "cpp",
+        "c#": "csharp",
+        "shellscript": "bash",
+      };
+      const targetLang = langAliasMap[normalizedLang] || normalizedLang;
+
+      if (targetLang && hljs.getLanguage(targetLang)) {
+        result = hljs.highlight(code, { language: targetLang }).value;
+      } else {
+        // 自动检测语言
+        result = hljs.highlightAuto(code).value;
+      }
+      this.postMessage({ type: "highlight:result", id, html: result });
+    } catch {
+      // 高亮失败，返回原始代码（已转义的）
+      this.postMessage({ type: "highlight:result", id, html: "" });
     }
   }
 
@@ -258,6 +383,7 @@ export class ChatPanel {
     await this.sendSessionList();
     await this.sendProviderList();
     await this.sendAgentList();
+    await this.sendCommandList();
     await this.sendHealthStatus();
 
     // 如果已有会话，加载最近的
@@ -271,6 +397,7 @@ export class ChatPanel {
     model?: { providerID: string; modelID: string },
     agent?: string
   ): Promise<void> {
+    if (!this.client) return;
     if (!this.currentSessionId) {
       // 自动创建会话
       await this.createSession();
@@ -297,6 +424,7 @@ export class ChatPanel {
     model?: { providerID: string; modelID: string },
     agent?: string
   ): Promise<void> {
+    if (!this.client) return;
     if (!this.currentSessionId) {
       await this.createSession();
     }
@@ -317,7 +445,7 @@ export class ChatPanel {
   }
 
   private async sendCommand(command: string, args?: string): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
 
     try {
       const result = await this.client.sendCommand(this.currentSessionId, {
@@ -334,6 +462,7 @@ export class ChatPanel {
   }
 
   private async createSession(title?: string): Promise<void> {
+    if (!this.client) return;
     try {
       const session = await this.client.createSession(title);
       this.currentSessionId = session.id;
@@ -348,6 +477,7 @@ export class ChatPanel {
   }
 
   private async sendSessionList(): Promise<void> {
+    if (!this.client) return;
     try {
       const [sessions, statusMap] = await Promise.all([
         this.client.listSessions(),
@@ -363,6 +493,7 @@ export class ChatPanel {
   }
 
   private async sendProviderList(): Promise<void> {
+    if (!this.client) return;
     try {
       const [providers, config] = await Promise.all([
         this.client.getProviders(),
@@ -384,6 +515,7 @@ export class ChatPanel {
   }
 
   private async sendAgentList(): Promise<void> {
+    if (!this.client) return;
     try {
       const [agents, config] = await Promise.all([
         this.client.listAgents(),
@@ -412,6 +544,7 @@ export class ChatPanel {
   }
 
   private async sendCommandList(): Promise<void> {
+    if (!this.client) return;
     try {
       const commands = await this.client.listCommands();
       this.postMessage({ type: "commands:list", commands });
@@ -421,7 +554,7 @@ export class ChatPanel {
   }
 
   private async sendTodoList(): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
     try {
       const todos = await this.client.getSessionTodo(this.currentSessionId);
       this.postMessage({ type: "todo:list", todos });
@@ -431,6 +564,7 @@ export class ChatPanel {
   }
 
   private async setModel(providerID: string, modelID: string): Promise<void> {
+    if (!this.client) return;
     try {
       await this.client.updateConfig({ model: `${providerID}/${modelID}` });
       this.postMessage({
@@ -446,6 +580,7 @@ export class ChatPanel {
   }
 
   private async sendHealthStatus(): Promise<void> {
+    if (!this.client) return;
     try {
       const health = await this.client.health();
       this.postMessage({ type: "health:status", health });
@@ -458,7 +593,7 @@ export class ChatPanel {
   }
 
   private async abortCurrentSession(): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
     try {
       await this.client.abortSession(this.currentSessionId);
       this.postMessage({ type: "session:aborted" });
@@ -471,7 +606,7 @@ export class ChatPanel {
   }
 
   private async forkCurrentSession(messageId?: string): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
     try {
       const session = await this.client.forkSession(
         this.currentSessionId,
@@ -493,7 +628,7 @@ export class ChatPanel {
     messageId: string,
     partId?: string
   ): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
     try {
       await this.client.revertMessage(this.currentSessionId, messageId, partId);
       await this.loadMessages(this.currentSessionId);
@@ -507,7 +642,7 @@ export class ChatPanel {
   }
 
   private async unrevertMessages(): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
     try {
       await this.client.unrevertMessages(this.currentSessionId);
       await this.loadMessages(this.currentSessionId);
@@ -521,7 +656,7 @@ export class ChatPanel {
   }
 
   private async viewDiff(): Promise<void> {
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId || !this.client) return;
     try {
       const diffs = await this.client.getSessionDiff(this.currentSessionId);
       this.postMessage({ type: "session:diff", diffs });
@@ -556,7 +691,7 @@ export class ChatPanel {
   }
 
   private postMessage(msg: any): void {
-    this.panel.webview.postMessage(msg);
+    this.view?.webview.postMessage(msg);
   }
 
   private getHtmlContent(): string {
@@ -682,7 +817,7 @@ export class ChatPanel {
       font-size: 10px;
       letter-spacing: 0.5px;
     }
-    .message-content { white-space: pre-wrap; }
+    .message-content { white-space: normal; }
     .message-content code {
       background: rgba(128,128,128,0.15);
       padding: 1px 4px;
@@ -691,15 +826,168 @@ export class ChatPanel {
       font-size: 13px;
     }
     .message-content pre {
-      background: rgba(0,0,0,0.2);
-      padding: 10px;
+      background: var(--vscode-textCodeBlock-background, rgba(0,0,0,0.2));
+      padding: 12px;
       border-radius: var(--radius);
       overflow-x: auto;
       margin: 8px 0;
+      border: 1px solid var(--border);
+      position: relative;
     }
     .message-content pre code {
       background: none;
       padding: 0;
+      font-size: 12px;
+      line-height: 1.5;
+    }
+    .message-content pre .code-lang {
+      position: absolute;
+      top: 4px;
+      right: 8px;
+      font-size: 10px;
+      color: var(--fg-secondary);
+      opacity: 0.7;
+      text-transform: uppercase;
+      user-select: none;
+    }
+    .message-content pre .copy-code-btn {
+      position: absolute;
+      top: 4px;
+      right: 50px;
+      background: rgba(128,128,128,0.2);
+      border: none;
+      color: var(--fg-secondary);
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .message-content pre:hover .copy-code-btn { opacity: 1; }
+    .message-content pre .copy-code-btn:hover {
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+
+    /* highlight.js VSCode Dark+ 风格主题 */
+    .hljs { color: #d4d4d4; }
+    .hljs-comment, .hljs-quote { color: #6a9955; font-style: italic; }
+    .hljs-keyword, .hljs-selector-tag { color: #569cd6; }
+    .hljs-string, .hljs-addition { color: #ce9178; }
+    .hljs-number { color: #b5cea8; }
+    .hljs-literal { color: #569cd6; }
+    .hljs-type, .hljs-built_in { color: #4ec9b0; }
+    .hljs-class .hljs-title, .hljs-title.class_ { color: #4ec9b0; }
+    .hljs-function .hljs-title, .hljs-title.function_ { color: #dcdcaa; }
+    .hljs-params { color: #9cdcfe; }
+    .hljs-variable, .hljs-attr { color: #9cdcfe; }
+    .hljs-property { color: #9cdcfe; }
+    .hljs-regexp { color: #d16969; }
+    .hljs-symbol { color: #b5cea8; }
+    .hljs-meta { color: #c586c0; }
+    .hljs-meta .hljs-keyword { color: #c586c0; }
+    .hljs-meta .hljs-string { color: #ce9178; }
+    .hljs-tag { color: #569cd6; }
+    .hljs-name { color: #569cd6; }
+    .hljs-attribute { color: #9cdcfe; }
+    .hljs-selector-id, .hljs-selector-class { color: #d7ba7d; }
+    .hljs-selector-attr, .hljs-selector-pseudo { color: #d7ba7d; }
+    .hljs-template-tag { color: #569cd6; }
+    .hljs-template-variable { color: #9cdcfe; }
+    .hljs-deletion { color: #ce9178; background: rgba(206,29,29,0.15); }
+    .hljs-addition { background: rgba(0,180,0,0.15); }
+    .hljs-section { color: #569cd6; }
+    .hljs-emphasis { font-style: italic; }
+    .hljs-strong { font-weight: bold; }
+    .hljs-bullet { color: #6796e6; }
+    .hljs-link { color: #569cd6; text-decoration: underline; }
+    .hljs-subst { color: #d4d4d4; }
+    .hljs-operator { color: #d4d4d4; }
+    .hljs-punctuation { color: #d4d4d4; }
+
+    /* Markdown 标题 */
+    .message-content h1 { font-size: 1.4em; font-weight: 700; margin: 12px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--border); }
+    .message-content h2 { font-size: 1.25em; font-weight: 700; margin: 10px 0 5px; padding-bottom: 3px; border-bottom: 1px solid var(--border); }
+    .message-content h3 { font-size: 1.1em; font-weight: 600; margin: 8px 0 4px; }
+    .message-content h4 { font-size: 1.0em; font-weight: 600; margin: 6px 0 3px; }
+    .message-content h5, .message-content h6 { font-size: 0.95em; font-weight: 600; margin: 4px 0 2px; color: var(--fg-secondary); }
+
+    /* Markdown 列表 */
+    .message-content ul, .message-content ol {
+      margin: 4px 0;
+      padding-left: 24px;
+    }
+    .message-content li {
+      margin: 2px 0;
+      line-height: 1.5;
+    }
+    .message-content li > ul, .message-content li > ol {
+      margin: 0;
+    }
+
+    /* Markdown 引用 */
+    .message-content blockquote {
+      margin: 6px 0;
+      padding: 4px 12px;
+      border-left: 3px solid var(--accent);
+      background: rgba(128,128,128,0.06);
+      color: var(--fg-secondary);
+    }
+    .message-content blockquote p {
+      margin: 2px 0;
+    }
+
+    /* Markdown 表格 */
+    .message-content table {
+      border-collapse: collapse;
+      margin: 8px 0;
+      width: 100%;
+      font-size: 12px;
+    }
+    .message-content th, .message-content td {
+      border: 1px solid var(--border);
+      padding: 5px 10px;
+      text-align: left;
+    }
+    .message-content th {
+      background: rgba(128,128,128,0.1);
+      font-weight: 600;
+    }
+    .message-content tr:nth-child(even) {
+      background: rgba(128,128,128,0.04);
+    }
+
+    /* Markdown 水平线 */
+    .message-content hr {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 10px 0;
+    }
+
+    /* Markdown 段落 */
+    .message-content p {
+      margin: 4px 0;
+      line-height: 1.6;
+    }
+
+    /* Markdown 任务列表 */
+    .message-content .task-item {
+      list-style: none;
+      margin-left: -20px;
+    }
+    .message-content .task-item input[type="checkbox"] {
+      margin-right: 6px;
+      pointer-events: none;
+    }
+
+    /* 链接 */
+    .message-content a {
+      color: var(--fg-link);
+      text-decoration: none;
+    }
+    .message-content a:hover {
+      text-decoration: underline;
     }
     .message-actions {
       display: flex;
@@ -815,8 +1103,83 @@ export class ChatPanel {
       50% { opacity: 0.4; }
     }
 
+    /* ---- Token 用量条 ---- */
+    .token-bar-container {
+      padding: 6px 12px 4px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      display: none;  /* 默认隐藏，有数据时才显示 */
+    }
+    .token-bar-container.visible { display: block; }
+    .token-bar-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10px;
+      color: var(--fg-secondary);
+      margin-bottom: 4px;
+      line-height: 1;
+    }
+    .token-bar-header .token-count {
+      font-variant-numeric: tabular-nums;
+    }
+    .token-bar-header .token-percent {
+      font-variant-numeric: tabular-nums;
+    }
+    .token-bar-track {
+      height: 6px;
+      width: 100%;
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--fg-secondary) 15%, transparent);
+      overflow: hidden;
+      display: flex;
+    }
+    .token-bar-segment {
+      height: 100%;
+      transition: flex-basis 0.3s ease, height 0.15s ease;
+      min-width: 0;
+      position: relative;
+    }
+    .token-bar-track:hover .token-bar-segment {
+      height: 8px;
+      margin-top: -1px;
+    }
+    .token-bar-segment[data-cat="input"] { background: #0ea5e9; }
+    .token-bar-segment[data-cat="output"] { background: #ec4899; }
+    .token-bar-segment[data-cat="reasoning"] { background: #a855f7; }
+    .token-bar-segment[data-cat="cache_read"] { background: var(--success); }
+    .token-bar-segment[data-cat="cache_write"] { background: var(--warning); }
+    .token-bar-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--fg-secondary);
+      line-height: 1;
+    }
+    .token-bar-legend-item {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      cursor: default;
+    }
+    .token-bar-legend-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+    .token-bar-legend-dot[data-cat="input"] { background: #0ea5e9; }
+    .token-bar-legend-dot[data-cat="output"] { background: #ec4899; }
+    .token-bar-legend-dot[data-cat="reasoning"] { background: #a855f7; }
+    .token-bar-legend-dot[data-cat="cache_read"] { background: var(--success); }
+    .token-bar-legend-dot[data-cat="cache_write"] { background: var(--warning); }
+
     /* ---- 输入区域 ---- */
     .input-area {
+      position: relative;
       padding: 10px 12px;
       background: var(--bg-secondary);
       border-top: 1px solid var(--border);
@@ -943,6 +1306,70 @@ export class ChatPanel {
       color: var(--fg-secondary);
       font-size: 11px;
     }
+
+    /* ---- 斜杠命令面板 ---- */
+    .slash-popover {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 12px;
+      right: 12px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+      z-index: 1001;
+      padding: 4px 0;
+    }
+    .slash-popover.visible { display: block; }
+    .slash-popover::-webkit-scrollbar { width: 5px; }
+    .slash-popover::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+    .slash-popover-header {
+      padding: 4px 10px 2px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--fg-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .slash-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .slash-item:hover,
+    .slash-item.active {
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+    .slash-item .slash-name {
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .slash-item .slash-desc {
+      color: var(--fg-secondary);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+    .slash-item:hover .slash-desc,
+    .slash-item.active .slash-desc {
+      color: inherit;
+      opacity: 0.8;
+    }
+    .slash-empty {
+      padding: 10px;
+      text-align: center;
+      color: var(--fg-secondary);
+      font-size: 12px;
+    }
     .input-wrapper {
       display: flex;
       gap: 6px;
@@ -1064,8 +1491,19 @@ export class ChatPanel {
     <span id="modelInfo">-</span>
   </div>
 
+  <!-- Token 用量条 -->
+  <div class="token-bar-container" id="tokenBarContainer">
+    <div class="token-bar-header">
+      <span class="token-count" id="tokenCount">0 tokens</span>
+      <span class="token-percent" id="tokenPercent"></span>
+    </div>
+    <div class="token-bar-track" id="tokenBarTrack"></div>
+    <div class="token-bar-legend" id="tokenBarLegend"></div>
+  </div>
+
   <!-- 输入区域 -->
   <div class="input-area">
+    <div class="slash-popover" id="slashPopover"></div>
     <div class="input-toolbar">
       <div class="custom-select" id="agentSelect" title="选择 Agent">
         <div class="custom-select-trigger">
@@ -1112,6 +1550,16 @@ export class ChatPanel {
       isBusy: false,
       messages: [],
       streamingParts: {},  // 正在流式更新的 Part
+      // Token 用量跟踪
+      tokenUsage: null,  // { input, output, reasoning, cache: { read, write }, total }
+      tokenCost: 0,
+      contextLimit: 0,   // 当前模型的上下文窗口大小
+      modelLimits: {},    // { 'provider/model': { context, output } }
+      // 代码高亮状态
+      _hlIdCounter: 0,
+      _pendingHighlights: [],
+      _deferredHighlights: {},
+      _highlightDebounceTimers: {},
     };
 
     // ---- 自定义下拉框组件 ----
@@ -1144,12 +1592,20 @@ export class ChatPanel {
           }
         });
 
-        // 搜索过滤
+        // 搜索过滤（多关键词：空格分隔，引号内为整体短语）
         this.searchInput.addEventListener('input', () => {
-          const query = this.searchInput.value.toLowerCase();
+          const raw = this.searchInput.value.trim().toLowerCase();
+          // 解析关键词：提取引号短语，剩余按空格拆分
+          const keywords = [];
+          const regex = /"([^"]+)"|(\S+)/g;
+          let m;
+          while ((m = regex.exec(raw)) !== null) {
+            keywords.push(m[1] || m[2]);
+          }
           this.optionsContainer.querySelectorAll('.custom-select-option').forEach(opt => {
             const text = (opt.textContent || '').toLowerCase();
-            opt.classList.toggle('hidden', query && !text.includes(query));
+            const visible = keywords.length === 0 || keywords.every(kw => text.includes(kw));
+            opt.classList.toggle('hidden', !visible);
           });
           // 隐藏空分组标签
           this.optionsContainer.querySelectorAll('.custom-select-group-label').forEach(lbl => {
@@ -1294,16 +1750,166 @@ export class ChatPanel {
       setupInput() {
         const input = document.getElementById('promptInput');
         input.addEventListener('keydown', (e) => {
+          // 斜杠面板打开时处理导航
+          if (this.slashVisible) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              this.slashNavigate(1);
+              return;
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              this.slashNavigate(-1);
+              return;
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              this.slashSelect();
+              return;
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              this.slashHide();
+              return;
+            } else if (e.key === 'Tab') {
+              e.preventDefault();
+              this.slashSelect();
+              return;
+            }
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             this.send();
           }
         });
-        // 自动调整高度
+        // 监听输入变化，检测斜杠命令
         input.addEventListener('input', () => {
           input.style.height = 'auto';
           input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+          this.slashDetect(input.value);
         });
+      },
+
+      // ---- 斜杠命令面板 ----
+      slashVisible: false,
+      slashActiveIndex: 0,
+      slashFiltered: [],
+
+      slashDetect(rawText) {
+        const match = rawText.match(/^\\/([^\\s]*)$/);
+        if (match) {
+          const query = match[1].toLowerCase();
+          // 合并内置命令和 API 命令
+          const builtinSlash = [
+            { name: 'compact', description: '压缩当前会话上下文' },
+            { name: 'new', description: '新建会话' },
+            { name: 'clear', description: '清除当前消息' },
+            { name: 'fork', description: '分叉当前会话' },
+            { name: 'share', description: '分享当前会话' },
+            { name: 'unshare', description: '取消分享会话' },
+            { name: 'diff', description: '查看当前变更' },
+            { name: 'undo', description: '撤销最近的更改' },
+            { name: 'redo', description: '重做撤销的更改' },
+            { name: 'model', description: '切换模型' },
+            { name: 'agent', description: '切换 Agent' },
+          ];
+          const apiCmds = (state.commands || []).map(c => ({
+            name: c.name,
+            description: c.description || '',
+            source: 'api',
+          }));
+          // 合并去重
+          const nameSet = new Set(apiCmds.map(c => c.name));
+          const allCmds = [...apiCmds, ...builtinSlash.filter(b => !nameSet.has(b.name))];
+          // 过滤
+          this.slashFiltered = query
+            ? allCmds.filter(c => c.name.toLowerCase().includes(query))
+            : allCmds;
+          this.slashActiveIndex = 0;
+          this.slashRender();
+          this.slashShow();
+        } else {
+          this.slashHide();
+        }
+      },
+
+      slashShow() {
+        this.slashVisible = true;
+        document.getElementById('slashPopover').classList.add('visible');
+      },
+
+      slashHide() {
+        this.slashVisible = false;
+        this.slashActiveIndex = 0;
+        document.getElementById('slashPopover').classList.remove('visible');
+      },
+
+      slashRender() {
+        const container = document.getElementById('slashPopover');
+        container.innerHTML = '';
+        if (this.slashFiltered.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'slash-empty';
+          empty.textContent = '无匹配命令';
+          container.appendChild(empty);
+          return;
+        }
+        const header = document.createElement('div');
+        header.className = 'slash-popover-header';
+        header.textContent = '命令';
+        container.appendChild(header);
+        this.slashFiltered.forEach((cmd, idx) => {
+          const item = document.createElement('div');
+          item.className = 'slash-item' + (idx === this.slashActiveIndex ? ' active' : '');
+          item.dataset.index = idx;
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'slash-name';
+          nameSpan.textContent = '/' + cmd.name;
+          item.appendChild(nameSpan);
+          if (cmd.description) {
+            const descSpan = document.createElement('span');
+            descSpan.className = 'slash-desc';
+            descSpan.textContent = cmd.description;
+            item.appendChild(descSpan);
+          }
+          if (cmd.source) {
+            const badge = document.createElement('span');
+            badge.style.cssText = 'font-size:9px;padding:1px 4px;border-radius:3px;background:rgba(128,128,128,0.2);color:var(--fg-secondary);flex-shrink:0;';
+            badge.textContent = cmd.source;
+            item.appendChild(badge);
+          }
+          item.addEventListener('click', () => {
+            this.slashActiveIndex = idx;
+            this.slashSelect();
+          });
+          item.addEventListener('mouseenter', () => {
+            container.querySelectorAll('.slash-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            this.slashActiveIndex = idx;
+          });
+          container.appendChild(item);
+        });
+      },
+
+      slashNavigate(dir) {
+        const len = this.slashFiltered.length;
+        if (len === 0) return;
+        this.slashActiveIndex = (this.slashActiveIndex + dir + len) % len;
+        const container = document.getElementById('slashPopover');
+        container.querySelectorAll('.slash-item').forEach((item, idx) => {
+          item.classList.toggle('active', idx === this.slashActiveIndex);
+        });
+        // 滚动到可见
+        const activeEl = container.querySelector('.slash-item.active');
+        if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+      },
+
+      slashSelect() {
+        const cmd = this.slashFiltered[this.slashActiveIndex];
+        if (!cmd) return;
+        const input = document.getElementById('promptInput');
+        input.value = '/' + cmd.name + ' ';
+        input.focus();
+        // 将光标移到末尾
+        input.setSelectionRange(input.value.length, input.value.length);
+        this.slashHide();
       },
 
       send() {
@@ -1373,7 +1979,16 @@ export class ChatPanel {
       },
 
       showCommands() {
-        vscode.postMessage({ type: 'commands:list' });
+        // 如果已有缓存命令，直接显示；否则请求
+        if (state.commands && state.commands.length > 0) {
+          const cmdText = state.commands.map(c => '/' + c.name + ' - ' + (c.description || '')).join('\\n');
+          this.addMessageToUI({
+            info: { id: 'sys-' + Date.now(), role: 'assistant', createdAt: new Date().toISOString() },
+            parts: [{ id: 'cp1', type: 'text', text: '可用命令:\\n' + cmdText }],
+          });
+        } else {
+          vscode.postMessage({ type: 'commands:list' });
+        }
       },
 
       // ---- 消息渲染 ----
@@ -1382,6 +1997,8 @@ export class ChatPanel {
         const container = document.getElementById('messages');
         container.innerHTML = '';
         state.messages = [];
+        state.streamingParts = {};
+        this.resetHighlightState();
       },
 
       addMessageToUI(msg) {
@@ -1482,7 +2099,9 @@ export class ChatPanel {
         div.className = 'message-content';
         div.dataset.partId = part.id;
         // 简单的 Markdown 渲染
+        state._pendingHighlights = [];
         div.innerHTML = this.simpleMarkdown(part.text || '');
+        this.flushPendingHighlights();
         return div;
       },
 
@@ -1587,23 +2206,289 @@ export class ChatPanel {
         return btn;
       },
 
-      // ---- 简单 Markdown ----
+      // ---- 完整 Markdown 渲染 ----
 
       simpleMarkdown(text) {
         if (!text) return '';
-        return text
+        return this._parseMarkdownBlocks(text);
+      },
+
+      _escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      },
+
+      _parseInline(text) {
+        if (!text) return '';
+        let result = this._escapeHtml(text);
+        // 行内代码 (先处理，避免被其他规则干扰)
+        result = result.replace(/\`([^\`]+?)\`/g, '<code>$1</code>');
+        // 图片
+        result = result.replace(/!\\[([^\\]]*)\\]\\(([^)]+)\\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:4px;margin:4px 0;">');
+        // 链接
+        result = result.replace(/\\[([^\\]]+)\\]\\(([^)]+)\\)/g, '<a href="$2">$1</a>');
+        // 加粗+斜体
+        result = result.replace(/\\*\\*\\*(.+?)\\*\\*\\*/g, '<strong><em>$1</em></strong>');
+        // 加粗
+        result = result.replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>');
+        // 斜体
+        result = result.replace(/\\*(.+?)\\*/g, '<em>$1</em>');
+        // 删除线
+        result = result.replace(/~~(.+?)~~/g, '<del>$1</del>');
+        return result;
+      },
+
+      _parseMarkdownBlocks(text) {
+        const lines = text.split('\\n');
+        let html = '';
+        let i = 0;
+
+        while (i < lines.length) {
+          const line = lines[i];
+
           // 代码块
-          .replace(/\`\`\`(\\w*)\\n([\\s\\S]*?)\`\`\`/g, '<pre><code class="lang-$1">$2</code></pre>')
-          // 行内代码
-          .replace(/\`([^\`]+)\`/g, '<code>$1</code>')
-          // 加粗
-          .replace(/\\*\\*(.+?)\\*\\*/g, '<strong>$1</strong>')
-          // 斜体
-          .replace(/\\*(.+?)\\*/g, '<em>$1</em>')
-          // 链接
-          .replace(/\\[(.+?)\\]\\((.+?)\\)/g, '<a href="$2" style="color:var(--fg-link)">$1</a>')
-          // 换行
-          .replace(/\\n/g, '<br>');
+          if (line.match(/^\`\`\`/)) {
+            const fenceInfo = line.slice(3).trim();
+            const lang = fenceInfo ? fenceInfo.split(/\s+/)[0] : '';
+            const codeLines = [];
+            i++;
+            while (i < lines.length && !lines[i].match(/^\`\`\`\\s*$/)) {
+              codeLines.push(lines[i]);
+              i++;
+            }
+            i++; // 跳过闭合 \`\`\`
+            const rawCode = codeLines.join('\\n');
+            const code = this._escapeHtml(rawCode);
+            const langLabel = lang ? '<span class="code-lang">' + this._escapeHtml(lang) + '</span>' : '';
+            const hlId = 'hl-' + (++state._hlIdCounter);
+            const langClass = lang ? ' lang-' + this._escapeHtml(lang) : '';
+            html += '<pre>' + langLabel + '<code class="hljs' + langClass + '" data-hl-id="' + hlId + '">' + code + '</code></pre>';
+            // 记录待高亮请求
+            state._pendingHighlights.push({ id: hlId, code: rawCode, lang: lang || '' });
+            continue;
+          }
+
+          // 水平线
+          if (line.match(/^(\\*{3,}|-{3,}|_{3,})\\s*$/)) {
+            html += '<hr>';
+            i++;
+            continue;
+          }
+
+          // 标题
+          const headingMatch = line.match(/^(#{1,6})\\s+(.+)$/);
+          if (headingMatch) {
+            const level = headingMatch[1].length;
+            html += '<h' + level + '>' + this._parseInline(headingMatch[2]) + '</h' + level + '>';
+            i++;
+            continue;
+          }
+
+          // 表格
+          if (line.includes('|') && i + 1 < lines.length && lines[i + 1].match(/^[\\s|:-]+$/)) {
+            html += this._parseTable(lines, i);
+            // 跳过表格行
+            i++; // header
+            i++; // separator
+            while (i < lines.length && lines[i].includes('|') && lines[i].trim() !== '') {
+              i++;
+            }
+            continue;
+          }
+
+          // 引用
+          if (line.match(/^>\\s?/)) {
+            const quoteLines = [];
+            while (i < lines.length && lines[i].match(/^>\\s?/)) {
+              quoteLines.push(lines[i].replace(/^>\\s?/, ''));
+              i++;
+            }
+            html += '<blockquote>' + this._parseMarkdownBlocks(quoteLines.join('\\n')) + '</blockquote>';
+            continue;
+          }
+
+          // 无序列表
+          if (line.match(/^\\s*[-*+]\\s+/)) {
+            html += this._parseList(lines, i, 'ul');
+            while (i < lines.length && (lines[i].match(/^\\s*[-*+]\\s+/) || lines[i].match(/^\\s{2,}/))) {
+              i++;
+            }
+            continue;
+          }
+
+          // 有序列表
+          if (line.match(/^\\s*\\d+\\.\\s+/)) {
+            html += this._parseList(lines, i, 'ol');
+            while (i < lines.length && (lines[i].match(/^\\s*\\d+\\.\\s+/) || lines[i].match(/^\\s{2,}/))) {
+              i++;
+            }
+            continue;
+          }
+
+          // 空行
+          if (line.trim() === '') {
+            i++;
+            continue;
+          }
+
+          // 普通段落
+          const paraLines = [line];
+          i++;
+          while (i < lines.length && lines[i].trim() !== '' && !lines[i].match(/^(#{1,6}\\s|>\\s?|\`\`\`|\\*{3,}|-{3,}|_{3,}|\\s*[-*+]\\s|\\s*\\d+\\.\\s)/) && !lines[i].includes('|')) {
+            paraLines.push(lines[i]);
+            i++;
+          }
+          html += '<p>' + this._parseInline(paraLines.join('\\n')) + '</p>';
+        }
+
+        return html;
+      },
+
+      _parseTable(lines, startIdx) {
+        const headerLine = lines[startIdx];
+        const headerCells = headerLine.split('|').map(c => c.trim()).filter(c => c !== '');
+
+        // 解析对齐
+        const sepLine = lines[startIdx + 1];
+        const aligns = sepLine.split('|').map(c => c.trim()).filter(c => c !== '').map(c => {
+          if (c.startsWith(':') && c.endsWith(':')) return 'center';
+          if (c.endsWith(':')) return 'right';
+          return 'left';
+        });
+
+        let html = '<table><thead><tr>';
+        headerCells.forEach((cell, idx) => {
+          const align = aligns[idx] || 'left';
+          html += '<th style="text-align:' + align + '">' + this._parseInline(cell) + '</th>';
+        });
+        html += '</tr></thead><tbody>';
+
+        let row = startIdx + 2;
+        while (row < lines.length && lines[row].includes('|') && lines[row].trim() !== '') {
+          const cells = lines[row].split('|').map(c => c.trim()).filter(c => c !== '');
+          html += '<tr>';
+          cells.forEach((cell, idx) => {
+            const align = aligns[idx] || 'left';
+            html += '<td style="text-align:' + align + '">' + this._parseInline(cell) + '</td>';
+          });
+          html += '</tr>';
+          row++;
+        }
+
+        html += '</tbody></table>';
+        return html;
+      },
+
+      _parseList(lines, startIdx, tag) {
+        const isOrdered = tag === 'ol';
+        const itemPattern = isOrdered ? /^(\\s*)\\d+\\.\\s+(.*)/ : /^(\\s*)[-*+]\\s+(.*)/;
+        let html = '<' + tag + '>';
+        let i = startIdx;
+
+        while (i < lines.length) {
+          const match = lines[i].match(itemPattern);
+          if (!match) break;
+
+          let content = match[2];
+          // 任务列表
+          const taskMatch = content.match(/^\\[([ xX])\\]\\s+(.*)/);
+          if (taskMatch) {
+            const checked = taskMatch[1] !== ' ' ? ' checked' : '';
+            html += '<li class="task-item"><input type="checkbox"' + checked + '>' + this._parseInline(taskMatch[2]) + '</li>';
+          } else {
+            html += '<li>' + this._parseInline(content) + '</li>';
+          }
+          i++;
+        }
+
+        html += '</' + tag + '>';
+        return html;
+      },
+
+      resetHighlightState() {
+        state._pendingHighlights = [];
+        state._deferredHighlights = {};
+        const timers = state._highlightDebounceTimers || {};
+        for (const key of Object.keys(timers)) {
+          clearTimeout(timers[key]);
+        }
+        state._highlightDebounceTimers = {};
+      },
+
+      flushPendingHighlights() {
+        const pending = state._pendingHighlights || [];
+        state._pendingHighlights = [];
+        if (pending.length === 0) return;
+
+        for (const req of pending) {
+          vscode.postMessage({
+            type: 'highlight:request',
+            id: req.id,
+            code: req.code,
+            lang: req.lang,
+          });
+        }
+      },
+
+      deferPendingHighlights(partId) {
+        const pending = state._pendingHighlights || [];
+        state._pendingHighlights = [];
+
+        if (!partId) return;
+
+        const timers = state._highlightDebounceTimers || {};
+        if (timers[partId]) {
+          clearTimeout(timers[partId]);
+          delete timers[partId];
+        }
+
+        if (pending.length === 0) {
+          delete state._deferredHighlights[partId];
+          state._highlightDebounceTimers = timers;
+          return;
+        }
+
+        state._deferredHighlights[partId] = pending;
+        timers[partId] = setTimeout(() => {
+          this.flushDeferredHighlights(partId);
+        }, 250);
+        state._highlightDebounceTimers = timers;
+      },
+
+      flushDeferredHighlights(partId) {
+        const timers = state._highlightDebounceTimers || {};
+        const deferred = state._deferredHighlights || {};
+
+        if (partId) {
+          if (timers[partId]) {
+            clearTimeout(timers[partId]);
+            delete timers[partId];
+          }
+          const pending = deferred[partId] || [];
+          delete deferred[partId];
+          state._highlightDebounceTimers = timers;
+          state._deferredHighlights = deferred;
+
+          for (const req of pending) {
+            vscode.postMessage({
+              type: 'highlight:request',
+              id: req.id,
+              code: req.code,
+              lang: req.lang,
+            });
+          }
+          return;
+        }
+
+        for (const key of Object.keys(deferred)) {
+          this.flushDeferredHighlights(key);
+        }
+      },
+
+      applyHighlightResult(id, html) {
+        if (!id || !html) return;
+        const codeEl = document.querySelector('code[data-hl-id="' + id + '"]');
+        if (!codeEl) return;
+        codeEl.innerHTML = html;
       },
 
       scrollToBottom() {
@@ -1611,6 +2496,184 @@ export class ChatPanel {
         requestAnimationFrame(() => {
           container.scrollTop = container.scrollHeight;
         });
+      },
+
+      // ---- Token 用量条 ----
+
+      /**
+       * 从消息列表中计算累积 token 用量
+       * 查找最后一条包含 tokens 的 assistant 消息
+       */
+      computeTokenUsage() {
+        let lastTokens = null;
+        let totalCost = 0;
+
+        for (let i = state.messages.length - 1; i >= 0; i--) {
+          const msg = state.messages[i];
+          if (!msg.info || msg.info.role !== 'assistant') continue;
+
+          // 累加 cost
+          if (msg.info.cost != null) totalCost += msg.info.cost;
+
+          // 从 parts 中查找 step-finish 的 tokens
+          if (!lastTokens && msg.parts) {
+            for (let j = msg.parts.length - 1; j >= 0; j--) {
+              const part = msg.parts[j];
+              if (part.type === 'step-finish' && part.tokens) {
+                lastTokens = part.tokens;
+                if (part.cost != null) totalCost = Math.max(totalCost, part.cost);
+                break;
+              }
+            }
+          }
+
+          // 也检查 info.tokens（某些 API 版本直接在 info 上）
+          if (!lastTokens && msg.info.tokens) {
+            lastTokens = msg.info.tokens;
+          }
+
+          // 只需要最后一条有 tokens 的消息
+          if (lastTokens) break;
+        }
+
+        if (lastTokens) {
+          state.tokenUsage = lastTokens;
+          state.tokenCost = totalCost;
+          this.renderTokenBar();
+        }
+      },
+
+      /**
+       * 从单条消息/事件中提取 token 数据并更新
+       */
+      extractAndUpdateTokens(data) {
+        if (!data) return;
+
+        let tokens = null;
+        let cost = 0;
+
+        // 从 info.tokens 提取
+        if (data.info && data.info.tokens) {
+          tokens = data.info.tokens;
+          cost = data.info.cost || 0;
+        }
+
+        // 从 parts 中的 step-finish 提取
+        if (data.parts) {
+          for (const part of data.parts) {
+            if (part.type === 'step-finish' && part.tokens) {
+              tokens = part.tokens;
+              cost = part.cost || cost;
+            }
+          }
+        }
+
+        // 如果是单个 part 更新（step-finish）
+        if (data.type === 'step-finish' && data.tokens) {
+          tokens = data.tokens;
+          cost = data.cost || 0;
+        }
+
+        if (tokens) {
+          state.tokenUsage = tokens;
+          state.tokenCost = cost;
+
+          // 尝试从消息的 model 信息更新 context limit
+          if (data.info && data.info.model) {
+            const modelKey = data.info.model.providerID + '/' + data.info.model.modelID;
+            if (state.modelLimits[modelKey]) {
+              state.contextLimit = state.modelLimits[modelKey].context;
+            }
+          }
+
+          this.renderTokenBar();
+        }
+      },
+
+      /**
+       * 渲染 token 用量条
+       */
+      renderTokenBar() {
+        const usage = state.tokenUsage;
+        if (!usage) return;
+
+        const container = document.getElementById('tokenBarContainer');
+        const track = document.getElementById('tokenBarTrack');
+        const legend = document.getElementById('tokenBarLegend');
+        const countEl = document.getElementById('tokenCount');
+        const percentEl = document.getElementById('tokenPercent');
+
+        const input = usage.input || 0;
+        const output = usage.output || 0;
+        const reasoning = usage.reasoning || 0;
+        const cacheRead = (usage.cache && usage.cache.read) || 0;
+        const cacheWrite = (usage.cache && usage.cache.write) || 0;
+        const total = (usage.total != null) ? usage.total : (input + output + reasoning + cacheRead + cacheWrite);
+
+        // 更新 header
+        countEl.textContent = this.formatNumber(total) + ' tokens';
+
+        if (state.contextLimit > 0) {
+          const pct = Math.min(100, Math.round((total / state.contextLimit) * 100));
+          percentEl.textContent = pct + '%';
+        } else {
+          percentEl.textContent = '';
+        }
+
+        // 构建分段
+        const segments = [
+          { key: 'input', label: '输入', value: input },
+          { key: 'output', label: '输出', value: output },
+          { key: 'reasoning', label: '推理', value: reasoning },
+          { key: 'cache_read', label: '缓存读取', value: cacheRead },
+          { key: 'cache_write', label: '缓存写入', value: cacheWrite },
+        ].filter(s => s.value > 0);
+
+        const segmentTotal = segments.reduce((sum, s) => sum + s.value, 0);
+
+        // 渲染 bar track
+        track.innerHTML = '';
+        for (const seg of segments) {
+          const pct = segmentTotal > 0 ? (seg.value / segmentTotal * 100) : 0;
+          const el = document.createElement('div');
+          el.className = 'token-bar-segment';
+          el.dataset.cat = seg.key;
+          el.style.flexBasis = pct.toFixed(2) + '%';
+          el.title = seg.label + ': ' + this.formatNumber(seg.value) + ' (' + Math.round(pct) + '%)';
+          track.appendChild(el);
+        }
+
+        // 渲染图例
+        legend.innerHTML = '';
+        for (const seg of segments) {
+          const pct = segmentTotal > 0 ? Math.round(seg.value / segmentTotal * 100) : 0;
+          const item = document.createElement('span');
+          item.className = 'token-bar-legend-item';
+          item.innerHTML = '<span class="token-bar-legend-dot" data-cat="' + seg.key + '"></span>' +
+            seg.label + ' ' + this.formatNumber(seg.value) + ' (' + pct + '%)';
+          legend.appendChild(item);
+        }
+
+        // 显示容器
+        container.classList.add('visible');
+      },
+
+      /**
+       * 重置 token 用量（切换会话时）
+       */
+      resetTokenBar() {
+        state.tokenUsage = null;
+        state.tokenCost = 0;
+        const container = document.getElementById('tokenBarContainer');
+        container.classList.remove('visible');
+      },
+
+      /**
+       * 格式化数字（带千位分隔符）
+       */
+      formatNumber(n) {
+        if (n == null) return '0';
+        return n.toLocaleString();
       },
 
       // ---- SSE 事件更新 ----
@@ -1627,6 +2690,8 @@ export class ChatPanel {
             } else if (data.info && data.parts) {
               this.addMessageToUI(data);
             }
+            // 提取 token 用量
+            this.extractAndUpdateTokens(data);
             break;
           }
           case 'message.part.updated': {
@@ -1637,6 +2702,8 @@ export class ChatPanel {
               newPartEl.dataset.partId = data.id;
               partEl.parentNode.replaceChild(newPartEl, partEl);
             }
+            // 提取 step-finish part 的 token 用量
+            this.extractAndUpdateTokens(data);
             break;
           }
           case 'message.part.delta': {
@@ -1647,7 +2714,9 @@ export class ChatPanel {
                 // 追加文本
                 const current = state.streamingParts[data.id] || '';
                 state.streamingParts[data.id] = current + (data.delta || '');
+                state._pendingHighlights = [];
                 partEl.innerHTML = this.simpleMarkdown(state.streamingParts[data.id]);
+                this.deferPendingHighlights(data.id);
               }
             }
             break;
@@ -1668,6 +2737,7 @@ export class ChatPanel {
           case 'session.idle': {
             this.setBusy(false);
             document.getElementById('statusText').textContent = '就绪';
+            this.flushDeferredHighlights();
             state.streamingParts = {};
             break;
           }
@@ -1740,7 +2810,6 @@ export class ChatPanel {
 
         if (data.all) {
           const connectedProviders = data.all.filter(p => connected.includes(p.id));
-          const disconnectedProviders = data.all.filter(p => !connected.includes(p.id));
 
           if (connectedProviders.length > 0) {
             const opts = [];
@@ -1752,25 +2821,22 @@ export class ChatPanel {
                 const isCurrent = currentModel === provider.id + '/' + model.id;
                 if (isCurrent) selectedValue = val;
                 opts.push({ value: val, label, selected: isCurrent });
+                // 收集模型的 context limit
+                if (model.limit && model.limit.context) {
+                  state.modelLimits[provider.id + '/' + model.id] = {
+                    context: model.limit.context,
+                    output: model.limit.output || 0,
+                  };
+                }
               }
             }
             groups.push({ label: '已连接', options: opts });
           }
+        }
 
-          if (disconnectedProviders.length > 0) {
-            const opts = [];
-            for (const provider of disconnectedProviders) {
-              const models = provider.models ? Object.values(provider.models) : [];
-              for (const model of models) {
-                opts.push({
-                  value: provider.id + '::' + model.id,
-                  label: provider.id + '/' + (model.name || model.id) + ' (未连接)',
-                  disabled: true,
-                });
-              }
-            }
-            groups.push({ label: '未连接', options: opts });
-          }
+        // 更新当前模型的 context limit
+        if (currentModel && state.modelLimits[currentModel]) {
+          state.contextLimit = state.modelLimits[currentModel].context;
         }
 
         modelSelectEl.setOptions(groups);
@@ -1858,10 +2924,13 @@ export class ChatPanel {
       switch (msg.type) {
         case 'messages:load':
           app.clearMessages();
+          app.resetTokenBar();
           if (msg.messages) {
             for (const m of msg.messages) {
               app.addMessageToUI(m);
             }
+            // 从已加载的消息中计算 token 用量
+            app.computeTokenUsage();
           }
           break;
         case 'sessions:list':
@@ -1873,9 +2942,12 @@ export class ChatPanel {
           document.getElementById('sessionInfo').textContent =
             msg.session.title || msg.session.id.slice(0, 8);
           app.clearMessages();
+          app.resetTokenBar();
           break;
         case 'session:switch':
           state.sessionId = msg.sessionId;
+          app.resetHighlightState();
+          app.resetTokenBar();
           break;
         case 'session:aborted':
           app.setBusy(false);
@@ -1891,11 +2963,7 @@ export class ChatPanel {
           break;
         case 'commands:list':
           if (msg.commands) {
-            const cmdText = msg.commands.map(c => '/' + c.name + ' - ' + (c.description || '')).join('\\n');
-            app.addMessageToUI({
-              info: { id: 'sys-' + Date.now(), role: 'assistant', createdAt: new Date().toISOString() },
-              parts: [{ id: 'cp1', type: 'text', text: '可用命令:\\n' + cmdText }],
-            });
+            state.commands = msg.commands;
           }
           break;
         case 'command:result':
@@ -1923,6 +2991,9 @@ export class ChatPanel {
         case 'sse:event':
           app.updateFromSSE(msg.eventType, msg.data);
           break;
+        case 'highlight:result':
+          app.applyHighlightResult(msg.id, msg.html);
+          break;
         case 'todo:list':
           if (msg.todos) app.renderTodos(msg.todos);
           break;
@@ -1944,9 +3015,9 @@ export class ChatPanel {
   }
 
   dispose(): void {
-    ChatPanel.currentPanel = undefined;
+    ChatViewProvider.instance = undefined;
     this.sseController?.abort();
-    this.panel.dispose();
+    this.view = undefined;
     while (this.disposables.length) {
       const d = this.disposables.pop();
       if (d) d.dispose();
