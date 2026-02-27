@@ -106,6 +106,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private extensionUri: vscode.Uri;
   private client: OpenCodeClient | null = null;
   private currentSessionId: string | null = null;
+  private messageLoadVersion = 0;
   private sseController: AbortController | null = null;
   private disposables: vscode.Disposable[] = [];
 
@@ -255,15 +256,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private async loadMessages(sessionId: string): Promise<void> {
     if (!this.client) return;
+    const loadVersion = ++this.messageLoadVersion;
+
     try {
-      const messages = await this.client.listMessages(sessionId);
-      this.postMessage({ type: "messages:load", messages });
+      const messages = await this.client.listMessages(sessionId, 1000);
+      if (loadVersion !== this.messageLoadVersion) return;
+      if (this.currentSessionId !== sessionId) return;
+
+      this.postMessage({ type: "messages:load", sessionId, messages });
     } catch (error: any) {
+      if (loadVersion !== this.messageLoadVersion) return;
       this.postMessage({
         type: "error",
         message: `加载消息失败: ${error.message}`,
       });
     }
+  }
+
+  private async refreshCurrentSession(): Promise<void> {
+    if (!this.currentSessionId) {
+      this.postMessage({
+        type: "error",
+        message: "当前没有可刷新的会话",
+      });
+      return;
+    }
+
+    await Promise.all([
+      this.loadMessages(this.currentSessionId),
+      this.sendSessionList(),
+      this.sendTodoList(),
+    ]);
   }
 
   private async handleWebviewMessage(msg: any): Promise<void> {
@@ -296,6 +319,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.switchSession(msg.sessionId);
         break;
 
+      case "session:refresh":
+        await this.refreshCurrentSession();
+        break;
+
       case "session:abort":
         await this.abortCurrentSession();
         break;
@@ -310,10 +337,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       case "session:unrevert":
         await this.unrevertMessages();
-        break;
-
-      case "session:diff":
-        await this.viewDiff();
         break;
 
       case "providers:list":
@@ -388,7 +411,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // 如果已有会话，加载最近的
     if (this.currentSessionId) {
-      await this.loadMessages(this.currentSessionId);
+      await Promise.all([
+        this.loadMessages(this.currentSessionId),
+        this.sendTodoList(),
+      ]);
     }
   }
 
@@ -651,19 +677,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.postMessage({
         type: "error",
         message: `恢复失败: ${error.message}`,
-      });
-    }
-  }
-
-  private async viewDiff(): Promise<void> {
-    if (!this.currentSessionId || !this.client) return;
-    try {
-      const diffs = await this.client.getSessionDiff(this.currentSessionId);
-      this.postMessage({ type: "session:diff", diffs });
-    } catch (error: any) {
-      this.postMessage({
-        type: "error",
-        message: `获取 diff 失败: ${error.message}`,
       });
     }
   }
@@ -1389,8 +1402,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       max-height: 200px;
       outline: none;
       line-height: 1.4;
+      overflow-y: hidden;
+      scrollbar-width: thin;
+      scrollbar-color: color-mix(in srgb, var(--accent) 55%, transparent) transparent;
     }
     .input-wrapper textarea:focus { border-color: var(--accent); }
+    .input-wrapper textarea.is-scrollable {
+      overflow-y: auto;
+    }
+    .input-wrapper textarea::-webkit-scrollbar {
+      width: 10px;
+    }
+    .input-wrapper textarea::-webkit-scrollbar-track {
+      background: transparent;
+      margin: 6px 0;
+    }
+    .input-wrapper textarea::-webkit-scrollbar-thumb {
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accent) 72%, transparent),
+        color-mix(in srgb, var(--accent) 42%, transparent)
+      );
+      border-radius: 999px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .input-wrapper textarea::-webkit-scrollbar-thumb:hover {
+      background: linear-gradient(
+        180deg,
+        color-mix(in srgb, var(--accent) 86%, transparent),
+        color-mix(in srgb, var(--accent) 60%, transparent)
+      );
+      background-clip: padding-box;
+    }
     .send-btn {
       background: var(--accent);
       color: var(--accent-fg);
@@ -1463,8 +1507,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span class="header-title">OpenCode</span>
     <span class="header-session" id="sessionInfo">未连接</span>
     <button class="header-btn" id="btnNewSession">+ 新建会话</button>
-    <button class="header-btn" id="btnViewDiff">Diff</button>
-    <button class="header-btn" id="btnShowCommands">命令</button>
+    <button class="header-btn" id="btnRefreshSession">刷新</button>
   </div>
 
   <!-- 消息区域 -->
@@ -1489,16 +1532,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span id="statusText">未连接</span>
     <span style="flex:1"></span>
     <span id="modelInfo">-</span>
-  </div>
-
-  <!-- Token 用量条 -->
-  <div class="token-bar-container" id="tokenBarContainer">
-    <div class="token-bar-header">
-      <span class="token-count" id="tokenCount">0 tokens</span>
-      <span class="token-percent" id="tokenPercent"></span>
-    </div>
-    <div class="token-bar-track" id="tokenBarTrack"></div>
-    <div class="token-bar-legend" id="tokenBarLegend"></div>
   </div>
 
   <!-- 输入区域 -->
@@ -1529,11 +1562,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div class="input-wrapper">
       <textarea
         id="promptInput"
-        placeholder="输入消息... (Enter 发送, Shift+Enter 换行, / 查看命令)"
         rows="1"
       ></textarea>
       <button class="send-btn" id="sendBtn">发送</button>
     </div>
+  </div>
+
+  <!-- Token 用量条 -->
+  <div class="token-bar-container" id="tokenBarContainer">
+    <div class="token-bar-header">
+      <span class="token-count" id="tokenCount">0 tokens</span>
+      <span class="token-percent" id="tokenPercent"></span>
+    </div>
+    <div class="token-bar-track" id="tokenBarTrack"></div>
+    <div class="token-bar-legend" id="tokenBarLegend"></div>
   </div>
 
   <script nonce="${nonce}">
@@ -1733,10 +1775,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       setupButtons() {
-        document.getElementById('btnNewSession').addEventListener('click', () => app.newSession());
-        document.getElementById('btnViewDiff').addEventListener('click', () => app.viewDiff());
-        document.getElementById('btnShowCommands').addEventListener('click', () => app.showCommands());
-        document.getElementById('sendBtn').addEventListener('click', () => app.handleSendClick());
+        const bindClick = (id, handler) => {
+          const button = document.getElementById(id);
+          if (button) {
+            button.addEventListener('click', handler);
+          }
+        };
+
+        bindClick('btnNewSession', () => app.newSession());
+        bindClick('btnRefreshSession', () => app.refreshSession());
+        bindClick('sendBtn', () => app.handleSendClick());
       },
 
       handleSendClick() {
@@ -1779,12 +1827,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             this.send();
           }
         });
+
         // 监听输入变化，检测斜杠命令
         input.addEventListener('input', () => {
-          input.style.height = 'auto';
-          input.style.height = Math.min(input.scrollHeight, 200) + 'px';
+          this.syncInputHeight();
           this.slashDetect(input.value);
         });
+
+        this.syncInputHeight();
+      },
+
+      syncInputHeight() {
+        const input = document.getElementById('promptInput');
+        if (!input) return;
+
+        const maxHeight = 200;
+        input.style.height = 'auto';
+        const nextHeight = Math.min(input.scrollHeight, maxHeight);
+        input.style.height = nextHeight + 'px';
+
+        const isScrollable = input.scrollHeight > maxHeight;
+        input.classList.toggle('is-scrollable', isScrollable);
       },
 
       // ---- 斜杠命令面板 ----
@@ -1909,6 +1972,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         input.focus();
         // 将光标移到末尾
         input.setSelectionRange(input.value.length, input.value.length);
+        this.syncInputHeight();
         this.slashHide();
       },
 
@@ -1941,7 +2005,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         input.value = '';
-        input.style.height = 'auto';
+        this.syncInputHeight();
         this.setBusy(true);
       },
 
@@ -1974,21 +2038,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         vscode.postMessage({ type: 'session:create' });
       },
 
-      viewDiff() {
-        vscode.postMessage({ type: 'session:diff' });
-      },
-
-      showCommands() {
-        // 如果已有缓存命令，直接显示；否则请求
-        if (state.commands && state.commands.length > 0) {
-          const cmdText = state.commands.map(c => '/' + c.name + ' - ' + (c.description || '')).join('\\n');
-          this.addMessageToUI({
-            info: { id: 'sys-' + Date.now(), role: 'assistant', createdAt: new Date().toISOString() },
-            parts: [{ id: 'cp1', type: 'text', text: '可用命令:\\n' + cmdText }],
-          });
-        } else {
-          vscode.postMessage({ type: 'commands:list' });
-        }
+      refreshSession() {
+        vscode.postMessage({ type: 'session:refresh' });
       },
 
       // ---- 消息渲染 ----
@@ -2681,9 +2732,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       updateFromSSE(eventType, data) {
         switch (eventType) {
           case 'message.updated': {
+            const sessionId = data.info?.sessionID || data.sessionID;
+            if (sessionId && state.sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
+            let updatedInState = false;
+            if (data.info?.id) {
+              const idx = state.messages.findIndex(m => m.info?.id === data.info.id);
+              if (idx >= 0) {
+                state.messages[idx] = data;
+                updatedInState = true;
+              }
+            }
+
             // 完整消息更新
             const msgEl = document.querySelector('[data-message-id="' + data.info?.id + '"]');
             if (msgEl && data.info && data.parts) {
+              if (!updatedInState) {
+                state.messages.push(data);
+              }
               const parent = msgEl.parentNode;
               const newEl = this.renderMessage(data);
               parent.replaceChild(newEl, msgEl);
@@ -2695,18 +2763,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             break;
           }
           case 'message.part.updated': {
+            const sessionId = data.sessionID || data.info?.sessionID;
+            if (sessionId && state.sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
             // Part 更新
             const partEl = document.querySelector('[data-part-id="' + data.id + '"]');
             if (partEl) {
               const newPartEl = this.renderPart(data, {});
               newPartEl.dataset.partId = data.id;
               partEl.parentNode.replaceChild(newPartEl, partEl);
+              this.extractAndUpdateTokens(data);
+            } else if (sessionId && sessionId === state.sessionId) {
+              this.extractAndUpdateTokens(data);
             }
-            // 提取 step-finish part 的 token 用量
-            this.extractAndUpdateTokens(data);
             break;
           }
           case 'message.part.delta': {
+            const sessionId = data.sessionID || data.info?.sessionID;
+            if (sessionId && state.sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
             // 增量文本更新
             if (data.type === 'text' && data.id) {
               const partEl = document.querySelector('[data-part-id="' + data.id + '"]');
@@ -2735,6 +2814,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             break;
           }
           case 'session.idle': {
+            const sessionId = data.sessionID || data.id;
+            if (sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
             this.setBusy(false);
             document.getElementById('statusText').textContent = '就绪';
             this.flushDeferredHighlights();
@@ -2742,6 +2826,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             break;
           }
           case 'session.error': {
+            const sessionId = data.sessionID || data.id;
+            if (sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
             this.setBusy(false);
             const errMsg = data.error?.message || '未知错误';
             this.addMessageToUI({
@@ -2757,6 +2846,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             break;
           }
           case 'todo.updated': {
+            const sessionId = data.sessionID || data.id;
+            if (sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
             if (data.todos) this.renderTodos(data.todos);
             break;
           }
@@ -2896,25 +2990,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       updateSessions(sessions, statusMap) {
         state.sessions = sessions;
         state.statusMap = statusMap || {};
+        this.updateSessionInfoText();
       },
 
-      showDiffs(diffs) {
-        if (!diffs || diffs.length === 0) {
-          this.addMessageToUI({
-            info: { id: 'sys-' + Date.now(), role: 'user', createdAt: new Date().toISOString() },
-            parts: [{ id: 'dp1', type: 'text', text: '当前会话没有文件变更' }],
-          });
+      updateSessionInfoText() {
+        const el = document.getElementById('sessionInfo');
+        if (!state.sessionId) {
+          el.textContent = '未选择会话';
           return;
         }
-        for (const diff of diffs) {
-          const content = (diff.hunks || []).map(h =>
-            h.header + '\\n' + (h.lines || []).join('\\n')
-          ).join('\\n');
-          this.addMessageToUI({
-            info: { id: 'diff-' + Date.now() + '-' + diff.path, role: 'assistant', createdAt: new Date().toISOString() },
-            parts: [{ id: 'dp-' + diff.path, type: 'patch', file: diff.path, content }],
-          });
-        }
+
+        const current = (state.sessions || []).find(s => s.id === state.sessionId);
+        el.textContent = current?.title || state.sessionId.slice(0, 8);
       },
     };
 
@@ -2923,6 +3010,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const msg = event.data;
       switch (msg.type) {
         case 'messages:load':
+          if (msg.sessionId && state.sessionId && msg.sessionId !== state.sessionId) {
+            break;
+          }
+          if (msg.sessionId) {
+            state.sessionId = msg.sessionId;
+          }
+          app.updateSessionInfoText();
           app.clearMessages();
           app.resetTokenBar();
           if (msg.messages) {
@@ -2946,14 +3040,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'session:switch':
           state.sessionId = msg.sessionId;
+          app.updateSessionInfoText();
+          app.clearMessages();
           app.resetHighlightState();
           app.resetTokenBar();
           break;
         case 'session:aborted':
           app.setBusy(false);
-          break;
-        case 'session:diff':
-          app.showDiffs(msg.diffs);
           break;
         case 'providers:list':
           app.updateProviders(msg.providers, msg.currentModel, msg.enabledProviders, msg.disabledProviders);
@@ -2986,6 +3079,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'prompt:append':
           const input = document.getElementById('promptInput');
           input.value += (input.value ? ' ' : '') + msg.text;
+          app.syncInputHeight();
           input.focus();
           break;
         case 'sse:event':

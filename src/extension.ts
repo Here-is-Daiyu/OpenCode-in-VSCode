@@ -71,15 +71,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     .getConfiguration("opencode")
     .get<boolean>("server.autoStart", true);
 
-  if (autoStart && vscode.workspace.workspaceFolders?.length) {
+  if (autoStart) {
     // 延迟启动，让 VSCode 先完成初始化
-    setTimeout(() => {
-      serverManager.start().catch((error) => {
+    setTimeout(async () => {
+      try {
+        await serverManager.start();
+      } catch (error: any) {
+        const config = vscode.workspace.getConfiguration("opencode");
+        const hostname = config.get<string>("server.hostname", "127.0.0.1");
+        const port = config.get<number>("server.port", 0);
+
+        if (port > 0) {
+          const endpoint = `http://${hostname}:${port}`;
+          try {
+            await serverManager.connectToExisting(endpoint);
+            return;
+          } catch {
+            // 自动回退失败后再提示
+          }
+        }
+
         vscode.window.showWarningMessage(
           `OpenCode 服务器启动失败: ${error.message}。请确保 opencode 已安装。`
         );
-      });
-    }, 2000);
+      }
+    }, 800);
   }
 
   // ---- 首次安装时将聊天面板移动到辅助侧栏 ----
