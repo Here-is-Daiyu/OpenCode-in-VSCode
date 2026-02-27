@@ -607,11 +607,17 @@ function registerCommands(context: vscode.ExtensionContext): void {
         ]);
         const currentModel = (config as any)?.model || "";
         const connected = providers.connected || [];
+        const enabledProviders: string[] = (config as any)?.enabled_providers || [];
+        const disabledProviders: string[] = (config as any)?.disabled_providers || [];
 
         const items: Array<{ label: string; description: string; providerID: string; modelID: string; kind?: vscode.QuickPickItemKind }> = [];
 
-        // 已连接 providers
-        const connectedProviders = (providers.all || []).filter((p) => connected.includes(p.id));
+        // 仅显示已连接且可用的 providers
+        const connectedProviders = (providers.all || []).filter((p) => {
+          if (disabledProviders.includes(p.id)) return false;
+          if (enabledProviders.length > 0 && !enabledProviders.includes(p.id)) return false;
+          return connected.includes(p.id);
+        });
         if (connectedProviders.length > 0) {
           items.push({ label: "已连接", description: "", providerID: "", modelID: "", kind: vscode.QuickPickItemKind.Separator });
           for (const provider of connectedProviders) {
@@ -629,21 +635,9 @@ function registerCommands(context: vscode.ExtensionContext): void {
           }
         }
 
-        // 未连接 providers（信息展示）
-        const disconnectedProviders = (providers.all || []).filter((p) => !connected.includes(p.id));
-        if (disconnectedProviders.length > 0) {
-          items.push({ label: "未连接", description: "", providerID: "", modelID: "", kind: vscode.QuickPickItemKind.Separator });
-          for (const provider of disconnectedProviders) {
-            const models = provider.models ? Object.values(provider.models) : [];
-            for (const model of models) {
-              items.push({
-                label: `${provider.name || provider.id}/${model.name || model.id}`,
-                description: "未连接 - 需要配置 API Key",
-                providerID: provider.id,
-                modelID: model.id,
-              });
-            }
-          }
+        if (items.length === 0) {
+          vscode.window.showWarningMessage("没有可用的已连接模型，请先配置 AI 提供商连接");
+          return;
         }
 
         const selected = await vscode.window.showQuickPick(items, {
@@ -651,18 +645,6 @@ function registerCommands(context: vscode.ExtensionContext): void {
         });
 
         if (selected && selected.providerID && selected.modelID) {
-          // 检查是否已连接
-          if (!connected.includes(selected.providerID)) {
-            const action = await vscode.window.showWarningMessage(
-              `Provider "${selected.providerID}" 未连接，需要先配置 API Key`,
-              "配置连接"
-            );
-            if (action === "配置连接") {
-              vscode.commands.executeCommand("opencode.connectProvider");
-            }
-            return;
-          }
-
           try {
             await client.updateConfig({
               model: `${selected.providerID}/${selected.modelID}`,

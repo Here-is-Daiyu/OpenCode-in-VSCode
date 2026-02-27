@@ -108,6 +108,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private currentSessionId: string | null = null;
   private messageLoadVersion = 0;
   private sseController: AbortController | null = null;
+  private _webviewReady = false;
   private disposables: vscode.Disposable[] = [];
 
   constructor(extensionUri: vscode.Uri) {
@@ -167,6 +168,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (this.view) {
       this.subscribeToEvents();
     }
+    // 如果 webview 已经就绪，触发初始化
+    if (this._webviewReady) {
+      this.onWebviewReady().catch(() => {});
+    }
   }
 
   /**
@@ -196,7 +201,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private handleSSEEvent(event: SSEEvent): void {
-    const { type, properties } = event;
+    const { type } = event;
+    const properties = this.normalizeEventProperties(type, event.properties || {});
 
     // 转发所有事件到 Webview
     this.postMessage({
@@ -221,10 +227,57 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       case "session.error":
         vscode.window.showErrorMessage(
-          `OpenCode 错误: ${properties.error?.message || "未知错误"}`
+          `OpenCode 错误: ${properties.error?.message || properties.error?.data?.message || "未知错误"}`
         );
         break;
     }
+  }
+
+  private normalizeEventProperties(
+    type: string,
+    properties: Record<string, any>
+  ): Record<string, any> {
+    if (!properties || typeof properties !== "object") {
+      return {};
+    }
+
+    if (type === "session.status") {
+      const status = properties.status;
+      if (status && typeof status === "object" && typeof status.type === "string") {
+        return { ...properties, status: status.type };
+      }
+    }
+
+    if (type === "message.updated" && properties.info) {
+      return {
+        ...properties,
+        info: this.normalizeMessageInfo(properties.info),
+      };
+    }
+
+    if (type === "message.part.updated") {
+      if (properties.part && typeof properties.part === "object") {
+        const normalizedPart = this.normalizePart(properties.part as AnyPart) as Record<string, any>;
+        if (typeof properties.delta === "string") {
+          return { ...normalizedPart, delta: properties.delta };
+        }
+        return normalizedPart;
+      }
+      return this.normalizePart(properties as AnyPart) as Record<string, any>;
+    }
+
+    if (type === "message.part.delta") {
+      const normalizedDelta: Record<string, any> = { ...properties };
+      if (typeof properties.partID === "string" && !normalizedDelta.id) {
+        normalizedDelta.id = properties.partID;
+      }
+      if (!normalizedDelta.type && normalizedDelta.field === "text") {
+        normalizedDelta.type = "text";
+      }
+      return normalizedDelta;
+    }
+
+    return properties;
   }
 
   private async handlePermissionRequest(data: any): Promise<void> {
@@ -263,7 +316,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (loadVersion !== this.messageLoadVersion) return;
       if (this.currentSessionId !== sessionId) return;
 
-      this.postMessage({ type: "messages:load", sessionId, messages });
+      const normalizedMessages = messages
+        .map((message) => this.normalizeMessage(message))
+        .sort(
+          (a, b) =>
+            this.getMessageTimestamp(a) - this.getMessageTimestamp(b)
+        );
+
+      this.postMessage({
+        type: "messages:load",
+        sessionId,
+        messages: normalizedMessages,
+      });
     } catch (error: any) {
       if (loadVersion !== this.messageLoadVersion) return;
       this.postMessage({
@@ -271,6 +335,91 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         message: `加载消息失败: ${error.message}`,
       });
     }
+  }
+
+  private normalizeMessage(message: MessageWithParts): MessageWithParts {
+    const raw = message as any;
+    const info = this.normalizeMessageInfo(raw.info || {});
+
+    const parts = Array.isArray(raw.parts)
+      ? raw.parts.map((part: AnyPart) => this.normalizePart(part))
+      : [];
+
+    return {
+      ...raw,
+      info,
+      parts,
+    };
+  }
+
+  private normalizeMessageInfo(infoInput: any): any {
+    const info = { ...(infoInput || {}) } as any;
+
+    if (!info.createdAt && info.time?.created !== undefined) {
+      const created =
+        typeof info.time.created === "number"
+          ? info.time.created
+          : Date.parse(String(info.time.created));
+      if (Number.isFinite(created)) {
+        info.createdAt = new Date(created).toISOString();
+      }
+    }
+
+    if (!info.model && info.providerID && info.modelID) {
+      info.model = {
+        providerID: info.providerID,
+        modelID: info.modelID,
+      };
+    }
+
+    if (info.error && !info.error.message && info.error.data?.message) {
+      info.error = {
+        ...info.error,
+        message: info.error.data.message,
+      };
+    }
+
+    return info;
+  }
+
+  private normalizePart(part: AnyPart): AnyPart {
+    const raw = part as any;
+    if (!raw || typeof raw !== "object") {
+      return part;
+    }
+
+    if (raw.type === "snapshot" && raw.snapshot && !raw.content) {
+      return {
+        ...raw,
+        content: raw.snapshot,
+      } as AnyPart;
+    }
+
+    if (raw.type === "patch" && !raw.content) {
+      const files = Array.isArray(raw.files) ? raw.files : [];
+      return {
+        ...raw,
+        file: raw.file || files[0],
+        content: files.length > 0 ? files.map((f: string) => `- ${f}`).join("\n") : "",
+      } as AnyPart;
+    }
+
+    return part;
+  }
+
+  private getMessageTimestamp(message: MessageWithParts): number {
+    const info = (message as any)?.info || {};
+    const candidate = info.createdAt ?? info.time?.created;
+    if (typeof candidate === "number") {
+      return candidate;
+    }
+    if (typeof candidate === "string") {
+      const parsed = Date.parse(candidate);
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+    return 0;
   }
 
   private async refreshCurrentSession(): Promise<void> {
@@ -402,6 +551,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async onWebviewReady(): Promise<void> {
+    // 标记 webview 已就绪
+    this._webviewReady = true;
+    
+    // 如果 client 未设置，推迟初始化
+    if (!this.client) {
+      return;
+    }
+    
     // 发送初始数据
     await this.sendSessionList();
     await this.sendProviderList();
@@ -505,17 +662,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async sendSessionList(): Promise<void> {
     if (!this.client) return;
     try {
-      const [sessions, statusMap] = await Promise.all([
+      const [sessions, rawStatusMap] = await Promise.all([
         this.client.listSessions(),
         this.client.getSessionStatus().catch(() => ({})),
       ]);
-      this.postMessage({ type: "sessions:list", sessions, statusMap });
+      const sessionsWithoutSubagent = sessions.filter(
+        (session) => !(session as any).parentID && !(session as any).parentId
+      );
+      const statusMap = this.normalizeStatusMap(rawStatusMap as Record<string, any>);
+      this.postMessage({
+        type: "sessions:list",
+        sessions: sessionsWithoutSubagent,
+        statusMap,
+      });
     } catch (error: any) {
       this.postMessage({
         type: "error",
         message: `获取会话列表失败: ${error.message}`,
       });
     }
+  }
+
+  private normalizeStatusMap(statusMap: Record<string, any>): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    for (const [sessionID, status] of Object.entries(statusMap || {})) {
+      if (typeof status === "string") {
+        normalized[sessionID] = status;
+        continue;
+      }
+      if (status && typeof status === "object" && typeof status.type === "string") {
+        normalized[sessionID] = status.type;
+      }
+    }
+    return normalized;
   }
 
   private async sendProviderList(): Promise<void> {
@@ -528,9 +707,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const currentModel = (config as any)?.model || "";
       const enabledProviders = (config as any)?.enabled_providers || [];
       const disabledProviders = (config as any)?.disabled_providers || [];
+      const connected = providers.connected || [];
+      
+      // 过滤 provider：只显示已连接的（且未被禁用，如果在 enabled_providers 中则必须包含）
+      const filteredProviders = {
+        ...providers,
+        all: (providers.all || []).filter((p) => {
+          if (disabledProviders.includes(p.id)) return false;
+          if (enabledProviders.length > 0 && !enabledProviders.includes(p.id)) return false;
+          return connected.includes(p.id);
+        }),
+      };
+      
       this.postMessage({
         type: "providers:list",
-        providers,
+        providers: filteredProviders,
         currentModel,
         enabledProviders,
         disabledProviders,
@@ -2076,15 +2267,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         roleSpan.textContent = info.role === 'user' ? '你' : 'AI';
         meta.appendChild(roleSpan);
 
-        if (info.model) {
+        if (info.model || (info.providerID && info.modelID)) {
+          const model = info.model || { providerID: info.providerID, modelID: info.modelID };
           const modelSpan = document.createElement('span');
-          modelSpan.textContent = info.model.modelID || '';
+          modelSpan.textContent = model.modelID || '';
           modelSpan.style.fontSize = '10px';
           meta.appendChild(modelSpan);
         }
 
         const timeSpan = document.createElement('span');
-        timeSpan.textContent = new Date(info.createdAt).toLocaleTimeString();
+        const createdAt = info.createdAt || (info.time && info.time.created ? new Date(info.time.created).toISOString() : null);
+        timeSpan.textContent = createdAt ? new Date(createdAt).toLocaleTimeString() : '--:--:--';
         meta.appendChild(timeSpan);
         div.appendChild(meta);
 
@@ -2098,7 +2291,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           const errDiv = document.createElement('div');
           errDiv.style.color = 'var(--error)';
           errDiv.style.marginTop = '6px';
-          errDiv.textContent = '错误: ' + (info.error.message || info.error.name);
+          const errMsg = info.error.message || (info.error.data && info.error.data.message) || info.error.name;
+          errDiv.textContent = '错误: ' + errMsg;
           div.appendChild(errDiv);
         }
 
@@ -2202,18 +2396,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         const header = document.createElement('div');
         header.className = 'diff-header';
-        header.textContent = part.file || (part.type === 'snapshot' ? '快照' : '补丁');
-        if (part.file) {
+        const patchFile = part.file || (Array.isArray(part.files) ? part.files[0] : '');
+        header.textContent = patchFile || (part.type === 'snapshot' ? '快照' : '补丁');
+        if (patchFile) {
           header.style.cursor = 'pointer';
           header.onclick = () => {
-            vscode.postMessage({ type: 'file:open', path: part.file });
+            vscode.postMessage({ type: 'file:open', path: patchFile });
           };
         }
         div.appendChild(header);
 
         const content = document.createElement('div');
         content.className = 'diff-content';
-        const lines = (part.content || '').split('\\n');
+        const patchText = part.content
+          || part.snapshot
+          || (Array.isArray(part.files) ? part.files.map(f => '文件: ' + f).join('\\n') : '');
+        const lines = (patchText || '').split('\\n');
         for (const line of lines) {
           const lineDiv = document.createElement('div');
           lineDiv.className = 'diff-line';
@@ -2737,35 +2935,73 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               break;
             }
 
-            let updatedInState = false;
-            if (data.info?.id) {
-              const idx = state.messages.findIndex(m => m.info?.id === data.info.id);
-              if (idx >= 0) {
-                state.messages[idx] = data;
-                updatedInState = true;
+            const messageId = data.info?.id;
+            let existingIdx = -1;
+            let mergedMessage = data;
+
+            if (messageId) {
+              existingIdx = state.messages.findIndex(m => m.info?.id === messageId);
+              if (existingIdx >= 0) {
+                const existing = state.messages[existingIdx] || {};
+                mergedMessage = {
+                  ...existing,
+                  ...data,
+                  info: data.info || existing.info || {},
+                  parts: Array.isArray(data.parts)
+                    ? data.parts
+                    : (Array.isArray(existing.parts) ? existing.parts : []),
+                };
+                state.messages[existingIdx] = mergedMessage;
+              } else {
+                mergedMessage = {
+                  ...data,
+                  info: data.info || {},
+                  parts: Array.isArray(data.parts) ? data.parts : [],
+                };
               }
             }
 
-            // 完整消息更新
-            const msgEl = document.querySelector('[data-message-id="' + data.info?.id + '"]');
-            if (msgEl && data.info && data.parts) {
-              if (!updatedInState) {
-                state.messages.push(data);
+            const msgEl = messageId
+              ? document.querySelector('[data-message-id="' + messageId + '"]')
+              : null;
+
+            if (msgEl && mergedMessage.info) {
+              if (existingIdx < 0) {
+                state.messages.push(mergedMessage);
               }
               const parent = msgEl.parentNode;
-              const newEl = this.renderMessage(data);
-              parent.replaceChild(newEl, msgEl);
-            } else if (data.info && data.parts) {
-              this.addMessageToUI(data);
+              if (parent) {
+                const newEl = this.renderMessage(mergedMessage);
+                parent.replaceChild(newEl, msgEl);
+              }
+            } else if (!msgEl && existingIdx < 0 && mergedMessage.info) {
+              this.addMessageToUI(mergedMessage);
             }
+
             // 提取 token 用量
-            this.extractAndUpdateTokens(data);
+            this.extractAndUpdateTokens(mergedMessage);
             break;
           }
           case 'message.part.updated': {
             const sessionId = data.sessionID || data.info?.sessionID;
             if (sessionId && state.sessionId && sessionId !== state.sessionId) {
               break;
+            }
+
+            const messageId = data.messageID;
+            if (messageId) {
+              const msgIdx = state.messages.findIndex(m => m.info?.id === messageId);
+              if (msgIdx >= 0) {
+                const message = state.messages[msgIdx];
+                const parts = Array.isArray(message.parts) ? [...message.parts] : [];
+                const partIdx = parts.findIndex(p => p.id === data.id);
+                if (partIdx >= 0) {
+                  parts[partIdx] = data;
+                } else {
+                  parts.push(data);
+                }
+                state.messages[msgIdx] = { ...message, parts };
+              }
             }
 
             // Part 更新
@@ -2775,9 +3011,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               newPartEl.dataset.partId = data.id;
               partEl.parentNode.replaceChild(newPartEl, partEl);
               this.extractAndUpdateTokens(data);
-            } else if (sessionId && sessionId === state.sessionId) {
-              this.extractAndUpdateTokens(data);
+              break;
             }
+
+            if (messageId) {
+              const msgEl = document.querySelector('[data-message-id="' + messageId + '"]');
+              if (msgEl) {
+                const newPartEl = this.renderPart(data, {});
+                newPartEl.dataset.partId = data.id;
+                const actions = msgEl.querySelector('.message-actions');
+                if (actions && actions.parentNode === msgEl) {
+                  msgEl.insertBefore(newPartEl, actions);
+                } else {
+                  msgEl.appendChild(newPartEl);
+                }
+              }
+            }
+
+            this.extractAndUpdateTokens(data);
             break;
           }
           case 'message.part.delta': {
@@ -2787,29 +3038,65 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
 
             // 增量文本更新
-            if (data.type === 'text' && data.id) {
+            const isTextDelta = data.type === 'text' || data.field === 'text';
+            if (isTextDelta && data.id) {
               const partEl = document.querySelector('[data-part-id="' + data.id + '"]');
+              const current = state.streamingParts[data.id] || '';
+              const updatedText = current + (data.delta || '');
+              state.streamingParts[data.id] = updatedText;
+
+              if (data.messageID) {
+                const msgIdx = state.messages.findIndex(m => m.info?.id === data.messageID);
+                if (msgIdx >= 0) {
+                  const message = state.messages[msgIdx];
+                  const parts = Array.isArray(message.parts) ? [...message.parts] : [];
+                  const partIdx = parts.findIndex(p => p.id === data.id);
+                  if (partIdx >= 0) {
+                    parts[partIdx] = { ...parts[partIdx], type: parts[partIdx].type || 'text', text: updatedText };
+                  } else {
+                    parts.push({
+                      id: data.id,
+                      type: 'text',
+                      text: updatedText,
+                      sessionID: sessionId || state.sessionId,
+                      messageID: data.messageID,
+                    });
+                  }
+                  state.messages[msgIdx] = { ...message, parts };
+                }
+              }
+
               if (partEl) {
                 // 追加文本
-                const current = state.streamingParts[data.id] || '';
-                state.streamingParts[data.id] = current + (data.delta || '');
                 state._pendingHighlights = [];
-                partEl.innerHTML = this.simpleMarkdown(state.streamingParts[data.id]);
+                partEl.innerHTML = this.simpleMarkdown(updatedText);
                 this.deferPendingHighlights(data.id);
+              } else if (data.messageID) {
+                const msgEl = document.querySelector('[data-message-id="' + data.messageID + '"]');
+                if (msgEl) {
+                  const newPartEl = this.renderPart({ id: data.id, type: 'text', text: updatedText }, {});
+                  newPartEl.dataset.partId = data.id;
+                  const actions = msgEl.querySelector('.message-actions');
+                  if (actions && actions.parentNode === msgEl) {
+                    msgEl.insertBefore(newPartEl, actions);
+                  } else {
+                    msgEl.appendChild(newPartEl);
+                  }
+                }
               }
             }
             break;
           }
           case 'session.status': {
             const sessionId = data.sessionID || data.id;
-            const status = data.status;
+            const status = typeof data.status === 'string' ? data.status : data.status?.type;
             if (sessionId) {
               state.statusMap[sessionId] = status;
             }
             if (sessionId === state.sessionId) {
               this.setBusy(status === 'busy');
               document.getElementById('statusText').textContent =
-                status === 'busy' ? '思考中...' : '就绪';
+                status === 'busy' ? '思考中...' : status === 'retry' ? '重试中...' : '就绪';
             }
             break;
           }
@@ -2832,7 +3119,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
 
             this.setBusy(false);
-            const errMsg = data.error?.message || '未知错误';
+            const errMsg = data.error?.message || data.error?.data?.message || '未知错误';
             this.addMessageToUI({
               info: { id: 'err-' + Date.now(), role: 'assistant', createdAt: new Date().toISOString(), error: { name: 'Error', message: errMsg } },
               parts: [{ id: 'ep1', type: 'text', text: '发生错误: ' + errMsg }],

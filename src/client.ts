@@ -710,6 +710,32 @@ export class OpenCodeClient {
 
       const decoder = new TextDecoder();
       let buffer = "";
+      let eventType = "";
+      let eventDataLines: string[] = [];
+
+      const flushEvent = (): void => {
+        if (eventDataLines.length === 0) {
+          eventType = "";
+          return;
+        }
+
+        const eventData = eventDataLines.join("\n");
+        try {
+          const parsed = JSON.parse(eventData);
+          onEvent({
+            type: eventType || parsed.type || "unknown",
+            properties: parsed.properties || parsed,
+          });
+        } catch {
+          onEvent({
+            type: eventType || "raw",
+            properties: { data: eventData },
+          });
+        }
+
+        eventType = "";
+        eventDataLines = [];
+      };
 
       while (true) {
         const { done, value } = await reader.read();
@@ -719,33 +745,34 @@ export class OpenCodeClient {
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
 
-        let eventType = "";
-        let eventData = "";
+        for (const rawLine of lines) {
+          const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+          if (line.startsWith(":")) {
+            continue;
+          }
 
-        for (const line of lines) {
           if (line.startsWith("event:")) {
             eventType = line.slice(6).trim();
-          } else if (line.startsWith("data:")) {
-            eventData = line.slice(5).trim();
-          } else if (line === "" && eventData) {
+            continue;
+          }
+
+          if (line.startsWith("data:")) {
+            eventDataLines.push(line.slice(5).trimStart());
+            continue;
+          }
+
+          if (line === "") {
             // 空行表示事件结束
-            try {
-              const parsed = JSON.parse(eventData);
-              onEvent({
-                type: eventType || parsed.type || "unknown",
-                properties: parsed.properties || parsed,
-              });
-            } catch {
-              onEvent({
-                type: eventType || "raw",
-                properties: { data: eventData },
-              });
-            }
-            eventType = "";
-            eventData = "";
+            flushEvent();
           }
         }
       }
+
+      const trailing = buffer.trim();
+      if (trailing.startsWith("data:")) {
+        eventDataLines.push(trailing.slice(5).trimStart());
+      }
+      flushEvent();
 
       // 流正常结束，如果没有被 abort，自动重连
       if (!controller.signal.aborted) {

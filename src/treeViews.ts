@@ -6,6 +6,44 @@
 import * as vscode from "vscode";
 import { OpenCodeClient, Session, SessionStatusMap } from "./client";
 
+function getSessionTimestamp(session: Session): number {
+  const raw =
+    (session as any).updatedAt ??
+    (session as any).time?.updated ??
+    (session as any).createdAt ??
+    (session as any).time?.created;
+  if (typeof raw === "number") {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    const parsed = Date.parse(raw);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return 0;
+}
+
+function getSessionStatusType(status: unknown): string | undefined {
+  if (typeof status === "string") {
+    return status;
+  }
+  if (status && typeof status === "object" && typeof (status as any).type === "string") {
+    return (status as any).type;
+  }
+  return undefined;
+}
+
+function formatSessionTime(raw: unknown): string {
+  if (typeof raw === "number") {
+    return new Date(raw).toLocaleString();
+  }
+  if (typeof raw === "string") {
+    return new Date(raw).toLocaleString();
+  }
+  return "未知";
+}
+
 export class SessionItem extends vscode.TreeItem {
   constructor(
     public readonly session: Session,
@@ -29,8 +67,12 @@ export class SessionItem extends vscode.TreeItem {
   }
 
   private getStatusLabel(): string {
-    const time = new Date(this.session.updatedAt || this.session.createdAt);
-    const timeStr = time.toLocaleString();
+    const timeRaw =
+      (this.session as any).updatedAt ??
+      (this.session as any).time?.updated ??
+      (this.session as any).createdAt ??
+      (this.session as any).time?.created;
+    const timeStr = formatSessionTime(timeRaw);
     const statusStr = this.status
       ? ` [${this.status === "busy" ? "运行中" : this.status === "idle" ? "空闲" : this.status}]`
       : "";
@@ -42,8 +84,8 @@ export class SessionItem extends vscode.TreeItem {
       `ID: ${this.session.id}`,
       `标题: ${this.session.title || "无"}`,
       `状态: ${this.status || "unknown"}`,
-      `创建: ${new Date(this.session.createdAt).toLocaleString()}`,
-      `更新: ${new Date(this.session.updatedAt).toLocaleString()}`,
+      `创建: ${formatSessionTime((this.session as any).createdAt ?? (this.session as any).time?.created)}`,
+      `更新: ${formatSessionTime((this.session as any).updatedAt ?? (this.session as any).time?.updated)}`,
     ];
     if (this.session.share) {
       lines.push(`分享链接: ${this.session.share}`);
@@ -81,12 +123,22 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionItem>
         this.client.listSessions(),
         this.client.getSessionStatus().catch(() => ({})),
       ]);
-      this.sessions = sessions.sort(
-        (a, b) =>
-          new Date(b.updatedAt || b.createdAt).getTime() -
-          new Date(a.updatedAt || a.createdAt).getTime()
+      // 过滤掉子代理会话（有 parentID 的会话是子会话）
+      const primarySessions = sessions.filter(
+        (s) => !(s as any).parentID && !(s as any).parentId
       );
-      this.statusMap = statusMap;
+      this.sessions = primarySessions.sort(
+        (a, b) => getSessionTimestamp(b) - getSessionTimestamp(a)
+      );
+
+      const normalizedStatusMap: SessionStatusMap = {};
+      for (const [sessionID, status] of Object.entries(statusMap as Record<string, unknown>)) {
+        const statusType = getSessionStatusType(status);
+        if (statusType) {
+          normalizedStatusMap[sessionID] = statusType as any;
+        }
+      }
+      this.statusMap = normalizedStatusMap;
     } catch {
       // 如果获取失败，保持现有数据
     }
@@ -184,32 +236,15 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
       const providerChildren = visibleProviders.map((p) => {
         return new StatusItem(
           p.name || p.id,
-          `${p.models?.length || 0} 模型`,
+          `${Object.keys(p.models || {}).length} 模型`,
           "check"
         );
       });
 
-      // 如果有未连接但启用的 provider，也显示为警告
-      const enabledButDisconnected = (providers.all || []).filter((p) => {
-        if (disabledProviders.includes(p.id)) return false;
-        if (enabledProviders.length > 0 && !enabledProviders.includes(p.id)) return false;
-        return !connected.includes(p.id);
-      });
-
-      for (const p of enabledButDisconnected) {
-        providerChildren.push(
-          new StatusItem(
-            p.name || p.id,
-            "未连接 - 需要配置",
-            "warning"
-          )
-        );
-      }
-
       this.items.push(
         new StatusItem(
           "AI 提供商",
-          `${connected.length} 已连接`,
+          `${providerChildren.length} 已连接`,
           "hubot",
           providerChildren.length > 0
             ? vscode.TreeItemCollapsibleState.Collapsed
