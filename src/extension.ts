@@ -66,6 +66,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         clearTimeout(sseReconnectTimer);
         sseReconnectTimer = null;
       }
+      statusProvider.stopAutoRefresh();
+      statusProvider.setClient(null as any);
+      statusProvider.refresh();
     }
   });
 
@@ -155,6 +158,9 @@ function onServerReady(client: OpenCodeClient): void {
   sessionProvider.refresh();
   statusProvider.refresh();
 
+  // 启动状态树定时自动刷新（30 秒间隔）
+  statusProvider.startAutoRefresh();
+
   // 更新聊天面板
   if (ChatViewProvider.instance) {
     ChatViewProvider.instance.setClient(client);
@@ -206,6 +212,15 @@ function handleGlobalEvent(event: { type: string; properties: Record<string, any
       sessionProvider.refresh();
       break;
     case "installation.updated":
+    case "config.updated":
+    case "provider.updated":
+    case "provider.connected":
+    case "provider.disconnected":
+    case "mcp.updated":
+    case "mcp.connected":
+    case "mcp.disconnected":
+    case "lsp.updated":
+    case "tool.updated":
       statusProvider.refresh();
       break;
   }
