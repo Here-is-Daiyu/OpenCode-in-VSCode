@@ -250,6 +250,47 @@ export interface SSEEvent {
   properties: Record<string, any>;
 }
 
+// OAuth 授权相关类型
+export interface OAuthAuthorizeResult {
+  url: string;
+  state?: string;
+}
+
+export interface OAuthCallbackResult {
+  success: boolean;
+  providerID: string;
+  error?: string;
+}
+
+// TUI 控制请求/响应类型
+export interface TuiControlRequest {
+  id: string;
+  type: string;
+  payload?: Record<string, any>;
+}
+
+export interface TuiControlResponse {
+  id: string;
+  result?: any;
+  error?: string;
+}
+
+// Question 工具数据结构
+export interface QuestionOption {
+  label: string;
+  value: string;
+  description?: string;
+}
+
+export interface QuestionToolData {
+  question: string;
+  options?: QuestionOption[];
+  multiSelect?: boolean;
+  allowCustomInput?: boolean;
+  defaultValue?: string;
+  placeholder?: string;
+}
+
 // ============================================================
 // API 客户端
 // ============================================================
@@ -865,6 +906,27 @@ export class OpenCodeClient {
     );
   }
 
+  // ---- OAuth 授权 ----
+
+  async oauthAuthorize(providerId: string): Promise<OAuthAuthorizeResult> {
+    return this.rawRequest<OAuthAuthorizeResult>(
+      "POST",
+      `/provider/${encodeURIComponent(providerId)}/oauth/authorize`
+    );
+  }
+
+  async oauthCallback(
+    providerId: string,
+    code: string,
+    state: string
+  ): Promise<OAuthCallbackResult> {
+    return this.rawRequest<OAuthCallbackResult>(
+      "POST",
+      `/provider/${encodeURIComponent(providerId)}/oauth/callback`,
+      { code, state }
+    );
+  }
+
   // ---- MCP ----
 
   async getMCPStatus(): Promise<MCPStatus> {
@@ -945,6 +1007,40 @@ export class OpenCodeClient {
     );
   }
 
+  async openHelp(): Promise<boolean> {
+    return this.rawRequest<boolean>("POST", "/tui/open-help");
+  }
+
+  async openSessions(): Promise<boolean> {
+    return this.rawRequest<boolean>("POST", "/tui/open-sessions");
+  }
+
+  async openThemes(): Promise<boolean> {
+    return this.rawRequest<boolean>("POST", "/tui/open-themes");
+  }
+
+  async openModels(): Promise<boolean> {
+    return this.rawRequest<boolean>("POST", "/tui/open-models");
+  }
+
+  // ---- TUI 控制请求/响应 ----
+
+  async getNextControlRequest(): Promise<TuiControlRequest | null> {
+    try {
+      return await this.rawRequest<TuiControlRequest>("GET", "/tui/control/next");
+    } catch (error) {
+      // 无待处理请求时可能返回 404 或空响应
+      if (error instanceof Error && error.message.includes("404")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+
+  async sendControlResponse(body: TuiControlResponse): Promise<boolean> {
+    return this.rawRequest<boolean>("POST", "/tui/control/response", body);
+  }
+
   // ---- VCS ----
 
   async getVcsInfo(): Promise<any> {
@@ -1016,6 +1112,77 @@ export class OpenCodeClient {
             onEvent(this.normalizeSSEEvent(payload));
           } catch (error) {
             onError?.(this.toError(error));
+          }
+        }
+      } catch (error) {
+        if (!controller.signal.aborted) {
+          onError?.(this.toError(error));
+        }
+      } finally {
+        this.abortControllers.delete(controller);
+      }
+    };
+
+    void start();
+    return controller;
+  }
+
+  // ---- 全局 SSE 事件订阅（独立于项目级 /event） ----
+
+  subscribeGlobalEvents(
+    onEvent: (event: SSEEvent) => void,
+    onError?: (error: Error) => void
+  ): AbortController {
+    const controller = new AbortController();
+    this.abortControllers.add(controller);
+
+    const start = async (): Promise<void> => {
+      try {
+        const url = `${this.baseUrl}/global/event`;
+        const response = await fetch(url, {
+          headers: {
+            Accept: "text/event-stream",
+            ...this.getHeaders(),
+          },
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          throw new Error(`全局 SSE 连接失败: ${response.status} ${response.statusText}`);
+        }
+
+        if (!response.body) {
+          throw new Error("全局 SSE 响应无 body");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        while (!controller.signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
+
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6).trim();
+              if (!data) {
+                continue;
+              }
+              try {
+                const parsed = JSON.parse(data);
+                onEvent(this.normalizeSSEEvent(parsed));
+              } catch {
+                // 非 JSON 数据，作为原始事件传递
+                onEvent({ type: "raw", properties: { data } });
+              }
+            }
           }
         }
       } catch (error) {
