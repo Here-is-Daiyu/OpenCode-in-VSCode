@@ -585,6 +585,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "compact":
         await this.handleCompactRequest();
         break;
+
+      case "toolbar:undo":
+        await this.handleToolbarUndo();
+        break;
+
+      case "toolbar:redo":
+        await this.handleToolbarRedo();
+        break;
+
+      case "toolbar:viewDiff":
+        await this.handleToolbarViewDiff();
+        break;
     }
   }
 
@@ -1228,6 +1240,91 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         type: "error",
         message: `恢复失败: ${error.message}`,
       });
+    }
+  }
+
+  // ---- 撤销/重做工具栏处理 ----
+
+  private async handleToolbarUndo(): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+    try {
+      // 找到最后一条助手消息
+      const messages = await this.client.listMessages(this.currentSessionId, 1000);
+      const sorted = messages.sort((a: any, b: any) => {
+        const ta = new Date(a.info?.createdAt || a.info?.time?.created || 0).getTime();
+        const tb = new Date(b.info?.createdAt || b.info?.time?.created || 0).getTime();
+        return tb - ta;
+      });
+      const lastAssistant = sorted.find((m: any) => (m.info?.role) === "assistant");
+      if (!lastAssistant?.info?.id) {
+        this.postMessage({ type: "undoredo:state", canUndo: false, canRedo: false, toast: "没有可撤销的消息" });
+        return;
+      }
+
+      await this.client.revertMessage(this.currentSessionId, lastAssistant.info.id);
+      await this.loadMessages(this.currentSessionId);
+      this.sendUndoRedoState("已撤销上一条助手消息");
+    } catch (error: any) {
+      this.postMessage({
+        type: "error",
+        message: `撤销失败: ${error.message}`,
+      });
+    }
+  }
+
+  private async handleToolbarRedo(): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+    try {
+      await this.client.unrevertMessages(this.currentSessionId);
+      await this.loadMessages(this.currentSessionId);
+      this.sendUndoRedoState("已恢复撤销的消息");
+    } catch (error: any) {
+      this.postMessage({
+        type: "error",
+        message: `恢复失败: ${error.message}`,
+      });
+    }
+  }
+
+  private async handleToolbarViewDiff(): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+    try {
+      const diffs = await this.client.getSessionDiff(this.currentSessionId);
+      if (!diffs || diffs.length === 0) {
+        this.postMessage({ type: "undoredo:state", canUndo: false, canRedo: false, toast: "本次会话没有文件变更" });
+        return;
+      }
+
+      // 为每个有变更的文件打开 git diff
+      for (const fileDiff of diffs) {
+        await this.showFileDiff(fileDiff.path);
+      }
+    } catch (error: any) {
+      this.postMessage({
+        type: "error",
+        message: `查看变更失败: ${error.message}`,
+      });
+    }
+  }
+
+  private async sendUndoRedoState(toast?: string): Promise<void> {
+    if (!this.currentSessionId || !this.client) {
+      this.postMessage({ type: "undoredo:state", canUndo: false, canRedo: false, toast });
+      return;
+    }
+    try {
+      const messages = await this.client.listMessages(this.currentSessionId, 1000);
+      const hasAssistant = messages.some((m: any) => (m.info?.role) === "assistant");
+      // 尝试检测是否有可恢复的消息（乐观估计：撤销后可重做）
+      // 由于 API 没有直接返回 canRedo 状态，我们在撤销后启用重做
+      this.postMessage({
+        type: "undoredo:state",
+        canUndo: hasAssistant,
+        canRedo: !hasAssistant, // 如果撤销后没有助手消息了，说明可能有可恢复的
+        toast,
+      });
+    } catch {
+      this.postMessage({ type: "undoredo:state", canUndo: false, canRedo: false, toast });
     }
   }
 
@@ -2937,6 +3034,54 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       to { opacity: 1; transform: translateY(0); }
     }
 
+    /* ---- 撤销/重做工具栏 ---- */
+    .undo-redo-toolbar {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 12px;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+    }
+    .undo-redo-toolbar.visible {
+      display: flex;
+    }
+    .undo-redo-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      padding: 2px 8px;
+      border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--fg-secondary) 6%, transparent);
+      color: var(--fg-secondary);
+      cursor: pointer;
+      user-select: none;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
+    }
+    .undo-redo-btn:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      border-color: var(--accent);
+      color: var(--fg-primary);
+    }
+    .undo-redo-btn:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+    .undo-redo-btn.accent {
+      border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+      color: var(--accent);
+      background: color-mix(in srgb, var(--accent) 8%, transparent);
+    }
+    .undo-redo-btn.accent:hover:not(:disabled) {
+      background: color-mix(in srgb, var(--accent) 22%, transparent);
+      border-color: var(--accent);
+    }
+
     /* ---- 会话面包屑导航 ---- */
     .session-breadcrumb {
       display: none;
@@ -3091,6 +3236,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span id="modelInfo">-</span>
   </div>
 
+  <!-- 撤销/重做工具栏 -->
+  <div class="undo-redo-toolbar" id="undoRedoToolbar">
+    <button class="undo-redo-btn" id="btnUndo" disabled title="撤销上一条助手消息 (Ctrl+Z)">⟲ 撤销</button>
+    <button class="undo-redo-btn" id="btnRedo" disabled title="恢复已撤销的消息 (Ctrl+Shift+Z)">⟳ 重做</button>
+    <button class="undo-redo-btn accent" id="btnViewDiff" disabled title="查看本次会话的文件变更">📄 查看变更</button>
+  </div>
+
   <!-- 底部 Todo 面板 -->
   <div class="todo-panel" id="todoPanel">
     <div class="todo-panel-header" id="todoPanelHeader">
@@ -3193,6 +3345,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       breadcrumb: { parent: null, children: [], currentSession: null },
       // 设置
       settings: { toolCallsCollapsed: false, showDiffOnWrite: true },
+      // 撤销/重做状态
+      canUndo: false,
+      canRedo: false,
       // 代码高亮状态
       _hlIdCounter: 0,
       _pendingHighlights: [],
@@ -3653,6 +3808,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             dropdown.classList.remove('open');
           }
         });
+
+        // 撤销/重做工具栏按钮
+        bindClick('btnUndo', () => app.performUndo());
+        bindClick('btnRedo', () => app.performRedo());
+        bindClick('btnViewDiff', () => app.performViewDiff());
+
+        // 键盘快捷键: Ctrl+Z / Ctrl+Shift+Z（仅在输入框未聚焦时生效）
+        document.addEventListener('keydown', (e) => {
+          const active = document.activeElement;
+          const isInputFocused = active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT');
+          if (isInputFocused) return;
+
+          if (e.ctrlKey && e.shiftKey && e.key === 'Z') {
+            e.preventDefault();
+            app.performRedo();
+          } else if (e.ctrlKey && !e.shiftKey && e.key === 'z') {
+            e.preventDefault();
+            app.performUndo();
+          }
+        });
       },
 
       handleSendClick() {
@@ -3661,6 +3836,58 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         } else {
           app.send();
         }
+      },
+
+      // ---- 撤销/重做工具栏逻辑 ----
+
+      /** 根据当前消息列表计算撤销/重做可用性 */
+      updateUndoRedoState() {
+        const hasAssistant = state.messages.some(m =>
+          m.info && m.info.role === 'assistant'
+        );
+        state.canUndo = hasAssistant && !state.isBusy;
+        // 重做可用性由后端决定，本地无法准确判断，
+        // 所以在执行 undo 后临时启用，并通过 refreshState 精确更新
+        this.updateUndoRedoButtons();
+      },
+
+      /** 同步 DOM 按钮的 disabled 状态并控制工具栏可见性 */
+      updateUndoRedoButtons() {
+        const toolbar = document.getElementById('undoRedoToolbar');
+        const btnUndo = document.getElementById('btnUndo');
+        const btnRedo = document.getElementById('btnRedo');
+        const btnDiff = document.getElementById('btnViewDiff');
+
+        // 有会话时显示工具栏
+        const hasSession = !!state.sessionId;
+        if (toolbar) {
+          toolbar.classList.toggle('visible', hasSession);
+        }
+        if (btnUndo) btnUndo.disabled = !state.canUndo;
+        if (btnRedo) btnRedo.disabled = !state.canRedo;
+        // 查看变更：有助手消息就可看
+        const hasAssistant = state.messages.some(m =>
+          m.info && m.info.role === 'assistant'
+        );
+        if (btnDiff) btnDiff.disabled = !hasAssistant;
+      },
+
+      /** 执行撤销 */
+      performUndo() {
+        if (!state.sessionId || !state.canUndo || state.isBusy) return;
+        vscode.postMessage({ type: 'toolbar:undo' });
+      },
+
+      /** 执行重做 */
+      performRedo() {
+        if (!state.sessionId || !state.canRedo || state.isBusy) return;
+        vscode.postMessage({ type: 'toolbar:redo' });
+      },
+
+      /** 查看变更 */
+      performViewDiff() {
+        if (!state.sessionId) return;
+        vscode.postMessage({ type: 'toolbar:viewDiff' });
       },
 
       setupInput() {
@@ -5969,6 +6196,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             document.getElementById('statusText').textContent = '就绪';
             this.flushDeferredHighlights();
             state.streamingParts = {};
+            this.updateUndoRedoState();
             break;
           }
           case 'session.error': {
@@ -6396,6 +6624,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             // 从已加载的消息中计算 token 用量
             app.computeTokenUsage();
           }
+          app.updateUndoRedoState();
           break;
         case 'sessions:list':
           app.updateSessions(msg.sessions, msg.statusMap);
@@ -6416,6 +6645,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           app.resetTokenBar();
           // 面包屑会通过 session:breadcrumb 消息更新
           app.updateBreadcrumb(null, [], null);
+          // 重置撤销/重做状态（新消息加载后会更新）
+          state.canUndo = false;
+          state.canRedo = false;
+          app.updateUndoRedoButtons();
           break;
         case 'session:aborted':
           app.setBusy(false);
@@ -6508,6 +6741,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'settings:update':
           if (msg.settings) {
             Object.assign(state.settings, msg.settings);
+          }
+          break;
+        case 'undoredo:state':
+          state.canUndo = !!msg.canUndo;
+          state.canRedo = !!msg.canRedo;
+          app.updateUndoRedoButtons();
+          if (msg.toast) {
+            app.showToast(msg.toast);
           }
           break;
         case 'todo:list':
