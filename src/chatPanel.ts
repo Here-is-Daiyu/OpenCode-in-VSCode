@@ -538,6 +538,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "highlight:request":
         this.handleHighlightRequest(msg.id, msg.code, msg.lang);
         break;
+
+      case "findFiles":
+        await this.handleFindFiles(msg.query, msg.requestId);
+        break;
     }
   }
 
@@ -562,6 +566,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch {
       // 高亮失败，返回原始代码（已转义的）
       this.postMessage({ type: "highlight:result", id, html: "" });
+    }
+  }
+
+  private async handleFindFiles(query: string, requestId: string): Promise<void> {
+    if (!this.client) {
+      this.postMessage({ type: "findFiles:results", requestId, files: [] });
+      return;
+    }
+    try {
+      const files = await this.client.findFiles(query || "", "file", 10);
+      this.postMessage({ type: "findFiles:results", requestId, files: files || [] });
+    } catch (error: any) {
+      console.error("文件搜索失败:", error);
+      this.postMessage({ type: "findFiles:results", requestId, files: [] });
     }
   }
 
@@ -2074,6 +2092,77 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       color: var(--fg-secondary);
       font-size: 12px;
     }
+
+    /* ---- @ 文件引用面板 ---- */
+    .at-mention-popup {
+      display: none;
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 12px;
+      right: 12px;
+      max-height: 260px;
+      overflow-y: auto;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
+      z-index: 1002;
+      padding: 4px 0;
+    }
+    .at-mention-popup.visible { display: block; }
+    .at-mention-popup::-webkit-scrollbar { width: 5px; }
+    .at-mention-popup::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
+    .at-mention-popup-header {
+      padding: 4px 10px 2px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--fg-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .at-mention-item {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      padding: 6px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .at-mention-item:hover,
+    .at-mention-item.active {
+      background: var(--accent);
+      color: var(--accent-fg);
+    }
+    .at-mention-item .at-mention-filename {
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .at-mention-item .at-mention-filepath {
+      color: var(--fg-secondary);
+      font-size: 11px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .at-mention-item:hover .at-mention-filepath,
+    .at-mention-item.active .at-mention-filepath {
+      color: inherit;
+      opacity: 0.8;
+    }
+    .at-mention-empty {
+      padding: 10px;
+      text-align: center;
+      color: var(--fg-secondary);
+      font-size: 12px;
+    }
+    .at-mention-loading {
+      padding: 10px;
+      text-align: center;
+      color: var(--fg-secondary);
+      font-size: 12px;
+    }
     .input-wrapper {
       display: flex;
       gap: 6px;
@@ -2226,6 +2315,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <!-- 输入区域 -->
   <div class="input-area">
     <div class="slash-popover" id="slashPopover"></div>
+    <div class="at-mention-popup" id="atMentionPopup"></div>
     <div class="input-toolbar">
       <div class="custom-select" id="agentSelect" title="选择 Agent">
         <div class="custom-select-trigger">
@@ -2730,16 +2820,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               return;
             }
           }
+          // @ 文件引用面板打开时处理导航
+          if (this.atMentionVisible) {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              this.atMentionNavigate(1);
+              return;
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault();
+              this.atMentionNavigate(-1);
+              return;
+            } else if (e.key === 'Enter') {
+              e.preventDefault();
+              this.atMentionSelect();
+              return;
+            } else if (e.key === 'Escape') {
+              e.preventDefault();
+              this.atMentionHide();
+              return;
+            } else if (e.key === 'Tab') {
+              e.preventDefault();
+              this.atMentionSelect();
+              return;
+            }
+          }
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             this.send();
           }
         });
 
-        // 监听输入变化，检测斜杠命令
+        // 监听输入变化，检测斜杠命令和 @ 文件引用
         input.addEventListener('input', () => {
           this.syncInputHeight();
           this.slashDetect(input.value);
+          this.atMentionDetect();
         });
 
         // 粘贴事件：优先文本，图片作为附件
@@ -2982,6 +3097,209 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         input.setSelectionRange(input.value.length, input.value.length);
         this.syncInputHeight();
         this.slashHide();
+      },
+
+      // ---- @ 文件引用面板 ----
+      atMentionVisible: false,
+      atMentionActiveIndex: 0,
+      atMentionResults: [],
+      atMentionTriggerPos: -1,  // '@' 在 textarea 中的位置
+      atMentionLoading: false,
+      _atDebounceTimer: null,
+      _atRequestId: 0,
+
+      atMentionDetect() {
+        const input = document.getElementById('promptInput');
+        const cursorPos = input.selectionStart;
+        const text = input.value;
+
+        // 从光标位置往前找最近的 '@'
+        let atPos = -1;
+        for (let i = cursorPos - 1; i >= 0; i--) {
+          const ch = text[i];
+          if (ch === '@') {
+            // '@' 要么在行首，要么前面是空白
+            if (i === 0 || /\\s/.test(text[i - 1])) {
+              atPos = i;
+            }
+            break;
+          }
+          // 遇到空白或换行，停止
+          if (ch === '\\n' || ch === '\\r') break;
+        }
+
+        if (atPos < 0) {
+          this.atMentionHide();
+          return;
+        }
+
+        // 光标在 '@' 之前，关闭
+        if (cursorPos <= atPos) {
+          this.atMentionHide();
+          return;
+        }
+
+        // 提取 '@' 后的查询文本
+        const query = text.substring(atPos + 1, cursorPos);
+
+        // 如果查询包含换行，关闭
+        if (query.includes('\\n') || query.includes('\\r')) {
+          this.atMentionHide();
+          return;
+        }
+
+        this.atMentionTriggerPos = atPos;
+
+        // 显示弹出框（先显示加载状态）
+        if (!this.atMentionVisible) {
+          this.atMentionShow();
+        }
+
+        // 防抖搜索
+        if (this._atDebounceTimer) {
+          clearTimeout(this._atDebounceTimer);
+        }
+        this._atDebounceTimer = setTimeout(() => {
+          this._atDebounceTimer = null;
+          this.atMentionSearch(query);
+        }, 300);
+      },
+
+      atMentionSearch(query) {
+        this.atMentionLoading = true;
+        this._atRequestId++;
+        const requestId = 'at-' + this._atRequestId;
+        this.atMentionRenderLoading();
+        vscode.postMessage({ type: 'findFiles', query: query || '', requestId });
+      },
+
+      atMentionHandleResults(requestId, files) {
+        // 忽略旧的请求结果
+        if (requestId !== 'at-' + this._atRequestId) return;
+        this.atMentionLoading = false;
+        this.atMentionResults = (files || []).slice(0, 10);
+        this.atMentionActiveIndex = 0;
+        this.atMentionRender();
+      },
+
+      atMentionShow() {
+        this.atMentionVisible = true;
+        document.getElementById('atMentionPopup').classList.add('visible');
+      },
+
+      atMentionHide() {
+        this.atMentionVisible = false;
+        this.atMentionActiveIndex = 0;
+        this.atMentionResults = [];
+        this.atMentionTriggerPos = -1;
+        this.atMentionLoading = false;
+        if (this._atDebounceTimer) {
+          clearTimeout(this._atDebounceTimer);
+          this._atDebounceTimer = null;
+        }
+        document.getElementById('atMentionPopup').classList.remove('visible');
+      },
+
+      atMentionRenderLoading() {
+        const container = document.getElementById('atMentionPopup');
+        container.innerHTML = '';
+        const header = document.createElement('div');
+        header.className = 'at-mention-popup-header';
+        header.textContent = '文件引用';
+        container.appendChild(header);
+        const loading = document.createElement('div');
+        loading.className = 'at-mention-loading';
+        loading.textContent = '搜索文件...';
+        container.appendChild(loading);
+      },
+
+      atMentionRender() {
+        const container = document.getElementById('atMentionPopup');
+        container.innerHTML = '';
+
+        const header = document.createElement('div');
+        header.className = 'at-mention-popup-header';
+        header.textContent = '文件引用';
+        container.appendChild(header);
+
+        if (this.atMentionResults.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'at-mention-empty';
+          empty.textContent = '未找到匹配文件';
+          container.appendChild(empty);
+          return;
+        }
+
+        this.atMentionResults.forEach((filePath, idx) => {
+          const item = document.createElement('div');
+          item.className = 'at-mention-item' + (idx === this.atMentionActiveIndex ? ' active' : '');
+          item.dataset.index = idx;
+
+          // 文件名（最后一段路径）
+          const parts = filePath.replace(/\\\\/g, '/').split('/');
+          const filename = parts[parts.length - 1] || filePath;
+
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'at-mention-filename';
+          nameSpan.textContent = filename;
+          item.appendChild(nameSpan);
+
+          const pathSpan = document.createElement('span');
+          pathSpan.className = 'at-mention-filepath';
+          pathSpan.textContent = filePath;
+          item.appendChild(pathSpan);
+
+          item.addEventListener('click', () => {
+            this.atMentionActiveIndex = idx;
+            this.atMentionSelect();
+          });
+          item.addEventListener('mouseenter', () => {
+            container.querySelectorAll('.at-mention-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            this.atMentionActiveIndex = idx;
+          });
+          container.appendChild(item);
+        });
+      },
+
+      atMentionNavigate(dir) {
+        const len = this.atMentionResults.length;
+        if (len === 0) return;
+        this.atMentionActiveIndex = (this.atMentionActiveIndex + dir + len) % len;
+        const container = document.getElementById('atMentionPopup');
+        container.querySelectorAll('.at-mention-item').forEach((item, idx) => {
+          item.classList.toggle('active', idx === this.atMentionActiveIndex);
+        });
+        const activeEl = container.querySelector('.at-mention-item.active');
+        if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+      },
+
+      atMentionSelect() {
+        const filePath = this.atMentionResults[this.atMentionActiveIndex];
+        if (!filePath) return;
+
+        const input = document.getElementById('promptInput');
+        const text = input.value;
+        const atPos = this.atMentionTriggerPos;
+        const cursorPos = input.selectionStart;
+
+        if (atPos < 0 || atPos >= text.length) {
+          this.atMentionHide();
+          return;
+        }
+
+        // 替换 @query 为 @filepath
+        const before = text.substring(0, atPos);
+        const after = text.substring(cursorPos);
+        const replacement = '@' + filePath + ' ';
+        input.value = before + replacement + after;
+
+        // 将光标移到插入的文件路径之后
+        const newPos = before.length + replacement.length;
+        input.setSelectionRange(newPos, newPos);
+        input.focus();
+        this.syncInputHeight();
+        this.atMentionHide();
       },
 
       send() {
@@ -4582,6 +4900,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'todo:list':
           if (msg.todos) app.renderTodos(msg.todos);
           break;
+        case 'findFiles:results':
+          app.atMentionHandleResults(msg.requestId, msg.files);
+          break;
         case 'error':
           app.addMessageToUI({
             info: { id: 'err-' + Date.now(), role: 'assistant', createdAt: new Date().toISOString() },
@@ -4589,6 +4910,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           });
           app.setBusy(false);
           break;
+      }
+    });
+
+    // @ 文件引用弹出框：点击外部关闭
+    document.addEventListener('click', (e) => {
+      if (!app.atMentionVisible) return;
+      const popup = document.getElementById('atMentionPopup');
+      const input = document.getElementById('promptInput');
+      if (!popup.contains(e.target) && e.target !== input) {
+        app.atMentionHide();
       }
     });
 
