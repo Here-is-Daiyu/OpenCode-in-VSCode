@@ -1863,24 +1863,102 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       border-radius: var(--radius);
       overflow: hidden;
     }
+    .diff-block.collapsed .diff-content,
+    .diff-block.collapsed .inline-diff-actions { display: none; }
     .diff-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
       padding: 6px 10px;
       background: rgba(128,128,128,0.08);
       font-size: 12px;
       font-weight: 600;
       cursor: pointer;
+      user-select: none;
     }
+    .diff-header:hover { background: rgba(128,128,128,0.14); }
+    .diff-header-path {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--fg-link);
+    }
+    .diff-header-stats {
+      display: flex;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 400;
+      flex-shrink: 0;
+    }
+    .diff-stat-add { color: var(--success); }
+    .diff-stat-del { color: var(--error); }
+    .diff-header-toggle {
+      font-size: 10px;
+      color: var(--fg-secondary);
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    .diff-block.collapsed .diff-header-toggle { transform: rotate(-90deg); }
     .diff-content {
       font-family: var(--font-family);
       font-size: 12px;
-      padding: 4px 0;
-      max-height: 300px;
+      padding: 0;
+      max-height: 400px;
       overflow-y: auto;
+      border-top: 1px solid var(--border);
     }
-    .diff-line { padding: 0 10px; white-space: pre; }
-    .diff-line.add { background: rgba(0,180,0,0.1); color: var(--success); }
-    .diff-line.del { background: rgba(255,0,0,0.1); color: var(--error); }
-    .diff-line.hunk { color: var(--fg-secondary); font-style: italic; }
+    .diff-line {
+      display: flex;
+      white-space: pre;
+      line-height: 1.5;
+      min-height: 18px;
+    }
+    .diff-line-num {
+      display: inline-block;
+      width: 36px;
+      min-width: 36px;
+      text-align: right;
+      padding: 0 4px;
+      color: var(--fg-secondary);
+      opacity: 0.5;
+      font-size: 11px;
+      user-select: none;
+      border-right: 1px solid var(--border);
+    }
+    .diff-line-text {
+      flex: 1;
+      padding: 0 8px;
+      overflow-x: auto;
+    }
+    .diff-line.add { background: rgba(0,180,0,0.1); }
+    .diff-line.add .diff-line-text { color: var(--success); }
+    .diff-line.del { background: rgba(255,0,0,0.1); }
+    .diff-line.del .diff-line-text { color: var(--error); }
+    .diff-line.hunk { background: rgba(60,120,220,0.08); }
+    .diff-line.hunk .diff-line-text { color: var(--fg-link); font-style: italic; }
+    .diff-line.ctx .diff-line-text { color: var(--fg-secondary); }
+    .inline-diff-actions {
+      display: flex;
+      gap: 8px;
+      padding: 4px 10px;
+      border-top: 1px solid var(--border);
+      background: rgba(128,128,128,0.04);
+    }
+    .inline-diff-actions .diff-action-btn {
+      font-size: 11px;
+      color: var(--fg-link);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 3px;
+      background: transparent;
+      border: none;
+      font-family: inherit;
+    }
+    .inline-diff-actions .diff-action-btn:hover {
+      background: rgba(128,128,128,0.12);
+      text-decoration: underline;
+    }
 
     /* ---- 底部待办面板 ---- */
     .todo-panel {
@@ -5177,18 +5255,50 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
           }
         } else if (toolCategory === 'write') {
-          // 写入工具：显示文件路径和变更摘要
+          // 写入工具：显示文件路径和变更摘要（增强 diff 显示）
           const filePath = inputObj.path || inputObj.filePath || inputObj.file || '';
           if (filePath) appendSection('文件', filePath);
           const oldStr = inputObj.oldContent || inputObj.old_string || inputObj.oldString || '';
           const newStr = inputObj.newContent || inputObj.new_string || inputObj.newString || inputObj.content || '';
-          if (oldStr) appendSection('原内容', oldStr);
-          if (newStr) appendSection('新内容', newStr);
-          if (!oldStr && !newStr && part.state?.input != null) {
-            appendSection('输入', part.state.input);
+          const outputStr = part.state?.output != null ? formatValue(part.state.output) : '';
+
+          // 检测输出中是否包含 diff 格式内容
+          const hasDiffOutput = outputStr && (
+            outputStr.includes('@@') ||
+            /^[+-]{1}[^+-]/m.test(outputStr)
+          );
+
+          // 1) 优先展示输出中的 diff
+          if (hasDiffOutput) {
+            const diffEl = this.renderEnhancedDiff(outputStr, {
+              filePath: filePath,
+              showActions: !!filePath,
+              oldContent: oldStr,
+              newContent: newStr,
+            });
+            body.appendChild(diffEl);
           }
-          if (part.state?.output != null && part.state?.output !== '') {
-            appendSection('输出', part.state.output);
+          // 2) 否则，如果有 old_string/new_string，生成简单 diff 视图
+          else if (oldStr && newStr) {
+            const generatedDiff = this.generateSimpleDiff(oldStr, newStr, filePath);
+            const diffEl = this.renderEnhancedDiff(generatedDiff, {
+              filePath: filePath,
+              showActions: !!filePath,
+              oldContent: oldStr,
+              newContent: newStr,
+            });
+            body.appendChild(diffEl);
+          }
+          // 3) 回退到原有的 section 显示
+          else {
+            if (oldStr) appendSection('原内容', oldStr);
+            if (newStr) appendSection('新内容', newStr);
+            if (!oldStr && !newStr && part.state?.input != null) {
+              appendSection('输入', part.state.input);
+            }
+            if (outputStr) {
+              appendSection('输出', outputStr);
+            }
           }
         } else if (toolCategory === 'exec') {
           // 执行工具：显示命令和完整输出
@@ -5239,39 +5349,215 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return div;
       },
 
-      renderDiffPart(part) {
-        const div = document.createElement('div');
-        div.className = 'diff-block';
+      /**
+       * 根据 old_string/new_string 生成简单的统一 diff 格式文本
+       */
+      generateSimpleDiff(oldStr, newStr, filePath) {
+        const oldLines = (oldStr || '').split('\\n');
+        const newLines = (newStr || '').split('\\n');
+        const result = [];
+        if (filePath) {
+          result.push('--- a/' + filePath);
+          result.push('+++ b/' + filePath);
+        }
+        result.push('@@ -1,' + oldLines.length + ' +1,' + newLines.length + ' @@');
+        for (const line of oldLines) {
+          result.push('-' + line);
+        }
+        for (const line of newLines) {
+          result.push('+' + line);
+        }
+        return result.join('\\n');
+      },
 
+      /**
+       * 增强 Diff 渲染函数
+       * @param {string} diffText - 统一 diff 格式文本
+       * @param {object} options - 可选配置
+       * @param {string} options.filePath - 文件路径
+       * @param {boolean} options.collapsible - 是否可折叠（默认 true）
+       * @param {boolean} options.collapsed - 是否默认折叠
+       * @param {boolean} options.showActions - 是否显示操作按钮（默认 true）
+       * @param {string} options.oldContent - 原内容（用于 VSCode diff）
+       * @param {string} options.newContent - 新内容（用于 VSCode diff）
+       * @returns {HTMLElement}
+       */
+      renderEnhancedDiff(diffText, options) {
+        const opts = Object.assign({
+          filePath: '',
+          collapsible: true,
+          collapsed: undefined,
+          showActions: true,
+          oldContent: '',
+          newContent: '',
+        }, options || {});
+
+        const lines = (diffText || '').split('\\n');
+        let addCount = 0;
+        let delCount = 0;
+        for (const l of lines) {
+          if (l.startsWith('+') && !l.startsWith('+++')) addCount++;
+          else if (l.startsWith('-') && !l.startsWith('---')) delCount++;
+        }
+
+        // 默认折叠：超过 20 行时折叠
+        const shouldCollapse = opts.collapsed !== undefined
+          ? opts.collapsed
+          : lines.length > 20;
+
+        const block = document.createElement('div');
+        block.className = 'diff-block' + (shouldCollapse ? ' collapsed' : '');
+
+        // ---- Header ----
         const header = document.createElement('div');
         header.className = 'diff-header';
-        const patchFile = part.file || (Array.isArray(part.files) ? part.files[0] : '');
-        header.textContent = patchFile || (part.type === 'snapshot' ? '快照' : '补丁');
-        if (patchFile) {
-          header.style.cursor = 'pointer';
-          header.onclick = () => {
-            vscode.postMessage({ type: 'file:open', path: patchFile });
-          };
-        }
-        div.appendChild(header);
 
+        const pathSpan = document.createElement('span');
+        pathSpan.className = 'diff-header-path';
+        pathSpan.textContent = opts.filePath || '差异';
+        pathSpan.title = opts.filePath || '';
+        header.appendChild(pathSpan);
+
+        if (addCount > 0 || delCount > 0) {
+          const stats = document.createElement('span');
+          stats.className = 'diff-header-stats';
+          if (addCount > 0) {
+            const addStat = document.createElement('span');
+            addStat.className = 'diff-stat-add';
+            addStat.textContent = '+' + addCount;
+            stats.appendChild(addStat);
+          }
+          if (delCount > 0) {
+            const delStat = document.createElement('span');
+            delStat.className = 'diff-stat-del';
+            delStat.textContent = '-' + delCount;
+            stats.appendChild(delStat);
+          }
+          header.appendChild(stats);
+        }
+
+        if (opts.collapsible) {
+          const toggle = document.createElement('span');
+          toggle.className = 'diff-header-toggle';
+          toggle.textContent = '▼';
+          header.appendChild(toggle);
+        }
+
+        header.addEventListener('click', () => {
+          if (opts.collapsible) {
+            block.classList.toggle('collapsed');
+          }
+        });
+        block.appendChild(header);
+
+        // ---- Content ----
         const content = document.createElement('div');
         content.className = 'diff-content';
+
+        let oldLineNum = 0;
+        let newLineNum = 0;
+
+        for (const line of lines) {
+          // 解析 hunk header 获取行号
+          if (line.startsWith('@@')) {
+            const match = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+            if (match) {
+              oldLineNum = parseInt(match[1], 10) - 1;
+              newLineNum = parseInt(match[2], 10) - 1;
+            }
+          }
+
+          const lineDiv = document.createElement('div');
+          lineDiv.className = 'diff-line';
+
+          const oldNum = document.createElement('span');
+          oldNum.className = 'diff-line-num';
+          const newNum = document.createElement('span');
+          newNum.className = 'diff-line-num';
+
+          if (line.startsWith('@@')) {
+            lineDiv.classList.add('hunk');
+            oldNum.textContent = '···';
+            newNum.textContent = '···';
+          } else if (line.startsWith('+') && !line.startsWith('+++')) {
+            lineDiv.classList.add('add');
+            newLineNum++;
+            oldNum.textContent = '';
+            newNum.textContent = String(newLineNum);
+          } else if (line.startsWith('-') && !line.startsWith('---')) {
+            lineDiv.classList.add('del');
+            oldLineNum++;
+            oldNum.textContent = String(oldLineNum);
+            newNum.textContent = '';
+          } else if (line.startsWith('---') || line.startsWith('+++')) {
+            // file header lines — skip line numbers
+            oldNum.textContent = '';
+            newNum.textContent = '';
+          } else {
+            // context line
+            lineDiv.classList.add('ctx');
+            oldLineNum++;
+            newLineNum++;
+            oldNum.textContent = String(oldLineNum);
+            newNum.textContent = String(newLineNum);
+          }
+
+          const textSpan = document.createElement('span');
+          textSpan.className = 'diff-line-text';
+          textSpan.textContent = line;
+
+          lineDiv.appendChild(oldNum);
+          lineDiv.appendChild(newNum);
+          lineDiv.appendChild(textSpan);
+          content.appendChild(lineDiv);
+        }
+        block.appendChild(content);
+
+        // ---- Action buttons ----
+        if (opts.showActions && opts.filePath) {
+          const actionsBar = document.createElement('div');
+          actionsBar.className = 'inline-diff-actions';
+
+          const openBtn = document.createElement('button');
+          openBtn.className = 'diff-action-btn';
+          openBtn.textContent = '在编辑器中打开';
+          openBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({ type: 'file:open', path: opts.filePath });
+          });
+          actionsBar.appendChild(openBtn);
+
+          const diffBtn = document.createElement('button');
+          diffBtn.className = 'diff-action-btn';
+          diffBtn.textContent = '查看完整差异';
+          diffBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            vscode.postMessage({
+              type: 'file:diff',
+              path: opts.filePath,
+              oldContent: opts.oldContent || '',
+              newContent: opts.newContent || '',
+            });
+          });
+          actionsBar.appendChild(diffBtn);
+
+          block.appendChild(actionsBar);
+        }
+
+        return block;
+      },
+
+      renderDiffPart(part) {
+        const patchFile = part.file || (Array.isArray(part.files) ? part.files[0] : '');
         const patchText = part.content
           || part.snapshot
           || (Array.isArray(part.files) ? part.files.map(f => '文件: ' + f).join('\\n') : '');
-        const lines = (patchText || '').split('\\n');
-        for (const line of lines) {
-          const lineDiv = document.createElement('div');
-          lineDiv.className = 'diff-line';
-          if (line.startsWith('+')) lineDiv.classList.add('add');
-          else if (line.startsWith('-')) lineDiv.classList.add('del');
-          else if (line.startsWith('@@')) lineDiv.classList.add('hunk');
-          lineDiv.textContent = line;
-          content.appendChild(lineDiv);
-        }
-        div.appendChild(content);
-        return div;
+
+        return this.renderEnhancedDiff(patchText, {
+          filePath: patchFile || (part.type === 'snapshot' ? '快照' : '补丁'),
+          showActions: !!patchFile,
+          collapsible: true,
+        });
       },
 
       renderFilePart(part) {
