@@ -1990,26 +1990,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       border-top: 1px solid var(--border);
       flex-shrink: 0;
     }
+    /* ---- 附件图片预览（旧样式保留以兼容） ---- */
     #attachedImages {
+      display: none;
+    }
+    .attached-image-thumb {
+      display: none;
+    }
+    .attached-image-remove {
+      display: none;
+    }
+    .image-preview-strip {
       display: none;
       flex-wrap: wrap;
       gap: 6px;
+      align-items: center;
       margin-bottom: 6px;
     }
-    .attached-image-thumb {
+    .image-preview-strip.visible {
+      display: flex;
+    }
+    .image-preview-strip .image-count-label {
+      font-size: 11px;
+      color: var(--fg-secondary);
+      margin-left: 4px;
+    }
+    .image-thumbnail {
       position: relative;
       width: 48px;
       height: 48px;
       border-radius: 6px;
       overflow: hidden;
       border: 1px solid var(--border);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: border-color 0.15s;
     }
-    .attached-image-thumb img {
+    .image-thumbnail:hover {
+      border-color: var(--accent);
+    }
+    .image-thumbnail img {
       width: 100%;
       height: 100%;
       object-fit: cover;
     }
-    .attached-image-remove {
+    .image-thumbnail .image-thumbnail-remove {
       position: absolute;
       top: -2px;
       right: -2px;
@@ -2024,6 +2049,125 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       text-align: center;
       cursor: pointer;
       padding: 0;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .image-thumbnail:hover .image-thumbnail-remove {
+      opacity: 1;
+    }
+
+    /* ---- 拖放覆盖层 ---- */
+    .drop-zone-overlay {
+      display: none;
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: color-mix(in srgb, var(--accent) 15%, var(--bg-secondary));
+      border: 2px dashed var(--accent);
+      border-radius: var(--radius);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    .drop-zone-overlay.visible {
+      display: flex;
+    }
+    .drop-zone-overlay-text {
+      color: var(--accent);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    /* ---- 图片灯箱 ---- */
+    .image-lightbox {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 10000;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .image-lightbox.visible {
+      display: flex;
+    }
+    .image-lightbox img {
+      max-width: 90%;
+      max-height: 90%;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+      cursor: default;
+    }
+    .image-lightbox-close {
+      position: absolute;
+      top: 12px;
+      right: 16px;
+      color: #fff;
+      font-size: 24px;
+      cursor: pointer;
+      background: none;
+      border: none;
+      opacity: 0.7;
+      transition: opacity 0.15s;
+      padding: 4px 8px;
+    }
+    .image-lightbox-close:hover {
+      opacity: 1;
+    }
+
+    /* ---- 附件按钮 ---- */
+    .attach-btn {
+      background: none;
+      border: 1px solid var(--border);
+      color: var(--fg-secondary);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      transition: color 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .attach-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .attach-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    /* ---- 消息中的图片缩略图 ---- */
+    .message-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 6px 0;
+    }
+    .message-image-thumb {
+      width: 64px;
+      height: 64px;
+      border-radius: 6px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: border-color 0.15s, transform 0.15s;
+    }
+    .message-image-thumb:hover {
+      border-color: var(--accent);
+      transform: scale(1.05);
+    }
+    .message-image-thumb img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
     }
     .webview-toast {
       position: fixed;
@@ -2768,10 +2912,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <div class="todo-panel-body" id="todoPanelBody"></div>
   </div>
 
+  <!-- 图片灯箱 -->
+  <div class="image-lightbox" id="imageLightbox">
+    <button class="image-lightbox-close" id="lightboxClose">&times;</button>
+    <img id="lightboxImg" src="" alt="预览图片" />
+  </div>
+
   <!-- 输入区域 -->
-  <div class="input-area">
+  <div class="input-area" id="inputArea">
+    <div class="drop-zone-overlay" id="dropZoneOverlay">
+      <span class="drop-zone-overlay-text">拖放图片到此处</span>
+    </div>
     <div class="slash-popover" id="slashPopover"></div>
     <div class="at-mention-popup" id="atMentionPopup"></div>
+    <div class="image-preview-strip" id="imagePreviewStrip"></div>
     <div class="input-toolbar">
       <div class="custom-select" id="agentSelect" title="选择 Agent">
         <div class="custom-select-trigger">
@@ -2807,6 +2961,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         id="promptInput"
         rows="1"
       ></textarea>
+      <input type="file" id="imageFileInput" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none" />
+      <button class="attach-btn" id="attachBtn" title="附加图片">📎</button>
       <button class="send-btn" id="sendBtn">发送</button>
     </div>
   </div>
@@ -3225,6 +3381,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       init() {
         this.setupInput();
         this.setupButtons();
+        // Escape 键关闭灯箱
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') {
+            const lightbox = document.getElementById('imageLightbox');
+            if (lightbox && lightbox.classList.contains('visible')) {
+              e.preventDefault();
+              app.hideLightbox();
+            }
+          }
+        });
         // ready 消息已在脚本顶部提前发送
       },
 
@@ -3240,6 +3406,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         bindClick('btnRefreshSession', () => app.refreshSession());
         bindClick('sendBtn', () => app.handleSendClick());
         bindClick('compactBtn', () => app.handleCompact());
+        bindClick('attachBtn', () => app.openImageFilePicker());
+
+        // 图片文件选择器
+        const fileInput = document.getElementById('imageFileInput');
+        if (fileInput) {
+          fileInput.addEventListener('change', (e) => {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            app.handleImageFiles(Array.from(files));
+            e.target.value = '';  // 重置以允许再次选择同一文件
+          });
+        }
+
+        // 灯箱关闭事件
+        const lightbox = document.getElementById('imageLightbox');
+        const lightboxClose = document.getElementById('lightboxClose');
+        if (lightbox) {
+          lightbox.addEventListener('click', (e) => {
+            if (e.target === lightbox) {
+              app.hideLightbox();
+            }
+          });
+        }
+        if (lightboxClose) {
+          lightboxClose.addEventListener('click', () => app.hideLightbox());
+        }
+
+        // 拖放事件
+        this.setupDragDrop();
       },
 
       handleSendClick() {
@@ -3329,12 +3524,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             if (item.type.startsWith('image/')) {
               e.preventDefault();
 
-              // 检查当前模型是否支持图片
-              if (!this.currentModelSupportsImage()) {
-                this.showToast('当前模型不支持图片输入');
-                return;
-              }
-
               const file = item.getAsFile();
               if (!file) return;
 
@@ -3342,12 +3531,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               reader.onload = () => {
                 const dataUrl = reader.result;
                 if (typeof dataUrl === 'string') {
-                  state.attachedImages.push({
+                  this.addImage(
                     dataUrl,
-                    filename: 'clipboard-' + Date.now() + '.' + (item.type.split('/')[1] || 'png'),
-                    mediaType: item.type,
-                  });
-                  this.renderAttachedImages();
+                    'clipboard-' + Date.now() + '.' + (item.type.split('/')[1] || 'png'),
+                    item.type
+                  );
                 }
               };
               reader.readAsDataURL(file);
@@ -3380,41 +3568,211 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       renderAttachedImages() {
-        let container = document.getElementById('attachedImages');
-        if (!container) {
-          container = document.createElement('div');
-          container.id = 'attachedImages';
-          const inputArea = document.querySelector('.input-area');
-          if (inputArea) {
-            inputArea.insertBefore(container, inputArea.firstChild);
-          }
-        }
-        container.innerHTML = '';
+        // Use the new image preview strip instead
+        this.renderImagePreviewStrip();
+      },
+
+      renderImagePreviewStrip() {
+        const strip = document.getElementById('imagePreviewStrip');
+        if (!strip) return;
+
+        strip.innerHTML = '';
         if (state.attachedImages.length === 0) {
-          container.style.display = 'none';
+          strip.classList.remove('visible');
           return;
         }
-        container.style.display = 'flex';
+        strip.classList.add('visible');
+
         for (let i = 0; i < state.attachedImages.length; i++) {
           const img = state.attachedImages[i];
-          const wrapper = document.createElement('div');
-          wrapper.className = 'attached-image-thumb';
+          const thumb = document.createElement('div');
+          thumb.className = 'image-thumbnail';
 
           const imgEl = document.createElement('img');
           imgEl.src = img.dataUrl;
-          wrapper.appendChild(imgEl);
+          imgEl.alt = img.filename || '附加图片';
+          imgEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.showLightbox(img.dataUrl);
+          });
+          thumb.appendChild(imgEl);
 
           const removeBtn = document.createElement('button');
-          removeBtn.className = 'attached-image-remove';
+          removeBtn.className = 'image-thumbnail-remove';
           removeBtn.textContent = '×';
-          removeBtn.addEventListener('click', () => {
-            state.attachedImages.splice(i, 1);
-            this.renderAttachedImages();
+          const idx = i;
+          removeBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.removeImage(idx);
           });
-          wrapper.appendChild(removeBtn);
+          thumb.appendChild(removeBtn);
 
-          container.appendChild(wrapper);
+          strip.appendChild(thumb);
         }
+
+        // 添加图片数量标签
+        const countLabel = document.createElement('span');
+        countLabel.className = 'image-count-label';
+        countLabel.textContent = '已附加 ' + state.attachedImages.length + ' 张图片';
+        strip.appendChild(countLabel);
+      },
+
+      addImage(dataUrl, filename, mediaType) {
+        // 检查当前模型是否支持图片
+        if (!this.currentModelSupportsImage()) {
+          this.showToast('当前模型不支持图片输入');
+          return;
+        }
+
+        // 检查图片大小 (data URL 的 base64 部分约为原始大小的 4/3)
+        const sizeEstimate = (dataUrl.length * 3) / 4;
+        const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+        if (sizeEstimate > MAX_SIZE) {
+          this.showToast('图片过大（超过 5MB），请压缩后重试');
+          return;
+        }
+
+        state.attachedImages.push({
+          dataUrl,
+          filename: filename || ('image-' + Date.now() + '.png'),
+          mediaType: mediaType || 'image/png',
+        });
+        this.renderImagePreviewStrip();
+      },
+
+      removeImage(index) {
+        if (index >= 0 && index < state.attachedImages.length) {
+          state.attachedImages.splice(index, 1);
+          this.renderImagePreviewStrip();
+        }
+      },
+
+      openImageFilePicker() {
+        if (!this.currentModelSupportsImage()) {
+          this.showToast('当前模型不支持图片输入');
+          return;
+        }
+        const fileInput = document.getElementById('imageFileInput');
+        if (fileInput) {
+          fileInput.click();
+        }
+      },
+
+      handleImageFiles(files) {
+        const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+        for (const file of files) {
+          if (!ALLOWED_TYPES.includes(file.type)) {
+            this.showToast('不支持的图片格式: ' + file.name);
+            continue;
+          }
+          const reader = new FileReader();
+          reader.onload = () => {
+            const dataUrl = reader.result;
+            if (typeof dataUrl === 'string') {
+              this.addImage(dataUrl, file.name, file.type);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+      },
+
+      setupDragDrop() {
+        const inputArea = document.getElementById('inputArea');
+        const overlay = document.getElementById('dropZoneOverlay');
+        if (!inputArea || !overlay) return;
+
+        let dragCounter = 0;
+
+        inputArea.addEventListener('dragenter', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter++;
+          // 检查是否有文件
+          if (e.dataTransfer && e.dataTransfer.types.includes('Files')) {
+            overlay.classList.add('visible');
+          }
+        });
+
+        inputArea.addEventListener('dragover', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (e.dataTransfer) {
+            e.dataTransfer.dropEffect = 'copy';
+          }
+        });
+
+        inputArea.addEventListener('dragleave', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter--;
+          if (dragCounter <= 0) {
+            dragCounter = 0;
+            overlay.classList.remove('visible');
+          }
+        });
+
+        inputArea.addEventListener('drop', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dragCounter = 0;
+          overlay.classList.remove('visible');
+
+          if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+
+          const imageFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+          if (imageFiles.length === 0) {
+            this.showToast('请拖放图片文件');
+            return;
+          }
+
+          this.handleImageFiles(imageFiles);
+        });
+      },
+
+      showLightbox(src) {
+        const lightbox = document.getElementById('imageLightbox');
+        const lightboxImg = document.getElementById('lightboxImg');
+        if (!lightbox || !lightboxImg) return;
+        lightboxImg.src = src;
+        lightbox.classList.add('visible');
+      },
+
+      hideLightbox() {
+        const lightbox = document.getElementById('imageLightbox');
+        if (lightbox) {
+          lightbox.classList.remove('visible');
+        }
+        const lightboxImg = document.getElementById('lightboxImg');
+        if (lightboxImg) {
+          lightboxImg.src = '';
+        }
+      },
+
+      renderMessageImages(parts) {
+        // Render image thumbnails from file parts in a message
+        const imageParts = (parts || []).filter(p =>
+          p.type === 'file' && p.url && p.mediaType && p.mediaType.startsWith('image/')
+        );
+        if (imageParts.length === 0) return null;
+
+        const container = document.createElement('div');
+        container.className = 'message-images';
+
+        for (const part of imageParts) {
+          const thumb = document.createElement('div');
+          thumb.className = 'message-image-thumb';
+
+          const imgEl = document.createElement('img');
+          imgEl.src = part.url;
+          imgEl.alt = part.filename || '图片';
+          imgEl.addEventListener('click', () => {
+            this.showLightbox(part.url);
+          });
+          thumb.appendChild(imgEl);
+          container.appendChild(thumb);
+        }
+
+        return container;
       },
 
       syncInputHeight() {
@@ -4043,9 +4401,28 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         meta.appendChild(timeSpan);
         div.appendChild(meta);
 
-        // 渲染 Parts
-        for (const part of parts) {
+        // Render Parts — group image file parts into a container
+        const imageParts = parts.filter(p =>
+          p.type === 'file' && p.url && p.mediaType && p.mediaType.startsWith('image/')
+        );
+        const nonImageParts = parts.filter(p =>
+          !(p.type === 'file' && p.url && p.mediaType && p.mediaType.startsWith('image/'))
+        );
+
+        // Render non-image parts first
+        for (const part of nonImageParts) {
           div.appendChild(this.renderPart(part, info));
+        }
+
+        // Render image parts grouped together
+        if (imageParts.length > 0) {
+          const imageContainer = document.createElement('div');
+          imageContainer.className = 'message-images';
+          for (const part of imageParts) {
+            const partEl = this.renderPart(part, info);
+            imageContainer.appendChild(partEl);
+          }
+          div.appendChild(imageContainer);
         }
 
         // 错误信息
@@ -4453,16 +4830,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       renderFilePart(part) {
+        // Check if this is an image file
+        const isImage = part.mediaType && part.mediaType.startsWith('image/') && part.url;
+        if (isImage) {
+          const thumb = document.createElement('div');
+          thumb.className = 'message-image-thumb';
+          thumb.dataset.partId = part.id;
+
+          const imgEl = document.createElement('img');
+          imgEl.src = part.url;
+          imgEl.alt = part.filename || '图片';
+          imgEl.addEventListener('click', () => {
+            this.showLightbox(part.url);
+          });
+          thumb.appendChild(imgEl);
+          return thumb;
+        }
+
         const div = document.createElement('div');
         div.style.fontSize = '12px';
         div.style.color = 'var(--fg-link)';
         div.style.cursor = 'pointer';
         div.textContent = '📎 ' + (part.filename || 'file');
-        div.onclick = () => {
+        div.addEventListener('click', () => {
           if (part.filename) {
             vscode.postMessage({ type: 'file:open', path: part.filename });
           }
-        };
+        });
         return div;
       },
 
