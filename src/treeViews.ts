@@ -274,13 +274,12 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
     }
 
     // 并行拉取所有状态数据，各自独立处理异常
-    const [healthResult, providersResult, configResult, mcpResult, lspResult, formatterResult, agentsResult, toolsResult] = await Promise.allSettled([
+    const [healthResult, providersResult, configResult, mcpResult, lspResult, agentsResult, toolsResult] = await Promise.allSettled([
       this.client.health(),
       this.client.getProviders(),
       this.client.getConfig(),
       this.client.getMCPStatus(),
       this.client.getLSPStatus(),
-      this.client.getFormatterStatus(),
       this.client.listAgents(),
       this.client.listToolIDs(),
     ]);
@@ -290,7 +289,6 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
     const config = configResult.status === "fulfilled" ? configResult.value : null;
     const mcpStatus = mcpResult.status === "fulfilled" ? mcpResult.value : null;
     const lspStatus = lspResult.status === "fulfilled" ? lspResult.value : null;
-    const formatterStatus = formatterResult.status === "fulfilled" ? formatterResult.value : null;
     const agents = agentsResult.status === "fulfilled" ? agentsResult.value : null;
     const tools = toolsResult.status === "fulfilled" ? toolsResult.value : null;
 
@@ -305,9 +303,6 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
 
     // ---- LSP 服务器 ----
     this.buildLSPSection(lspStatus);
-
-    // ---- Formatter ----
-    this.buildFormatterSection(formatterStatus);
 
     // ---- 工具 ----
     this.buildToolsSection(tools, config);
@@ -520,48 +515,6 @@ export class StatusTreeProvider implements vscode.TreeDataProvider<StatusItem> {
           ? vscode.TreeItemCollapsibleState.Collapsed
           : vscode.TreeItemCollapsibleState.None,
         lspChildren
-      )
-    );
-  }
-
-  /**
-   * Formatter 区域：格式化工具状态
-   */
-  private buildFormatterSection(formatterStatus: any[] | null): void {
-    if (!formatterStatus || formatterStatus.length === 0) {
-      this.items.push(
-        new StatusItem("Formatter", "无", "symbol-color")
-      );
-      return;
-    }
-
-    const formatterChildren = formatterStatus.map((f) => {
-      const name = f?.name || f?.id || "未知";
-      const status = f?.status || "unknown";
-      const isActive = status === "running" || status === "active" || status === "connected";
-      return new StatusItem(
-        name,
-        isActive ? "活跃" : status,
-        isActive ? "pass-filled" : "circle-slash",
-        vscode.TreeItemCollapsibleState.None,
-        undefined,
-        isActive ? "charts.green" : undefined
-      );
-    });
-
-    const activeCount = formatterChildren.filter(
-      (c) => c.description === "活跃"
-    ).length;
-
-    this.items.push(
-      new StatusItem(
-        "Formatter",
-        activeCount > 0 ? `${activeCount} 个活跃` : `${formatterStatus.length} 个`,
-        "symbol-color",
-        formatterChildren.length > 0
-          ? vscode.TreeItemCollapsibleState.Collapsed
-          : vscode.TreeItemCollapsibleState.None,
-        formatterChildren
       )
     );
   }

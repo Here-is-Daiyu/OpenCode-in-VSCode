@@ -99,9 +99,10 @@ export interface MessageWithParts {
 }
 
 export interface PromptBody {
-  parts: Array<{ type: "text"; text: string } | { type: "file"; mediaType: string; filename: string; url: string }>;
+  parts: Array<{ type: "text"; text: string } | { type: "file"; mime: string; filename: string; url: string }>;
   model?: { providerID: string; modelID: string };
   agent?: string;
+  variant?: string;
   noReply?: boolean;
   system?: string;
   tools?: string[];

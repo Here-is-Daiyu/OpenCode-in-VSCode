@@ -109,11 +109,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private messageLoadVersion = 0;
   private sseController: AbortController | null = null;
   private _webviewReady = false;
+  private _webviewInitializing = false;
+  private debugChannel: vscode.OutputChannel;
   private disposables: vscode.Disposable[] = [];
 
   constructor(extensionUri: vscode.Uri) {
     this.extensionUri = extensionUri;
+    this.debugChannel = vscode.window.createOutputChannel("OpenCode Chat Debug");
     ChatViewProvider.instance = this;
+    this.logDebug("ChatViewProvider 初始化");
   }
 
   public resolveWebviewView(
@@ -122,6 +126,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken
   ): void {
     this.view = webviewView;
+    this.logDebug("resolveWebviewView: 开始", {
+      visible: webviewView.visible,
+      hasClient: !!this.client,
+    });
 
     webviewView.webview.options = {
       enableScripts: true,
@@ -136,16 +144,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     );
 
     webviewView.onDidDispose(() => {
+      this.logDebug("Webview 已销毁");
       this.view = undefined;
+      this._webviewReady = false;
       this.sseController?.abort();
       this.sseController = null;
     }, null, this.disposables);
 
     // 在注入 HTML 前先绑定消息监听，避免丢失 webview 启动早期消息（如 ready）
     webviewView.webview.html = this.getHtmlContent();
+    this.logDebug("resolveWebviewView: HTML 已注入");
 
     // 如果已有 client，订阅 SSE 事件
     if (this.client) {
+      this.logDebug("resolveWebviewView: 已有 client，订阅 SSE");
       this.subscribeToEvents();
     }
   }
@@ -164,15 +176,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   public setClient(client: OpenCodeClient): void {
     this.client = client;
+    this.logDebug("setClient: client 已设置", { webviewReady: this._webviewReady, hasView: !!this.view });
     // 重新订阅事件
     this.sseController?.abort();
     if (this.view) {
+      this.logDebug("setClient: 订阅 SSE");
       this.subscribeToEvents();
     }
     // 如果 webview 已经就绪，触发初始化
     if (this._webviewReady) {
+      this.logDebug("setClient: webview 已就绪，触发 onWebviewReady");
       this.onWebviewReady().catch((err) => {
-        console.error("[OpenCode ChatPanel] onWebviewReady 异常:", err);
+        this.logDebug("setClient -> onWebviewReady 异常", err, "error");
       });
     }
   }
@@ -185,6 +200,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.postMessage({ type: "session:switch", sessionId });
     await this.loadMessages(sessionId);
     await this.sendSessionBreadcrumb();
+    // 尝试恢复该会话最后使用的模型
+    await this.restoreSessionModel(sessionId);
+  }
+
+  /**
+   * 恢复会话最后使用的模型：查找该会话中最后一条含 model 信息的消息
+   */
+  private async restoreSessionModel(sessionId: string): Promise<void> {
+    if (!this.client) return;
+    try {
+      const messages = await this.client.listMessages(sessionId, 1000);
+      // 从后往前找第一条包含 model 信息的消息
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const info = (messages[i] as any)?.info;
+        const model = info?.model || (info?.providerID && info?.modelID ? {
+          providerID: info.providerID,
+          modelID: info.modelID,
+        } : null);
+        if (model?.providerID && model?.modelID) {
+          const modelKey = `${model.providerID}/${model.modelID}`;
+          this.logDebug("restoreSessionModel: 恢复模型", { sessionId, model: modelKey });
+          this.postMessage({
+            type: "session:restoreModel",
+            model: modelKey,
+          });
+          return;
+        }
+      }
+    } catch (error: any) {
+      this.logDebug("restoreSessionModel: 失败", error?.message, "error");
+    }
   }
 
   /**
@@ -196,10 +242,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private subscribeToEvents(): void {
     if (!this.client) return;
+    this.logDebug("subscribeToEvents: 建立 SSE 订阅");
     this.sseController = this.client.subscribeEvents(
       (event) => this.handleSSEEvent(event),
       (error) => {
-        console.error("SSE 连接错误:", error);
+        this.logDebug("SSE 连接错误", error, "error");
       }
     );
   }
@@ -207,6 +254,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private handleSSEEvent(event: SSEEvent): void {
     const { type } = event;
     const properties = this.normalizeEventProperties(type, event.properties || {});
+
+    if (type === "session.status" || type === "session.idle" || type === "session.error") {
+      this.logDebug(`SSE 事件: ${type}`, properties);
+    }
 
     // 转发所有事件到 Webview
     this.postMessage({
@@ -461,9 +512,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async handleWebviewMessage(msg: any): Promise<void> {
-    switch (msg.type) {
+    const type = typeof msg?.type === "string" ? msg.type : "<unknown>";
+    if (type !== "debug:log") {
+      this.logDebug(`收到 Webview 消息: ${type}`);
+    }
+
+    try {
+      switch (msg.type) {
       case "ready":
+        this.logDebug("handleWebviewMessage: 收到 ready", { phase: msg.phase || "unknown" });
         await this.onWebviewReady();
+        break;
+
+      case "debug:log":
+        this.logDebug(
+          `[Webview:${msg.level || "info"}] ${msg.message || "(empty)"}`,
+          msg.data,
+          msg.level === "error" ? "error" : "info"
+        );
         break;
 
       case "prompt:send":
@@ -471,7 +537,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case "prompt:sendAsync":
-        await this.sendPromptAsync(msg.text, msg.model, msg.agent, msg.images);
+        await this.sendPromptAsync(msg.text, msg.model, msg.agent, msg.images, msg.variant);
         break;
 
       case "command:send":
@@ -597,6 +663,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "toolbar:viewDiff":
         await this.handleToolbarViewDiff();
         break;
+
+        default:
+          this.logDebug(`未处理的 Webview 消息类型: ${type}`);
+          break;
+      }
+    } catch (error) {
+      this.logDebug(`handleWebviewMessage 处理失败: ${type}`, error, "error");
     }
   }
 
@@ -667,31 +740,61 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async onWebviewReady(): Promise<void> {
+    if (this._webviewInitializing) {
+      this.logDebug("onWebviewReady: 跳过重复初始化（正在进行中）");
+      return;
+    }
+    this._webviewInitializing = true;
+
     // 标记 webview 已就绪
     this._webviewReady = true;
+    this.logDebug("onWebviewReady: 开始", { hasClient: !!this.client, currentSessionId: this.currentSessionId });
     
     // 如果 client 未设置，推迟初始化
     if (!this.client) {
+      this.logDebug("onWebviewReady: client 未就绪，等待 setClient");
+      this._webviewInitializing = false;
       return;
     }
 
-    // 发送扩展设置到 webview
-    this.sendSettings();
-    
-    // 发送初始数据
-    await this.sendSessionList();
-    await this.sendProviderList();
-    await this.sendAgentList();
-    await this.sendCommandList();
-    await this.sendHealthStatus();
+    try {
+      // 发送扩展设置到 webview
+      this.sendSettings();
+      this.logDebug("onWebviewReady: settings 已发送");
+      
+      // 发送初始数据（每个调用独立 try/catch，确保单个失败不阻塞后续）
+      const sendTasks: Array<{ name: string; fn: () => Promise<void> }> = [
+        { name: "SessionList", fn: () => this.sendSessionList() },
+        { name: "ProviderList", fn: () => this.sendProviderList() },
+        { name: "AgentList", fn: () => this.sendAgentList() },
+        { name: "CommandList", fn: () => this.sendCommandList() },
+        { name: "HealthStatus", fn: () => this.sendHealthStatus() },
+      ];
+      for (const task of sendTasks) {
+        try {
+          await task.fn();
+          this.logDebug(`onWebviewReady: ${task.name} 已发送`);
+        } catch (err) {
+          this.logDebug(`onWebviewReady: ${task.name} 失败`, err, "error");
+        }
+      }
 
-    // 如果已有会话，加载最近的
-    if (this.currentSessionId) {
-      await Promise.all([
-        this.loadMessages(this.currentSessionId),
-        this.sendTodoList(),
-        this.sendSessionBreadcrumb(),
-      ]);
+      // 如果已有会话，加载最近的
+      if (this.currentSessionId) {
+        try {
+          await Promise.all([
+            this.loadMessages(this.currentSessionId),
+            this.sendTodoList(),
+            this.sendSessionBreadcrumb(),
+          ]);
+          this.logDebug("onWebviewReady: 当前会话数据加载完成");
+        } catch (err) {
+          this.logDebug("onWebviewReady: 加载会话数据失败", err, "error");
+        }
+      }
+    } finally {
+      this._webviewInitializing = false;
+      this.logDebug("onWebviewReady: 结束");
     }
   }
 
@@ -737,18 +840,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     text: string,
     model?: { providerID: string; modelID: string },
     agent?: string,
-    images?: Array<{ dataUrl: string; filename: string; mediaType: string }>
+    images?: Array<{ dataUrl: string; filename: string; mediaType: string }>,
+    variant?: string
   ): Promise<void> {
-    if (!this.client) return;
+    if (!this.client) {
+      this.logDebug("sendPromptAsync: client 不存在，跳过", undefined, "error");
+      return;
+    }
     if (!this.currentSessionId) {
       await this.createSession();
     }
-    if (!this.currentSessionId) return;
+    if (!this.currentSessionId) {
+      this.logDebug("sendPromptAsync: 会话创建失败，跳过", undefined, "error");
+      return;
+    }
 
     try {
       const parts: Array<
         | { type: "text"; text: string }
-        | { type: "file"; mediaType: string; filename: string; url: string }
+        | { type: "file"; mime: string; filename: string; url: string }
       > = [];
       if (text) {
         parts.push({ type: "text", text });
@@ -757,7 +867,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         for (const img of images) {
           parts.push({
             type: "file",
-            mediaType: img.mediaType,
+            mime: img.mediaType,
             filename: img.filename,
             url: img.dataUrl,
           });
@@ -766,15 +876,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       if (parts.length === 0) {
         parts.push({ type: "text", text: "" });
       }
+      this.logDebug("sendPromptAsync: 发送", {
+        sessionId: this.currentSessionId,
+        partsCount: parts.length,
+        hasModel: !!model,
+        model,
+        agent,
+        variant,
+      });
       await this.client.sendPromptAsync(this.currentSessionId, {
         parts,
         model,
         agent,
+        variant: variant || undefined,
       });
+      this.logDebug("sendPromptAsync: 成功");
     } catch (error: any) {
+      this.logDebug("sendPromptAsync: 失败", {
+        errorMessage: error?.message,
+        errorStack: error?.stack,
+        errorFull: String(error),
+      }, "error");
       this.postMessage({
         type: "error",
-        message: `发送消息失败: ${error.message}`,
+        message: `发送消息失败: ${error.message || "未知错误"}`,
       });
     }
   }
@@ -938,6 +1063,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async sendSessionList(): Promise<void> {
     if (!this.client) return;
     try {
+      this.logDebug("sendSessionList: 拉取会话列表");
       const [sessions, rawStatusMap] = await Promise.all([
         this.client.listSessions(),
         this.client.getSessionStatus().catch(() => ({})),
@@ -951,7 +1077,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         sessions: sessionsWithoutSubagent,
         statusMap,
       });
+      this.logDebug("sendSessionList: 已发送", {
+        total: sessions.length,
+        filtered: sessionsWithoutSubagent.length,
+        statusCount: Object.keys(statusMap).length,
+      });
     } catch (error: any) {
+      this.logDebug("sendSessionList: 失败", error, "error");
       this.postMessage({
         type: "error",
         message: `获取会话列表失败: ${error.message}`,
@@ -1113,8 +1245,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     if (!this.client) return;
     try {
       const health = await this.client.health();
+      this.logDebug("sendHealthStatus: 成功", health);
       this.postMessage({ type: "health:status", health });
-    } catch {
+    } catch (error) {
+      this.logDebug("sendHealthStatus: 失败", error, "error");
       this.postMessage({
         type: "health:status",
         health: { healthy: false, version: "N/A" },
@@ -1391,8 +1525,50 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  private safeStringify(value: unknown): string {
+    if (value === undefined) return "";
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private logDebug(message: string, data?: unknown, level: "info" | "error" = "info"): void {
+    const prefix = level === "error" ? "[ERROR]" : "[INFO]";
+    const payload = data === undefined ? "" : ` ${this.safeStringify(data)}`;
+    const line = `${prefix} ${message}${payload}`;
+
+    this.debugChannel.appendLine(line);
+    if (level === "error") {
+      console.error("[OpenCode ChatPanel]", message, data ?? "");
+    } else {
+      console.log("[OpenCode ChatPanel]", message, data ?? "");
+    }
+  }
+
   private postMessage(msg: any): void {
-    this.view?.webview.postMessage(msg);
+    const type = typeof msg?.type === "string" ? msg.type : "<unknown>";
+    if (!this.view) {
+      this.logDebug(`发送到 Webview 失败（view 不存在）: ${type}`, msg, "error");
+      return;
+    }
+
+    const shouldLog = type !== "sse:event" && type !== "highlight:result";
+    if (shouldLog) {
+      this.logDebug(`发送到 Webview: ${type}`);
+    }
+
+    this.view.webview
+      .postMessage(msg)
+      .then((ok) => {
+        if (!ok) {
+          this.logDebug(`Webview 未接收消息: ${type}`, msg, "error");
+        }
+      }, (err: unknown) => {
+        this.logDebug(`发送消息异常: ${type}`, err, "error");
+      })
+    ;
   }
 
   private getHtmlContent(): string {
@@ -2204,7 +2380,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .token-bar-segment[data-cat="input"] { background: #0ea5e9; }
     .token-bar-segment[data-cat="output"] { background: #ec4899; }
     .token-bar-segment[data-cat="reasoning"] { background: #a855f7; }
-    .token-bar-segment[data-cat="cache"] { background: #f59e0b; }
+    .token-bar-segment[data-cat="cache-read"] { background: #f59e0b; }
+    .token-bar-segment[data-cat="cache-write"] { background: #fb923c; }
     .token-bar-segment[data-cat="remaining"] { background: color-mix(in srgb, var(--fg-secondary) 18%, transparent); }
     .token-bar-segment::after {
       content: attr(data-tooltip);
@@ -2228,6 +2405,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     .token-bar-segment:hover::after {
       opacity: 1;
       transform: translate(-50%, 0);
+    }
+    .token-bar-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 10px;
+      margin-top: 4px;
+      font-size: 9px;
+      color: var(--fg-secondary);
+    }
+    .token-bar-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .token-bar-legend-item .legend-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 1px;
+      flex-shrink: 0;
+    }
+    .token-bar-cost {
+      font-size: 10px;
+      color: var(--fg-secondary);
+      opacity: 0.8;
+      margin-left: 8px;
     }
 
     /* ---- 输入区域 ---- */
@@ -3389,16 +3591,75 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   <div class="token-bar-container" id="tokenBarContainer">
     <div class="token-bar-header">
       <span class="token-count" id="tokenCount">0 tokens</span>
-      <span class="token-percent" id="tokenPercent"></span>
+      <span><span class="token-percent" id="tokenPercent"></span><span class="token-bar-cost" id="tokenCost"></span></span>
     </div>
     <div class="token-bar-track" id="tokenBarTrack"></div>
+    <div class="token-bar-legend" id="tokenBarLegend"></div>
   </div>
 
   <script nonce="${nonce}">
     const vscode = acquireVsCodeApi();
 
+    const WEBVIEW_DEBUG = true;
+
+    function toErrorString(err) {
+      if (!err) return 'unknown error';
+      if (err instanceof Error) {
+        return err.stack || err.message || String(err);
+      }
+      try {
+        return JSON.stringify(err);
+      } catch {
+        return String(err);
+      }
+    }
+
+    function safeClone(value) {
+      if (value == null) return value;
+      try {
+        return JSON.parse(JSON.stringify(value));
+      } catch {
+        return toErrorString(value);
+      }
+    }
+
+    function debugLog(level, message, data) {
+      if (!WEBVIEW_DEBUG) return;
+      try {
+        vscode.postMessage({
+          type: 'debug:log',
+          source: 'webview',
+          level: level || 'info',
+          message: message || '',
+          data: safeClone(data),
+          ts: new Date().toISOString(),
+        });
+      } catch {
+        // ignore logging errors
+      }
+    }
+
+    window.addEventListener('error', (event) => {
+      debugLog('error', 'window.error', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+        stack: event.error ? toErrorString(event.error) : undefined,
+      });
+    });
+
+    window.addEventListener('unhandledrejection', (event) => {
+      debugLog('error', 'window.unhandledrejection', {
+        reason: toErrorString(event.reason),
+      });
+    });
+
+    debugLog('info', 'webview.script.start');
+
     // 立即通知后端 webview 已就绪（在任何其他初始化之前）
-    vscode.postMessage({ type: 'ready' });
+    debugLog('info', 'webview.ready.send', { phase: 'early' });
+    vscode.postMessage({ type: 'ready', phase: 'early' });
 
     // 应用状态
     const state = {
@@ -3764,9 +4025,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           state.contextLimit = state.modelLimits[modelKey]?.context || 0;
           modelInfoEl.textContent = modelKey;
           vscode.postMessage({ type: 'config:setModel', providerID, modelID });
+          // 根据模型能力显示/隐藏推理强度选择器
+          const cap = state.modelCapabilities[modelKey];
+          const reasoningEl = document.getElementById('reasoningEffortSelect');
+          if (reasoningEl) {
+            reasoningEl.style.display = (cap && cap.reasoning) ? '' : 'none';
+          }
         } else {
           state.contextLimit = 0;
           modelInfoEl.textContent = '-';
+          // 隐藏推理强度选择器
+          const reasoningEl = document.getElementById('reasoningEffortSelect');
+          if (reasoningEl) reasoningEl.style.display = 'none';
         }
         app.renderTokenBar();
       }
@@ -3802,8 +4072,21 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const app = {
       init() {
-        this.setupInput();
-        this.setupButtons();
+        debugLog('info', 'app.init.start');
+        try {
+          this.setupInput();
+          debugLog('info', 'app.init.setupInput.ok');
+        } catch (err) {
+          debugLog('error', 'app.init.setupInput.failed', { error: toErrorString(err) });
+        }
+
+        try {
+          this.setupButtons();
+          debugLog('info', 'app.init.setupButtons.ok');
+        } catch (err) {
+          debugLog('error', 'app.init.setupButtons.failed', { error: toErrorString(err) });
+        }
+
         // Escape 键关闭灯箱
         document.addEventListener('keydown', (e) => {
           if (e.key === 'Escape') {
@@ -3814,7 +4097,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
           }
         });
-        // ready 消息已在脚本顶部提前发送
+        debugLog('info', 'app.init.done');
       },
 
       setupButtons() {
@@ -3867,24 +4150,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         });
 
-        // 面包屑: 子会话下拉
-        bindClick('bcChildrenBtn', () => {
-          const dropdown = document.getElementById('childrenDropdown');
-          if (dropdown.classList.contains('open')) {
-            dropdown.classList.remove('open');
-          } else {
-            app.renderChildrenDropdown();
-            dropdown.classList.add('open');
+        // 面包屑: 子会话下拉（stopPropagation 防止 document handler 立即关闭）
+        {
+          const btn = document.getElementById('bcChildrenBtn');
+          if (btn) {
+            btn.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const dropdown = document.getElementById('childrenDropdown');
+              if (!dropdown) return;
+              if (dropdown.classList.contains('open')) {
+                dropdown.classList.remove('open');
+              } else {
+                app.renderChildrenDropdown();
+                dropdown.classList.add('open');
+              }
+            });
           }
-        });
+        }
 
         // 点击其他地方关闭子会话下拉
         document.addEventListener('click', (e) => {
           const dropdown = document.getElementById('childrenDropdown');
+          if (!dropdown || !dropdown.classList.contains('open')) return;
           const btn = document.getElementById('bcChildrenBtn');
-          if (dropdown && !dropdown.contains(e.target) && e.target !== btn) {
-            dropdown.classList.remove('open');
-          }
+          const wrapper = document.querySelector('.bc-children-wrapper');
+          // 点击在下拉框、按钮或包裹容器内部则不关闭
+          if (wrapper && wrapper.contains(e.target)) return;
+          dropdown.classList.remove('open');
         });
 
         // 撤销/重做工具栏按钮
@@ -3970,6 +4262,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       setupInput() {
         const input = document.getElementById('promptInput');
+        if (!input) {
+          debugLog('error', 'setupInput: promptInput not found');
+          return;
+        }
+
+        debugLog('info', 'setupInput: binding input handlers');
         input.addEventListener('keydown', (e) => {
           // 斜杠面板打开时处理导航
           if (this.slashVisible) {
@@ -4654,13 +4952,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         } else {
           const model = this.getSelectedModel();
           const agent = this.getSelectedAgent();
+          const variant = state.currentReasoningEffort || undefined;
           // 收集图片附件
           const images = state.attachedImages.map(img => ({
             dataUrl: img.dataUrl,
             filename: img.filename,
             mediaType: img.mediaType,
           }));
-          vscode.postMessage({ type: 'prompt:sendAsync', text: text || '', model, agent, images });
+          vscode.postMessage({ type: 'prompt:sendAsync', text: text || '', model, agent, variant, images });
 
           // 立即显示用户消息
           const uiParts = [];
@@ -4743,6 +5042,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       /**
+       * 将大数字压缩为短格式（如 128000 → "128k"）
+       */
+      formatCompact(n) {
+        if (n == null || n === 0) return '0';
+        if (n >= 1000000) return (n / 1000000).toFixed(1).replace(/\\.0$/, '') + 'M';
+        if (n >= 1000) return (n / 1000).toFixed(1).replace(/\\.0$/, '') + 'k';
+        return String(n);
+      },
+
+      /**
        * 更新上下文指示器 UI
        */
       updateContextIndicator() {
@@ -4757,17 +5066,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 更新样式
         indicator.className = 'context-indicator level-' + level;
 
-        // 更新文案
+        // 更新文案：百分比 + 紧凑用量/上限 + 消息数
         if (state.tokenUsage && state.contextLimit > 0) {
           const total = state.tokenUsage.total || 0;
           const pct = Math.round((total / state.contextLimit) * 100);
-          label.textContent = pct + '% · ' + msgCount + ' 条';
+          label.textContent = pct + '% (' + this.formatCompact(total) + '/' + this.formatCompact(state.contextLimit) + ') · ' + msgCount + ' 条';
         } else {
           label.textContent = msgCount + ' 条消息';
         }
 
-        // 更新 title 提示
-        indicator.title = '上下文用量: ' + label.textContent;
+        // 更新 title 提示（详细信息）
+        if (state.tokenUsage && state.contextLimit > 0) {
+          const total = state.tokenUsage.total || 0;
+          const pct = Math.round((total / state.contextLimit) * 100);
+          indicator.title = '上下文填充率: ' + pct + '% — ' + this.formatNumber(total) + ' / ' + this.formatNumber(state.contextLimit) + ' tokens · ' + msgCount + ' 条消息';
+        } else {
+          indicator.title = '上下文用量: ' + msgCount + ' 条消息';
+        }
 
         // 显示/隐藏压缩按钮（yellow/red 时显示）
         if (compactBtn) {
@@ -4861,7 +5176,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           const summaryText = (msg.parts || [])
             .filter(p => p.type === 'text')
             .map(p => p.text || '')
-            .join('\n')
+            .join('\\n')
             .trim();
           this.addCompactionNotice(summaryText);
           this.updateContextIndicator();
@@ -5988,7 +6303,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       /**
-       * 渲染 token 用量条
+       * 渲染 token 用量条（细粒度分段 + 图例 + 费用）
        */
       renderTokenBar() {
         const usage = state.tokenUsage;
@@ -5998,6 +6313,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const track = document.getElementById('tokenBarTrack');
         const countEl = document.getElementById('tokenCount');
         const percentEl = document.getElementById('tokenPercent');
+        const costEl = document.getElementById('tokenCost');
+        const legendEl = document.getElementById('tokenBarLegend');
 
         const input = usage.input || 0;
         const output = usage.output || 0;
@@ -6012,10 +6329,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (state.contextLimit > 0) {
           const pct = Math.max(0, Math.round((total / state.contextLimit) * 100));
           percentEl.textContent =
-            '总计/上下文 ' +
-            this.formatNumber(total) +
+            this.formatCompact(total) +
             '/' +
-            this.formatNumber(state.contextLimit) +
+            this.formatCompact(state.contextLimit) +
             ' (' +
             pct +
             '%)';
@@ -6023,14 +6339,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           percentEl.textContent = '';
         }
 
-        // 构建分段：用户输入 / 模型输出 / 推理 / 缓存 / 剩余
-        const cacheTotal = cacheRead + cacheWrite;
+        // 显示费用
+        if (costEl) {
+          if (state.tokenCost > 0) {
+            costEl.textContent = '$' + state.tokenCost.toFixed(4);
+          } else {
+            costEl.textContent = '';
+          }
+        }
+
+        // 构建分段（缓存读/写分开）
         const remaining = (state.contextLimit > 0) ? Math.max(0, state.contextLimit - total) : 0;
+
+        const segmentColors = {
+          'input': '#0ea5e9',
+          'output': '#ec4899',
+          'reasoning': '#a855f7',
+          'cache-read': '#f59e0b',
+          'cache-write': '#fb923c',
+          'remaining': null,
+        };
+
         const segments = [
           { key: 'input', label: '输入', value: input },
           { key: 'output', label: '输出', value: output },
           { key: 'reasoning', label: '推理', value: reasoning },
-          { key: 'cache', label: '缓存', value: cacheTotal },
+          { key: 'cache-read', label: '缓存读取', value: cacheRead },
+          { key: 'cache-write', label: '缓存写入', value: cacheWrite },
           { key: 'remaining', label: '剩余', value: remaining },
         ].filter(s => s.value > 0);
 
@@ -6049,6 +6384,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           el.title = el.dataset.tooltip;
           el.setAttribute('aria-label', el.dataset.tooltip);
           track.appendChild(el);
+        }
+
+        // 渲染图例（仅显示有值的非 remaining 分段）
+        if (legendEl) {
+          legendEl.innerHTML = '';
+          for (const seg of segments) {
+            if (seg.key === 'remaining') continue;
+            const color = segmentColors[seg.key];
+            if (!color) continue;
+            const item = document.createElement('span');
+            item.className = 'token-bar-legend-item';
+            const dot = document.createElement('span');
+            dot.className = 'legend-dot';
+            dot.style.background = color;
+            const text = document.createTextNode(seg.label + ' ' + this.formatCompact(seg.value));
+            item.appendChild(dot);
+            item.appendChild(text);
+            legendEl.appendChild(item);
+          }
         }
 
         // 显示容器
@@ -6685,10 +7039,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
                     output: model.limit.output || 0,
                   };
                 }
-                // 收集模型的图片能力（使用 capabilities.input.image）
+                // 收集模型的能力（图片输入、推理）
                 const hasImageInput = !!(model.capabilities && model.capabilities.input && model.capabilities.input.image);
+                const hasReasoning = !!(model.capabilities && model.capabilities.reasoning);
                 state.modelCapabilities[provider.id + '/' + model.id] = {
                   imageInput: hasImageInput,
+                  reasoning: hasReasoning,
                 };
               }
             }
@@ -6714,6 +7070,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 更新状态栏模型信息
         document.getElementById('modelInfo').textContent = currentModel || '-';
         this.renderTokenBar();
+
+        // 根据当前模型能力显示/隐藏推理强度选择器
+        const reasoningEl = document.getElementById('reasoningEffortSelect');
+        if (reasoningEl) {
+          const cap = currentModel ? state.modelCapabilities[currentModel] : null;
+          reasoningEl.style.display = (cap && cap.reasoning) ? '' : 'none';
+        }
 
         this.updateReasoningEffort(state.currentReasoningEffort);
       },
@@ -6892,7 +7255,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // ---- 监听来自扩展的消息 ----
     window.addEventListener('message', (event) => {
       const msg = event.data;
-      switch (msg.type) {
+      const msgType = msg && msg.type ? msg.type : '<unknown>';
+      if (msgType !== 'sse:event' && msgType !== 'highlight:result') {
+        debugLog('info', 'webview.message.received', { type: msgType });
+      }
+
+      try {
+        switch (msg.type) {
         case 'messages:load':
           if (msg.sessionId && state.sessionId && msg.sessionId !== state.sessionId) {
             break;
@@ -7012,6 +7381,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         case 'reasoningEffort:updated':
           app.updateReasoningEffort(msg.reasoningEffort || '');
           break;
+        case 'session:restoreModel':
+          if (msg.model) {
+            // model 格式为 "providerID/modelID"，需要转换为 select value 格式 "providerID::modelID"
+            const parts = msg.model.split('/');
+            if (parts.length >= 2) {
+              const selectVal = parts[0] + '::' + parts.slice(1).join('/');
+              modelSelectEl.setValue(selectVal);
+              debugLog('session:restoreModel -> ' + selectVal);
+            }
+          }
+          break;
         case 'prompt:append':
           const input = document.getElementById('promptInput');
           input.value += (input.value ? ' ' : '') + msg.text;
@@ -7050,6 +7430,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           });
           app.setBusy(false);
           break;
+        }
+      } catch (err) {
+        debugLog('error', 'webview.message.handle.failed', {
+          type: msgType,
+          error: toErrorString(err),
+        });
       }
     });
 
@@ -7065,23 +7451,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // 启动
     try {
+      debugLog('info', 'app.init.call');
       app.init();
+      debugLog('info', 'app.init.success');
     } catch (e) {
       console.error('[OpenCode Webview] app.init() 失败:', e);
+      debugLog('error', 'app.init.throw', { error: toErrorString(e) });
     }
+
+    // 双阶段 ready：早期 ready 触发后端初始化，晚期 ready 用于补偿时序问题
+    debugLog('info', 'webview.ready.send', { phase: 'late' });
+    vscode.postMessage({ type: 'ready', phase: 'late' });
   </script>
 </body>
 </html>`;
   }
 
   dispose(): void {
+    this.logDebug("ChatViewProvider dispose");
     ChatViewProvider.instance = undefined;
     this.sseController?.abort();
     this.view = undefined;
+    this._webviewReady = false;
+    this._webviewInitializing = false;
     while (this.disposables.length) {
       const d = this.disposables.pop();
       if (d) d.dispose();
     }
+    this.debugChannel.dispose();
   }
 }
 
