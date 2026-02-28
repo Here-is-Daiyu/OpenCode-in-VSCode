@@ -233,6 +233,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           `OpenCode 错误: ${properties.error?.message || properties.error?.data?.message || "未知错误"}`
         );
         break;
+      case "session.summarized":
+        // 自动压缩事件 - Webview 会处理，此处记录日志
+        break;
     }
   }
 
@@ -538,6 +541,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "highlight:request":
         this.handleHighlightRequest(msg.id, msg.code, msg.lang);
         break;
+
+      case "compact":
+        await this.handleCompactRequest();
+        break;
     }
   }
 
@@ -562,6 +569,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch {
       // 高亮失败，返回原始代码（已转义的）
       this.postMessage({ type: "highlight:result", id, html: "" });
+    }
+  }
+
+  private async handleCompactRequest(): Promise<void> {
+    if (!this.client || !this.currentSessionId) {
+      this.postMessage({ type: "compact:done", success: false });
+      return;
+    }
+    try {
+      await this.client.summarizeSession(
+        this.currentSessionId,
+        "", // providerID（自动选择）
+        ""  // modelID（自动选择）
+      );
+      this.postMessage({ type: "compact:done", success: true });
+      this.postMessage({ type: "info", message: "上下文已压缩" });
+      // 刷新消息
+      await this.refreshCurrentSession();
+    } catch (error: any) {
+      this.postMessage({
+        type: "compact:done",
+        success: false,
+        error: error?.message || String(error),
+      });
+      this.postMessage({
+        type: "error",
+        message: `压缩上下文失败: ${error?.message || String(error)}`,
+      });
     }
   }
 
@@ -1708,6 +1743,124 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       50% { opacity: 0.4; }
     }
 
+    /* ---- 上下文用量指示器 ---- */
+    .context-indicator {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-variant-numeric: tabular-nums;
+      padding: 1px 6px;
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--fg-secondary) 10%, transparent);
+      cursor: default;
+      user-select: none;
+      transition: background 0.2s, color 0.2s;
+    }
+    .context-indicator .ctx-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      transition: background 0.2s;
+    }
+    .context-indicator.level-green .ctx-dot { background: var(--success); }
+    .context-indicator.level-yellow .ctx-dot { background: var(--warning); }
+    .context-indicator.level-red .ctx-dot { background: var(--error); }
+    .context-indicator.level-green { color: var(--fg-secondary); }
+    .context-indicator.level-yellow { color: var(--warning); }
+    .context-indicator.level-red { color: var(--error); background: color-mix(in srgb, var(--error) 10%, transparent); }
+
+    /* ---- 压缩按钮 ---- */
+    .compact-btn {
+      display: none;
+      align-items: center;
+      gap: 3px;
+      font-size: 10px;
+      padding: 1px 6px;
+      border: 1px solid color-mix(in srgb, var(--warning) 50%, transparent);
+      border-radius: 3px;
+      background: color-mix(in srgb, var(--warning) 8%, transparent);
+      color: var(--warning);
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s, border-color 0.15s;
+      white-space: nowrap;
+    }
+    .compact-btn:hover {
+      background: color-mix(in srgb, var(--warning) 18%, transparent);
+      border-color: var(--warning);
+    }
+    .compact-btn.visible { display: inline-flex; }
+    .compact-btn.loading {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .compact-btn.loading::before {
+      content: '';
+      width: 8px; height: 8px;
+      border: 1.5px solid var(--warning);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ---- 上下文压缩通知（内联） ---- */
+    .compaction-notice {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 8px 16px;
+      margin: 12px 0;
+      font-size: 11px;
+      color: var(--fg-secondary);
+      position: relative;
+    }
+    .compaction-notice::before,
+    .compaction-notice::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .compaction-notice-content {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 4px;
+      background: color-mix(in srgb, var(--warning) 8%, transparent);
+      border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+      white-space: nowrap;
+      cursor: default;
+    }
+    .compaction-notice-content .notice-icon {
+      font-size: 12px;
+    }
+    .compaction-notice-summary {
+      display: none;
+      padding: 8px 12px;
+      margin: 0 16px 12px;
+      font-size: 11px;
+      color: var(--fg-secondary);
+      background: color-mix(in srgb, var(--fg-secondary) 5%, transparent);
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      line-height: 1.5;
+    }
+    .compaction-notice-summary.expanded { display: block; }
+    .compaction-notice-toggle {
+      font-size: 9px;
+      cursor: pointer;
+      opacity: 0.6;
+      transition: opacity 0.15s;
+    }
+    .compaction-notice-toggle:hover { opacity: 1; }
+
     /* ---- Token 用量条 ---- */
     .token-bar-container {
       padding: 6px 12px;
@@ -2211,6 +2364,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span class="status-dot stopped" id="statusDot"></span>
     <span id="statusText">未连接</span>
     <span style="flex:1"></span>
+    <span class="context-indicator level-green" id="contextIndicator" title="上下文用量">
+      <span class="ctx-dot"></span>
+      <span id="contextLabel">0 条消息</span>
+    </span>
+    <button class="compact-btn" id="compactBtn" title="压缩上下文">压缩</button>
     <span id="modelInfo">-</span>
   </div>
 
@@ -2693,6 +2851,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         bindClick('btnNewSession', () => app.newSession());
         bindClick('btnRefreshSession', () => app.refreshSession());
         bindClick('sendBtn', () => app.handleSendClick());
+        bindClick('compactBtn', () => app.handleCompact());
       },
 
       handleSendClick() {
@@ -3064,6 +3223,126 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         vscode.postMessage({ type: 'session:refresh' });
       },
 
+      // ---- 上下文用量指示 & 压缩 ----
+
+      /**
+       * 计算当前上下文级别（基于消息数量 + token 百分比）
+       * 返回 'green' | 'yellow' | 'red'
+       */
+      getContextLevel() {
+        const msgCount = state.messages.filter(m => m.info?.role === 'user' || m.info?.role === 'assistant').length;
+        // 优先使用 token 百分比（如果有数据）
+        if (state.tokenUsage && state.contextLimit > 0) {
+          const total = state.tokenUsage.total || 0;
+          const pct = total / state.contextLimit;
+          if (pct > 0.8) return 'red';
+          if (pct > 0.5) return 'yellow';
+          return 'green';
+        }
+        // 回退到消息数量启发式
+        if (msgCount > 20) return 'red';
+        if (msgCount > 10) return 'yellow';
+        return 'green';
+      },
+
+      /**
+       * 更新上下文指示器 UI
+       */
+      updateContextIndicator() {
+        const indicator = document.getElementById('contextIndicator');
+        const label = document.getElementById('contextLabel');
+        const compactBtn = document.getElementById('compactBtn');
+        if (!indicator || !label) return;
+
+        const level = this.getContextLevel();
+        const msgCount = state.messages.filter(m => m.info?.role === 'user' || m.info?.role === 'assistant').length;
+
+        // 更新样式
+        indicator.className = 'context-indicator level-' + level;
+
+        // 更新文案
+        if (state.tokenUsage && state.contextLimit > 0) {
+          const total = state.tokenUsage.total || 0;
+          const pct = Math.round((total / state.contextLimit) * 100);
+          label.textContent = pct + '% · ' + msgCount + ' 条';
+        } else {
+          label.textContent = msgCount + ' 条消息';
+        }
+
+        // 更新 title 提示
+        indicator.title = '上下文用量: ' + label.textContent;
+
+        // 显示/隐藏压缩按钮（yellow/red 时显示）
+        if (compactBtn) {
+          compactBtn.classList.toggle('visible', level === 'yellow' || level === 'red');
+        }
+      },
+
+      /**
+       * 处理压缩按钮点击
+       */
+      handleCompact() {
+        if (!state.sessionId) return;
+        const btn = document.getElementById('compactBtn');
+        if (btn) {
+          btn.classList.add('loading');
+          btn.textContent = '压缩中...';
+        }
+        vscode.postMessage({ type: 'compact' });
+      },
+
+      /**
+       * 压缩完成后重置按钮状态
+       */
+      resetCompactBtn() {
+        const btn = document.getElementById('compactBtn');
+        if (btn) {
+          btn.classList.remove('loading');
+          btn.textContent = '压缩';
+        }
+      },
+
+      /**
+       * 插入上下文压缩通知卡片
+       */
+      addCompactionNotice(summaryText) {
+        const container = document.getElementById('messages');
+        if (!container) return;
+
+        const notice = document.createElement('div');
+        notice.className = 'compaction-notice';
+
+        const content = document.createElement('span');
+        content.className = 'compaction-notice-content';
+        content.innerHTML = '<span class="notice-icon">⚡</span> 上下文已压缩';
+
+        // 如果有摘要文本，添加展开/收起
+        if (summaryText) {
+          const toggle = document.createElement('span');
+          toggle.className = 'compaction-notice-toggle';
+          toggle.textContent = '▼';
+          content.appendChild(toggle);
+
+          const summaryDiv = document.createElement('div');
+          summaryDiv.className = 'compaction-notice-summary';
+          summaryDiv.textContent = summaryText;
+
+          toggle.addEventListener('click', () => {
+            const expanded = summaryDiv.classList.toggle('expanded');
+            toggle.textContent = expanded ? '▲' : '▼';
+          });
+
+          notice.appendChild(content);
+          container.appendChild(notice);
+          container.appendChild(summaryDiv);
+        } else {
+          notice.appendChild(content);
+          container.appendChild(notice);
+        }
+
+        this.scrollToBottom();
+      },
+
       // ---- 消息渲染 ----
 
       clearMessages() {
@@ -3078,10 +3357,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const container = document.getElementById('messages');
         document.getElementById('emptyState')?.remove();
 
+        // 检测是否是压缩摘要消息（summarization message）
+        const isSummaryMsg = this.isSummarizationMessage(msg);
+        if (isSummaryMsg) {
+          state.messages.push(msg);
+          const summaryText = (msg.parts || [])
+            .filter(p => p.type === 'text')
+            .map(p => p.text || '')
+            .join('\n')
+            .trim();
+          this.addCompactionNotice(summaryText);
+          this.updateContextIndicator();
+          return;
+        }
+
         state.messages.push(msg);
         const el = this.renderMessage(msg);
         container.appendChild(el);
         this.scrollToBottom();
+        this.updateContextIndicator();
+      },
+
+      /**
+       * 判断消息是否是上下文压缩摘要消息
+       */
+      isSummarizationMessage(msg) {
+        if (!msg || !msg.info) return false;
+        // 检查 metadata 标记
+        if (msg.info.metadata?.type === 'summary' || msg.info.metadata?.summarized) return true;
+        // 检查 system role + 特定文本特征
+        if (msg.info.role === 'assistant' && msg.parts) {
+          for (const part of msg.parts) {
+            if (part.type === 'text' && part.text) {
+              const t = part.text.trim().toLowerCase();
+              // 检测常见的 summary 消息特征
+              if (t.startsWith('summary of conversation') ||
+                  t.startsWith('here is a summary') ||
+                  t.includes('context was summarized') ||
+                  t.includes('context has been compacted') ||
+                  t.includes('previous conversation summary')) {
+                return true;
+              }
+            }
+          }
+        }
+        return false;
       },
 
       renderMessage(msg) {
@@ -3865,6 +4185,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           state.tokenUsage = lastTokens;
           state.tokenCost = totalCost;
           this.renderTokenBar();
+          this.updateContextIndicator();
         }
       },
 
@@ -3912,6 +4233,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
 
           this.renderTokenBar();
+          this.updateContextIndicator();
         }
       },
 
@@ -3991,6 +4313,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         state.tokenCost = 0;
         const container = document.getElementById('tokenBarContainer');
         container.classList.remove('visible');
+        this.updateContextIndicator();
       },
 
       /**
@@ -4205,6 +4528,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }
 
             if (data.todos) this.renderTodos(data.todos);
+            break;
+          }
+          case 'session.summarized': {
+            const sessionId = data.sessionID || data.id;
+            if (sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
+            // 自动压缩完成：插入通知 + 刷新
+            this.resetCompactBtn();
+            this.addCompactionNotice(data.summary || '');
+            this.updateContextIndicator();
+            // 请求刷新会话消息
+            vscode.postMessage({ type: 'session:refresh' });
             break;
           }
           case 'permission.asked': {
@@ -4530,6 +4867,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           break;
         case 'command:done':
           app.setBusy(false);
+          break;
+        case 'compact:done':
+          app.resetCompactBtn();
           break;
         case 'messages:clear':
           app.clearMessages();
