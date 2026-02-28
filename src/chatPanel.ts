@@ -225,8 +225,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         // 会话状态变化
         break;
       case "permission.asked":
-        // 权限请求 - 在 VSCode 原生 UI 中弹出
-        this.handlePermissionRequest(properties);
+        // 权限请求 - 转发到 Webview 内联卡片处理（已通过上方 postMessage 转发）
         break;
       case "session.error":
         vscode.window.showErrorMessage(
@@ -283,30 +282,46 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return properties;
   }
 
-  private async handlePermissionRequest(data: any): Promise<void> {
-    const description = data.description || data.action || "未知操作";
-    const result = await vscode.window.showWarningMessage(
-      `OpenCode 请求权限: ${description}`,
-      { modal: true },
-      "允许",
-      "拒绝",
-      "始终允许"
-    );
+  // handlePermissionRequest — 已移除（原生对话框），权限请求现在通过 Webview 内联卡片处理
 
-    if (!result || !this.currentSessionId || !this.client) return;
-
-    const response = result === "拒绝" ? "deny" : "allow";
-    const remember = result === "始终允许";
+  private async respondToPermission(
+    permissionId: string,
+    response: string,
+    remember: boolean
+  ): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
 
     try {
       await this.client.respondToPermission(
         this.currentSessionId,
-        data.id || data.permissionID,
+        permissionId,
         response,
         remember
       );
     } catch (error: any) {
       vscode.window.showErrorMessage(`权限响应失败: ${error.message}`);
+      this.postMessage({
+        type: "permission:error",
+        permissionId,
+        error: error.message,
+      });
+    }
+  }
+
+  private async respondToQuestion(
+    questionId: string,
+    messageId: string,
+    answer: string
+  ): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+
+    try {
+      // 问题工具的回答通过发送用户消息实现
+      await this.client.sendPromptAsync(this.currentSessionId, {
+        parts: [{ type: "text", text: answer }],
+      });
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`回答提交失败: ${error.message}`);
     }
   }
 
@@ -537,6 +552,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
       case "highlight:request":
         this.handleHighlightRequest(msg.id, msg.code, msg.lang);
+        break;
+
+      case "permission:respond":
+        await this.respondToPermission(msg.permissionId, msg.response, msg.remember || false);
+        break;
+
+      case "question:respond":
+        await this.respondToQuestion(msg.questionId, msg.messageId, msg.answer);
         break;
     }
   }
@@ -2179,6 +2202,281 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     .hidden { display: none !important; }
+
+    /* ---- 权限请求卡片（琥珀/警告色系） ---- */
+    .permission-card {
+      background: color-mix(in srgb, #f59e0b 8%, var(--bg-secondary));
+      border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+      border-radius: var(--radius);
+      padding: 12px;
+      margin: 8px 0;
+      animation: card-slide-in 0.25s ease;
+    }
+    .permission-card.resolved {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .permission-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .permission-card-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .permission-card-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: #f59e0b;
+    }
+    .permission-card-tool {
+      display: inline-block;
+      background: color-mix(in srgb, #f59e0b 15%, var(--bg-primary));
+      border: 1px solid color-mix(in srgb, #f59e0b 30%, var(--border));
+      border-radius: 4px;
+      padding: 1px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      font-family: var(--font-family);
+      color: #f59e0b;
+      margin-left: auto;
+    }
+    .permission-card-desc {
+      font-size: 12px;
+      color: var(--fg-secondary);
+      margin-bottom: 8px;
+      line-height: 1.5;
+    }
+    .permission-card-meta {
+      background: color-mix(in srgb, #f59e0b 5%, var(--bg-primary));
+      border: 1px solid color-mix(in srgb, #f59e0b 15%, var(--border));
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-bottom: 10px;
+      font-family: var(--font-family);
+      font-size: 12px;
+      color: var(--fg-primary);
+      white-space: pre-wrap;
+      word-break: break-all;
+      max-height: 120px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+    .permission-card-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .permission-btn {
+      padding: 5px 14px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid transparent;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .permission-btn-allow {
+      background: #f59e0b;
+      color: #000;
+      border-color: #f59e0b;
+    }
+    .permission-btn-allow:hover {
+      background: #d97706;
+      border-color: #d97706;
+    }
+    .permission-btn-deny {
+      background: transparent;
+      color: var(--fg-primary);
+      border-color: var(--border);
+    }
+    .permission-btn-deny:hover {
+      background: color-mix(in srgb, var(--error) 15%, transparent);
+      border-color: var(--error);
+      color: var(--error);
+    }
+    .permission-btn-always {
+      background: transparent;
+      color: var(--fg-secondary);
+      border-color: var(--border);
+    }
+    .permission-btn-always:hover {
+      background: color-mix(in srgb, var(--success) 15%, transparent);
+      border-color: var(--success);
+      color: var(--success);
+    }
+    .permission-card-resolved-text {
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 8px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: inline-block;
+    }
+    .permission-card-resolved-text.allowed {
+      color: var(--success);
+      background: color-mix(in srgb, var(--success) 10%, transparent);
+    }
+    .permission-card-resolved-text.denied {
+      color: var(--error);
+      background: color-mix(in srgb, var(--error) 10%, transparent);
+    }
+
+    /* ---- 问题工具卡片（蓝色/信息色系） ---- */
+    .question-card {
+      background: color-mix(in srgb, #3b82f6 8%, var(--bg-secondary));
+      border: 1px solid color-mix(in srgb, #3b82f6 40%, var(--border));
+      border-radius: var(--radius);
+      padding: 12px;
+      margin: 8px 0;
+      animation: card-slide-in 0.25s ease;
+    }
+    .question-card.resolved {
+      opacity: 0.6;
+      pointer-events: none;
+    }
+    .question-card-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .question-card-icon {
+      font-size: 16px;
+      flex-shrink: 0;
+    }
+    .question-card-title {
+      font-weight: 600;
+      font-size: 13px;
+      color: #3b82f6;
+    }
+    .question-card-text {
+      font-size: 13px;
+      color: var(--fg-primary);
+      margin-bottom: 10px;
+      line-height: 1.5;
+    }
+    .question-card-options {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .question-option-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 12px;
+      background: color-mix(in srgb, #3b82f6 8%, var(--bg-primary));
+      border: 1px solid color-mix(in srgb, #3b82f6 25%, var(--border));
+      border-radius: var(--radius);
+      color: var(--fg-primary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+      text-align: left;
+    }
+    .question-option-btn:hover {
+      background: color-mix(in srgb, #3b82f6 18%, var(--bg-primary));
+      border-color: #3b82f6;
+    }
+    .question-option-btn.selected {
+      background: color-mix(in srgb, #3b82f6 20%, var(--bg-primary));
+      border-color: #3b82f6;
+      color: #3b82f6;
+      font-weight: 600;
+    }
+    .question-option-check {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--border);
+      border-radius: 3px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: transparent;
+    }
+    .question-option-btn.selected .question-option-check {
+      border-color: #3b82f6;
+      background: #3b82f6;
+      color: #fff;
+    }
+    .question-card-input-wrapper {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 10px;
+    }
+    .question-card-input {
+      flex: 1;
+      background: var(--bg-input);
+      color: var(--fg-primary);
+      border: 1px solid color-mix(in srgb, #3b82f6 30%, var(--border));
+      border-radius: var(--radius);
+      padding: 7px 10px;
+      font-size: 12px;
+      font-family: var(--vscode-font-family, sans-serif);
+      outline: none;
+    }
+    .question-card-input:focus {
+      border-color: #3b82f6;
+    }
+    .question-card-actions {
+      display: flex;
+      gap: 8px;
+    }
+    .question-submit-btn {
+      padding: 5px 14px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid #3b82f6;
+      background: #3b82f6;
+      color: #fff;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .question-submit-btn:hover {
+      background: #2563eb;
+    }
+    .question-submit-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .question-cancel-btn {
+      padding: 5px 14px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--fg-primary);
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    .question-cancel-btn:hover {
+      background: color-mix(in srgb, var(--error) 15%, transparent);
+      border-color: var(--error);
+      color: var(--error);
+    }
+    .question-card-resolved-text {
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 8px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      display: inline-block;
+      color: #3b82f6;
+      background: color-mix(in srgb, #3b82f6 10%, transparent);
+    }
+
+    @keyframes card-slide-in {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
   </style>
 </head>
 <body>
@@ -3213,6 +3511,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       },
 
       renderToolPart(part) {
+        // 检测问题工具，使用特殊的问题卡片渲染
+        const toolNameLower = (part.tool || part.name || '').toLowerCase();
+        if (toolNameLower === 'question' || toolNameLower === 'ask' || toolNameLower === 'ask_question') {
+          const status = String(part.state?.status || 'running').toLowerCase();
+          if (status !== 'completed' && status !== 'error') {
+            return this.renderQuestionCard(part);
+          }
+        }
+
         const formatValue = (value) => {
           if (value == null) return '';
           if (typeof value === 'string') return value;
@@ -4001,6 +4308,239 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return n.toLocaleString();
       },
 
+      // ---- 权限请求卡片渲染 ----
+
+      renderPermissionCard(data) {
+        const permId = data.id || data.permissionID;
+        const toolName = data.type || data.action || '未知工具';
+        const title = data.title || data.description || '请求执行操作';
+        const metadata = data.metadata || {};
+
+        // 构建元数据显示文本
+        let metaText = '';
+        if (metadata.command) {
+          metaText = metadata.command;
+        } else if (metadata.filePath || metadata.file) {
+          metaText = metadata.filePath || metadata.file;
+          if (metadata.content) {
+            metaText += '\\n' + (typeof metadata.content === 'string'
+              ? metadata.content.slice(0, 500)
+              : JSON.stringify(metadata.content, null, 2).slice(0, 500));
+          }
+        } else if (Object.keys(metadata).length > 0) {
+          try {
+            metaText = JSON.stringify(metadata, null, 2).slice(0, 800);
+          } catch { metaText = ''; }
+        }
+
+        const card = document.createElement('div');
+        card.className = 'permission-card';
+        card.dataset.permissionId = permId;
+
+        let html = '<div class="permission-card-header">';
+        html += '<span class="permission-card-icon">⚠️</span>';
+        html += '<span class="permission-card-title">权限请求</span>';
+        html += '<span class="permission-card-tool">' + this._escapeHtml(toolName) + '</span>';
+        html += '</div>';
+        html += '<div class="permission-card-desc">' + this._escapeHtml(title) + '</div>';
+
+        if (metaText) {
+          html += '<div class="permission-card-meta">' + this._escapeHtml(metaText) + '</div>';
+        }
+
+        html += '<div class="permission-card-actions">';
+        html += '<button class="permission-btn permission-btn-allow" data-action="allow">允许</button>';
+        html += '<button class="permission-btn permission-btn-always" data-action="always">始终允许</button>';
+        html += '<button class="permission-btn permission-btn-deny" data-action="deny">拒绝</button>';
+        html += '</div>';
+
+        card.innerHTML = html;
+
+        // 绑定按钮事件
+        const buttons = card.querySelectorAll('.permission-btn');
+        buttons.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            const action = btn.dataset.action;
+            const response = action === 'deny' ? 'deny' : 'allow';
+            const remember = action === 'always';
+
+            vscode.postMessage({
+              type: 'permission:respond',
+              permissionId: permId,
+              response: response,
+              remember: remember,
+            });
+
+            // 标记已响应
+            card.classList.add('resolved');
+            const actionsEl = card.querySelector('.permission-card-actions');
+            if (actionsEl) actionsEl.remove();
+
+            const resolvedText = document.createElement('div');
+            resolvedText.className = 'permission-card-resolved-text '
+              + (action === 'deny' ? 'denied' : 'allowed');
+            resolvedText.textContent =
+              action === 'allow' ? '✓ 已允许'
+              : action === 'always' ? '✓ 已始终允许'
+              : '✗ 已拒绝';
+            card.appendChild(resolvedText);
+          });
+        });
+
+        // 添加到消息区域底部
+        const messagesEl = document.getElementById('messages');
+        messagesEl.appendChild(card);
+        this.scrollToBottom();
+      },
+
+      // ---- 问题工具卡片渲染 ----
+
+      renderQuestionCard(part) {
+        const questionId = part.id || ('q-' + Date.now());
+        const input = typeof part.input === 'string'
+          ? (function() { try { return JSON.parse(part.input); } catch { return {}; } })()
+          : (part.input || {});
+
+        const questionText = input.question || input.text || input.message || '请回答以下问题';
+        const options = Array.isArray(input.options) ? input.options : [];
+        const multiple = !!input.multiple;
+        const allowCustom = input.allowCustom !== false; // 默认允许自定义输入
+
+        const card = document.createElement('div');
+        card.className = 'question-card';
+        card.dataset.questionId = questionId;
+        card.dataset.partId = part.id;
+
+        let html = '<div class="question-card-header">';
+        html += '<span class="question-card-icon">❓</span>';
+        html += '<span class="question-card-title">需要您的回答</span>';
+        html += '</div>';
+        html += '<div class="question-card-text">' + this._escapeHtml(questionText) + '</div>';
+
+        if (options.length > 0) {
+          html += '<div class="question-card-options">';
+          options.forEach(function(opt, idx) {
+            const optText = typeof opt === 'string' ? opt : (opt.label || opt.text || String(opt));
+            const optValue = typeof opt === 'string' ? opt : (opt.value || optText);
+            html += '<button class="question-option-btn" data-value="' + this._escapeHtml(optValue) + '" data-idx="' + idx + '">';
+            if (multiple) {
+              html += '<span class="question-option-check">✓</span>';
+            }
+            html += this._escapeHtml(optText);
+            html += '</button>';
+          }.bind(this));
+          html += '</div>';
+        }
+
+        if (allowCustom || options.length === 0) {
+          html += '<div class="question-card-input-wrapper">';
+          html += '<input class="question-card-input" type="text" placeholder="输入您的回答..." />';
+          html += '</div>';
+        }
+
+        html += '<div class="question-card-actions">';
+        html += '<button class="question-submit-btn">提交回答</button>';
+        html += '<button class="question-cancel-btn">跳过</button>';
+        html += '</div>';
+
+        card.innerHTML = html;
+
+        // 状态跟踪
+        const selectedValues = [];
+
+        // 绑定选项按钮事件
+        const optionBtns = card.querySelectorAll('.question-option-btn');
+        optionBtns.forEach(function(btn) {
+          btn.addEventListener('click', function() {
+            if (multiple) {
+              btn.classList.toggle('selected');
+              const val = btn.dataset.value;
+              const idx = selectedValues.indexOf(val);
+              if (idx >= 0) selectedValues.splice(idx, 1);
+              else selectedValues.push(val);
+            } else {
+              optionBtns.forEach(function(b) { b.classList.remove('selected'); });
+              btn.classList.add('selected');
+              selectedValues.length = 0;
+              selectedValues.push(btn.dataset.value);
+            }
+          });
+        });
+
+        // 提交按钮
+        const submitBtn = card.querySelector('.question-submit-btn');
+        const inputEl = card.querySelector('.question-card-input');
+        const self = this;
+
+        submitBtn.addEventListener('click', function() {
+          let answer = '';
+          if (inputEl && inputEl.value.trim()) {
+            answer = inputEl.value.trim();
+          } else if (selectedValues.length > 0) {
+            answer = multiple ? selectedValues.join(', ') : selectedValues[0];
+          }
+          if (!answer) return;
+
+          vscode.postMessage({
+            type: 'question:respond',
+            questionId: questionId,
+            messageId: part.messageID || '',
+            answer: answer,
+          });
+
+          // 标记已响应
+          card.classList.add('resolved');
+          const actionsEl = card.querySelector('.question-card-actions');
+          if (actionsEl) actionsEl.remove();
+          const optionsEl = card.querySelector('.question-card-options');
+          if (optionsEl) optionsEl.remove();
+          const inputWrapper = card.querySelector('.question-card-input-wrapper');
+          if (inputWrapper) inputWrapper.remove();
+
+          const resolvedText = document.createElement('div');
+          resolvedText.className = 'question-card-resolved-text';
+          resolvedText.textContent = '✓ 已回答: ' + (answer.length > 60 ? answer.slice(0, 60) + '...' : answer);
+          card.appendChild(resolvedText);
+          self.scrollToBottom();
+        });
+
+        // 取消按钮
+        const cancelBtn = card.querySelector('.question-cancel-btn');
+        cancelBtn.addEventListener('click', function() {
+          vscode.postMessage({
+            type: 'question:respond',
+            questionId: questionId,
+            messageId: part.messageID || '',
+            answer: '跳过',
+          });
+
+          card.classList.add('resolved');
+          const actionsEl = card.querySelector('.question-card-actions');
+          if (actionsEl) actionsEl.remove();
+          const optionsEl = card.querySelector('.question-card-options');
+          if (optionsEl) optionsEl.remove();
+          const inputWrapper = card.querySelector('.question-card-input-wrapper');
+          if (inputWrapper) inputWrapper.remove();
+
+          const resolvedText = document.createElement('div');
+          resolvedText.className = 'question-card-resolved-text';
+          resolvedText.textContent = '↷ 已跳过';
+          card.appendChild(resolvedText);
+        });
+
+        // 输入框回车提交
+        if (inputEl) {
+          inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submitBtn.click();
+            }
+          });
+        }
+
+        return card;
+      },
+
       // ---- SSE 事件更新 ----
 
       updateFromSSE(eventType, data) {
@@ -4207,8 +4747,44 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             if (data.todos) this.renderTodos(data.todos);
             break;
           }
-          case 'permission.asked': {
-            // 权限请求在扩展端处理（原生对话框）
+          case 'permission.asked':
+          case 'permission.updated': {
+            const sessionId = data.sessionID;
+            if (sessionId && state.sessionId && sessionId !== state.sessionId) {
+              break;
+            }
+
+            const permId = data.id || data.permissionID;
+            if (!permId) break;
+
+            // 如果已有此权限卡片，不重复渲染
+            if (document.querySelector('[data-permission-id="' + permId + '"]')) {
+              break;
+            }
+
+            this.renderPermissionCard(data);
+            break;
+          }
+          case 'permission.replied': {
+            // 服务端确认了权限响应，确保卡片标记为已解决
+            const permId = data.permissionID || data.id;
+            if (!permId) break;
+            const card = document.querySelector('[data-permission-id="' + permId + '"]');
+            if (card && !card.classList.contains('resolved')) {
+              card.classList.add('resolved');
+              const actionsEl = card.querySelector('.permission-card-actions');
+              if (actionsEl) actionsEl.remove();
+
+              const response = data.response || '';
+              const resolvedText = document.createElement('div');
+              resolvedText.className = 'permission-card-resolved-text '
+                + (response === 'reject' ? 'denied' : 'allowed');
+              resolvedText.textContent =
+                response === 'reject' ? '✗ 已拒绝'
+                : response === 'always' ? '✓ 已始终允许'
+                : '✓ 已允许';
+              card.appendChild(resolvedText);
+            }
             break;
           }
         }
