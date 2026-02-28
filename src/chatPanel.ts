@@ -184,6 +184,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.currentSessionId = sessionId;
     this.postMessage({ type: "session:switch", sessionId });
     await this.loadMessages(sessionId);
+    await this.sendSessionBreadcrumb();
   }
 
   /**
@@ -501,6 +502,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.forkCurrentSession(msg.messageId);
         break;
 
+      case "session:getParent":
+        await this.sendSessionParent();
+        break;
+
+      case "session:getChildren":
+        await this.sendSessionChildren();
+        break;
+
+      case "session:switchTo":
+        await this.switchSession(msg.sessionId);
+        break;
+
       case "session:revert":
         await this.revertMessage(msg.messageId, msg.partId);
         break;
@@ -665,6 +678,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       await Promise.all([
         this.loadMessages(this.currentSessionId),
         this.sendTodoList(),
+        this.sendSessionBreadcrumb(),
       ]);
     }
   }
@@ -900,6 +914,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.currentSessionId = session.id;
       this.postMessage({ type: "session:created", session });
       await this.sendSessionList();
+      await this.sendSessionBreadcrumb();
     } catch (error: any) {
       this.postMessage({
         type: "error",
@@ -1119,10 +1134,68 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.postMessage({ type: "session:forked", session });
       await this.loadMessages(session.id);
       await this.sendSessionList();
+      await this.sendSessionBreadcrumb();
     } catch (error: any) {
       this.postMessage({
         type: "error",
         message: `分叉失败: ${error.message}`,
+      });
+    }
+  }
+
+  private async sendSessionParent(): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+    try {
+      const session = await this.client.getSession(this.currentSessionId);
+      let parent: Session | null = null;
+      if (session.parentID) {
+        parent = await this.client.getSession(session.parentID);
+      }
+      this.postMessage({ type: "session:parent", parent });
+    } catch (error: any) {
+      this.postMessage({ type: "session:parent", parent: null });
+    }
+  }
+
+  private async sendSessionChildren(): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+    try {
+      const children = await this.client.getSessionChildren(this.currentSessionId);
+      this.postMessage({ type: "session:children", children: children || [] });
+    } catch (error: any) {
+      this.postMessage({ type: "session:children", children: [] });
+    }
+  }
+
+  /**
+   * 发送完整的面包屑信息（父会话 + 子会话列表）
+   */
+  private async sendSessionBreadcrumb(): Promise<void> {
+    if (!this.currentSessionId || !this.client) return;
+    try {
+      const session = await this.client.getSession(this.currentSessionId);
+      let parent: Session | null = null;
+      if (session.parentID) {
+        try {
+          parent = await this.client.getSession(session.parentID);
+        } catch { /* 父会话可能已删除 */ }
+      }
+      let children: Session[] = [];
+      try {
+        children = await this.client.getSessionChildren(this.currentSessionId);
+      } catch { /* 无子会话 */ }
+      this.postMessage({
+        type: "session:breadcrumb",
+        parent,
+        children: children || [],
+        currentSession: session,
+      });
+    } catch {
+      this.postMessage({
+        type: "session:breadcrumb",
+        parent: null,
+        children: [],
+        currentSession: null,
       });
     }
   }
@@ -2863,6 +2936,110 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       from { opacity: 0; transform: translateY(8px); }
       to { opacity: 1; transform: translateY(0); }
     }
+
+    /* ---- 会话面包屑导航 ---- */
+    .session-breadcrumb {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 12px;
+      background: var(--bg-secondary);
+      border-bottom: 1px solid var(--border);
+      font-size: 11px;
+      color: var(--fg-secondary);
+      flex-shrink: 0;
+      min-height: 28px;
+      overflow: hidden;
+    }
+    .session-breadcrumb.visible {
+      display: flex;
+    }
+    .session-breadcrumb .bc-btn {
+      background: none;
+      border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+      color: var(--fg-link);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: var(--radius);
+      font-size: 11px;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: background 0.15s;
+    }
+    .session-breadcrumb .bc-btn:hover {
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+    }
+    .session-breadcrumb .bc-separator {
+      color: var(--fg-secondary);
+      opacity: 0.5;
+      user-select: none;
+    }
+    .session-breadcrumb .bc-current {
+      font-weight: 600;
+      color: var(--fg-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 160px;
+    }
+    .session-breadcrumb .bc-children-wrapper {
+      position: relative;
+      margin-left: auto;
+    }
+    .session-breadcrumb .bc-children-btn {
+      background: none;
+      border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+      color: var(--fg-secondary);
+      cursor: pointer;
+      padding: 2px 8px;
+      border-radius: var(--radius);
+      font-size: 11px;
+      font-family: inherit;
+      white-space: nowrap;
+      transition: background 0.15s, color 0.15s;
+    }
+    .session-breadcrumb .bc-children-btn:hover {
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      color: var(--fg-primary);
+    }
+    .session-children-dropdown {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      min-width: 200px;
+      max-width: 300px;
+      max-height: 200px;
+      overflow-y: auto;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      z-index: 100;
+      padding: 4px 0;
+    }
+    .session-children-dropdown.open {
+      display: block;
+    }
+    .session-children-dropdown .child-item {
+      padding: 6px 12px;
+      font-size: 12px;
+      color: var(--fg-primary);
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      transition: background 0.12s;
+    }
+    .session-children-dropdown .child-item:hover {
+      background: color-mix(in srgb, var(--accent) 20%, transparent);
+    }
+    .session-children-dropdown .child-item .child-time {
+      font-size: 10px;
+      color: var(--fg-secondary);
+      margin-left: 6px;
+    }
   </style>
 </head>
 <body>
@@ -2872,6 +3049,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     <span class="header-session" id="sessionInfo">未连接</span>
     <button class="header-btn" id="btnNewSession">+ 新建会话</button>
     <button class="header-btn" id="btnRefreshSession">刷新</button>
+  </div>
+
+  <!-- 会话面包屑导航 -->
+  <div class="session-breadcrumb" id="sessionBreadcrumb">
+    <button class="bc-btn" id="bcParentBtn" title="返回父会话">◀ 父会话</button>
+    <span class="bc-separator">→</span>
+    <span class="bc-current" id="bcCurrentLabel">当前会话</span>
+    <div class="bc-children-wrapper">
+      <button class="bc-children-btn" id="bcChildrenBtn">0 个子会话 ▸</button>
+      <div class="session-children-dropdown" id="childrenDropdown"></div>
+    </div>
   </div>
 
   <!-- 消息区域 -->
@@ -3001,6 +3189,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       modelCapabilities: {},  // { 'provider/model': { imageInput } }
       attachedImages: [],     // [ { dataUrl, filename } ]
       currentReasoningEffort: '',
+      // 面包屑导航
+      breadcrumb: { parent: null, children: [], currentSession: null },
       // 设置
       settings: { toolCallsCollapsed: false, showDiffOnWrite: true },
       // 代码高亮状态
@@ -3435,6 +3625,34 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
         // 拖放事件
         this.setupDragDrop();
+
+        // 面包屑: 返回父会话
+        bindClick('bcParentBtn', () => {
+          const parent = state.breadcrumb.parent;
+          if (parent) {
+            vscode.postMessage({ type: 'session:switchTo', sessionId: parent.id });
+          }
+        });
+
+        // 面包屑: 子会话下拉
+        bindClick('bcChildrenBtn', () => {
+          const dropdown = document.getElementById('childrenDropdown');
+          if (dropdown.classList.contains('open')) {
+            dropdown.classList.remove('open');
+          } else {
+            app.renderChildrenDropdown();
+            dropdown.classList.add('open');
+          }
+        });
+
+        // 点击其他地方关闭子会话下拉
+        document.addEventListener('click', (e) => {
+          const dropdown = document.getElementById('childrenDropdown');
+          const btn = document.getElementById('bcChildrenBtn');
+          if (dropdown && !dropdown.contains(e.target) && e.target !== btn) {
+            dropdown.classList.remove('open');
+          }
+        });
       },
 
       handleSendClick() {
@@ -6085,6 +6303,76 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const current = (state.sessions || []).find(s => s.id === state.sessionId);
         el.textContent = current?.title || state.sessionId.slice(0, 8);
       },
+
+      updateBreadcrumb(parent, children, currentSession) {
+        state.breadcrumb = { parent, children: children || [], currentSession };
+        const bar = document.getElementById('sessionBreadcrumb');
+        const parentBtn = document.getElementById('bcParentBtn');
+        const separator = bar.querySelector('.bc-separator');
+        const currentLabel = document.getElementById('bcCurrentLabel');
+        const childrenBtn = document.getElementById('bcChildrenBtn');
+        const childrenWrapper = bar.querySelector('.bc-children-wrapper');
+        const dropdown = document.getElementById('childrenDropdown');
+
+        const hasParent = !!parent;
+        const hasChildren = children && children.length > 0;
+
+        // 如果既无父会话也无子会话，隐藏整个面包屑栏
+        if (!hasParent && !hasChildren) {
+          bar.classList.remove('visible');
+          dropdown.classList.remove('open');
+          return;
+        }
+
+        bar.classList.add('visible');
+
+        // 父会话按钮
+        if (hasParent) {
+          parentBtn.style.display = '';
+          parentBtn.textContent = '◀ ' + (parent.title || parent.id.slice(0, 8));
+          parentBtn.title = '返回父会话: ' + (parent.title || parent.id.slice(0, 8));
+          separator.style.display = '';
+        } else {
+          parentBtn.style.display = 'none';
+          separator.style.display = 'none';
+        }
+
+        // 当前会话标签
+        const label = currentSession?.title || (state.sessionId ? state.sessionId.slice(0, 8) : '当前会话');
+        currentLabel.textContent = label;
+        currentLabel.title = label;
+
+        // 子会话按钮
+        if (hasChildren) {
+          childrenWrapper.style.display = '';
+          childrenBtn.textContent = children.length + ' 个子会话 ▸';
+        } else {
+          childrenWrapper.style.display = 'none';
+          dropdown.classList.remove('open');
+        }
+      },
+
+      renderChildrenDropdown() {
+        const dropdown = document.getElementById('childrenDropdown');
+        dropdown.innerHTML = '';
+        const children = state.breadcrumb.children || [];
+        if (children.length === 0) return;
+
+        for (const child of children) {
+          const item = document.createElement('div');
+          item.className = 'child-item';
+          const title = child.title || child.id.slice(0, 8);
+          const time = child.createdAt ? new Date(child.createdAt).toLocaleString() : '';
+          item.innerHTML = '<span>' + app._escapeHtml(title) + '</span>'
+            + (time ? '<span class="child-time">' + app._escapeHtml(time) + '</span>' : '');
+          item.title = title;
+          item.addEventListener('click', () => {
+            dropdown.classList.remove('open');
+            vscode.postMessage({ type: 'session:switchTo', sessionId: child.id });
+          });
+          dropdown.appendChild(item);
+        }
+      },
     };
 
     // ---- 监听来自扩展的消息 ----
@@ -6126,9 +6414,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           app.clearMessages();
           app.resetHighlightState();
           app.resetTokenBar();
+          // 面包屑会通过 session:breadcrumb 消息更新
+          app.updateBreadcrumb(null, [], null);
           break;
         case 'session:aborted':
           app.setBusy(false);
+          break;
+        case 'session:breadcrumb':
+          app.updateBreadcrumb(msg.parent, msg.children, msg.currentSession);
+          break;
+        case 'session:parent':
+          if (msg.parent) {
+            state.breadcrumb.parent = msg.parent;
+            app.updateBreadcrumb(state.breadcrumb.parent, state.breadcrumb.children, state.breadcrumb.currentSession);
+          }
+          break;
+        case 'session:children':
+          state.breadcrumb.children = msg.children || [];
+          app.updateBreadcrumb(state.breadcrumb.parent, state.breadcrumb.children, state.breadcrumb.currentSession);
           break;
         case 'providers:list':
           app.updateProviders(
