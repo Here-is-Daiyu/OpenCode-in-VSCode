@@ -47,16 +47,19 @@ function formatSessionTime(raw: unknown): string {
 export class SessionItem extends vscode.TreeItem {
   constructor(
     public readonly session: Session,
-    public readonly status?: string
+    public readonly status?: string,
+    public readonly childCount?: number
   ) {
     super(
       session.title || session.id.slice(0, 12),
-      vscode.TreeItemCollapsibleState.None
+      childCount && childCount > 0
+        ? vscode.TreeItemCollapsibleState.Collapsed
+        : vscode.TreeItemCollapsibleState.None
     );
 
     this.description = this.getStatusLabel();
     this.tooltip = this.getTooltip();
-    this.contextValue = status === "busy" ? "sessionBusy" : "session";
+    this.contextValue = this.getContextValue();
     this.iconPath = this.getIcon();
 
     this.command = {
@@ -64,6 +67,13 @@ export class SessionItem extends vscode.TreeItem {
       title: "打开会话",
       arguments: [session.id],
     };
+  }
+
+  private getContextValue(): string {
+    if (this.status === "busy") return "sessionBusy";
+    if (this.session.parentID) return "sessionChild";
+    if (this.childCount && this.childCount > 0) return "sessionParent";
+    return "session";
   }
 
   private getStatusLabel(): string {
@@ -76,7 +86,10 @@ export class SessionItem extends vscode.TreeItem {
     const statusStr = this.status
       ? ` [${this.status === "busy" ? "运行中" : this.status === "idle" ? "空闲" : this.status}]`
       : "";
-    return timeStr + statusStr;
+    const childStr = this.childCount && this.childCount > 0
+      ? ` (${this.childCount} 个子会话)`
+      : "";
+    return timeStr + statusStr + childStr;
   }
 
   private getTooltip(): string {
@@ -87,6 +100,12 @@ export class SessionItem extends vscode.TreeItem {
       `创建: ${formatSessionTime((this.session as any).createdAt ?? (this.session as any).time?.created)}`,
       `更新: ${formatSessionTime((this.session as any).updatedAt ?? (this.session as any).time?.updated)}`,
     ];
+    if (this.session.parentID) {
+      lines.push(`父会话: ${this.session.parentID.slice(0, 12)}`);
+    }
+    if (this.childCount && this.childCount > 0) {
+      lines.push(`子会话数: ${this.childCount}`);
+    }
     if (this.session.share) {
       lines.push(`分享链接: ${this.session.share}`);
     }
@@ -100,6 +119,12 @@ export class SessionItem extends vscode.TreeItem {
     if (this.session.share) {
       return new vscode.ThemeIcon("globe", new vscode.ThemeColor("charts.blue"));
     }
+    if (this.session.parentID) {
+      return new vscode.ThemeIcon("git-commit", new vscode.ThemeColor("charts.green"));
+    }
+    if (this.childCount && this.childCount > 0) {
+      return new vscode.ThemeIcon("repo-forked", new vscode.ThemeColor("charts.purple"));
+    }
     return new vscode.ThemeIcon("comment-discussion");
   }
 }
@@ -108,8 +133,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionItem>
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionItem | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
-  private sessions: Session[] = [];
+  private allSessions: Session[] = [];
   private statusMap: SessionStatusMap = {};
+  private childrenMap: Map<string, Session[]> = new Map();
   private client: OpenCodeClient | null = null;
 
   setClient(client: OpenCodeClient): void {
@@ -123,13 +149,21 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionItem>
         this.client.listSessions(),
         this.client.getSessionStatus().catch(() => ({})),
       ]);
-      // 过滤掉子代理会话（有 parentID 的会话是子会话）
-      const primarySessions = sessions.filter(
-        (s) => !(s as any).parentID && !(s as any).parentId
-      );
-      this.sessions = primarySessions.sort(
+
+      this.allSessions = sessions.sort(
         (a, b) => getSessionTimestamp(b) - getSessionTimestamp(a)
       );
+
+      // 构建 parentID → children 映射
+      this.childrenMap.clear();
+      for (const s of this.allSessions) {
+        const pid = (s as any).parentID || (s as any).parentId;
+        if (pid) {
+          const arr = this.childrenMap.get(pid) || [];
+          arr.push(s);
+          this.childrenMap.set(pid, arr);
+        }
+      }
 
       const normalizedStatusMap: SessionStatusMap = {};
       for (const [sessionID, status] of Object.entries(statusMap as Record<string, unknown>)) {
@@ -149,10 +183,24 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionItem>
     return element;
   }
 
-  getChildren(): SessionItem[] {
-    return this.sessions.map(
-      (s) => new SessionItem(s, this.statusMap[s.id])
-    );
+  getChildren(element?: SessionItem): SessionItem[] {
+    if (!element) {
+      // 根级: 只显示没有 parentID 的会话
+      const rootSessions = this.allSessions.filter(
+        (s) => !(s as any).parentID && !(s as any).parentId
+      );
+      return rootSessions.map(
+        (s) => new SessionItem(s, this.statusMap[s.id], (this.childrenMap.get(s.id) || []).length)
+      );
+    }
+
+    // 子级: 显示该会话的子会话
+    const children = this.childrenMap.get(element.session.id) || [];
+    return children
+      .sort((a, b) => getSessionTimestamp(b) - getSessionTimestamp(a))
+      .map(
+        (s) => new SessionItem(s, this.statusMap[s.id], (this.childrenMap.get(s.id) || []).length)
+      );
   }
 
   dispose(): void {

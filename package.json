@@ -194,16 +194,16 @@
       "view/item/context": [
         {
           "command": "opencode.deleteSession",
-          "when": "view == opencode.sessions && viewItem == session",
+          "when": "view == opencode.sessions && viewItem =~ /^session(Parent|Child)?$/",
           "group": "inline"
         },
         {
           "command": "opencode.shareSession",
-          "when": "view == opencode.sessions && viewItem == session"
+          "when": "view == opencode.sessions && viewItem =~ /^session(Parent|Child)?$/"
         },
         {
           "command": "opencode.forkSession",
-          "when": "view == opencode.sessions && viewItem == session"
+          "when": "view == opencode.sessions && viewItem =~ /^session(Parent|Child)?$/"
         },
         {
           "command": "opencode.abortSession",
