@@ -264,7 +264,7 @@ function CommandForm({
             >
               <option value="">Default</option>
               {providers.map((p) =>
-                p.models.map((m) => (
+                Object.values(p.models).map((m) => (
                   <option key={`${p.id}/${m.id}`} value={`${p.id}/${m.id}`}>
                     {p.name} / {m.name}
                   </option>

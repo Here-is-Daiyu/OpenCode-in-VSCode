@@ -98,6 +98,19 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'session:loaded':
         this.lastSessionLoaded = message.data;
         this.currentSessionID = message.data.session.id;
+
+        // Lightweight diagnostics (helps debug "only newest session loads" issues)
+        if (this.logger?.isDebug()) {
+          try {
+            const messageCount = message.data.messages.length;
+            const approxBytes = Buffer.byteLength(JSON.stringify(message.data), 'utf8');
+            this.logger.debug(
+              `ChatViewProvider: session:loaded payload (session=${message.data.session.id}, messages=${messageCount}, ~${approxBytes} bytes)`
+            );
+          } catch (err) {
+            this.logger.debug('ChatViewProvider: failed to compute session:loaded payload size', err);
+          }
+        }
         break;
       case 'session:created':
         this.lastSessionCreated = message.data;
@@ -116,7 +129,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     if (this.view) {
-      this.view.webview.postMessage(message);
+      const type = message.type;
+      const sessionIdForLog = message.type === 'session:loaded'
+        ? message.data.session.id
+        : undefined;
+
+      Promise.resolve(this.view.webview.postMessage(message))
+        .then((success) => {
+          if (!success) {
+            this.logger?.warn(
+              `ChatViewProvider: postMessage returned false (${type}${sessionIdForLog ? ` session=${sessionIdForLog}` : ''})`
+            );
+          }
+        })
+        .catch((err) => {
+          this.logger?.error(
+            `ChatViewProvider: postMessage failed (${type}${sessionIdForLog ? ` session=${sessionIdForLog}` : ''})`,
+            err
+          );
+        });
       return true;
     }
     return false;

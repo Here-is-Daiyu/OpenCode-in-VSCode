@@ -15,6 +15,7 @@ import type { Logger } from '../services/logger';
 export class SessionManager implements vscode.Disposable {
   private activeSessionId?: string;
   private sessions: Map<string, Session> = new Map();
+  private activeSessionLoadNonce = 0;
 
   /** EventBus unsubscribe callbacks */
   private unsubscribers: Array<() => void> = [];
@@ -70,6 +71,7 @@ export class SessionManager implements vscode.Disposable {
    * and push the full conversation to the webview.
    */
   async setActiveSession(id: string): Promise<void> {
+    const nonce = ++this.activeSessionLoadNonce;
     this.activeSessionId = id;
     this.sessionProvider.setActiveSession(id);
     this.logger.info(`SessionManager: switching to session ${id}`);
@@ -85,6 +87,12 @@ export class SessionManager implements vscode.Disposable {
       // Fetch messages
       const messages: MessageWithParts[] = await this.client.listMessages(id);
 
+      // Prevent stale loads from overwriting the current session
+      if (nonce !== this.activeSessionLoadNonce || this.activeSessionId !== id) {
+        this.logger.debug(`SessionManager: ignoring stale session load for ${id}`);
+        return;
+      }
+
       // Update the chat webview
       this.chatProvider.setSession(id, messages);
       this.chatProvider.postMessage({
@@ -92,6 +100,14 @@ export class SessionManager implements vscode.Disposable {
         data: { session, messages },
       });
     } catch (err) {
+      if (nonce !== this.activeSessionLoadNonce || this.activeSessionId !== id) {
+        // User switched sessions while this request was in-flight.
+        this.logger.debug(
+          `SessionManager: ignoring error from stale session load for ${id}`,
+          err instanceof Error ? err.message : String(err),
+        );
+        return;
+      }
       this.logger.error(
         'SessionManager: failed to load session',
         err instanceof Error ? err.message : String(err),

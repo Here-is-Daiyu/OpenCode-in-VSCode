@@ -52,6 +52,8 @@ export function ChatApp() {
           break;
 
         case 'session:loaded':
+          // New session loaded: reset local scroll state and replace session/messages
+          setAtBottom(true);
           setSession(message.data.session, message.data.messages);
           break;
 
@@ -68,6 +70,11 @@ export function ChatApp() {
           if (currentSession?.id === message.data.id) {
             clearSession();
           }
+          break;
+
+        case 'session:cleared':
+          setAtBottom(true);
+          clearSession();
           break;
 
         case 'session:status':
@@ -291,6 +298,7 @@ export function ChatApp() {
         </div>
       ) : (
         <Virtuoso
+          key={currentSession?.id ?? 'no-session'}
           className="chat-virtuoso"
           data={messages}
           alignToBottom

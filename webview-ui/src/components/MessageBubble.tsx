@@ -15,7 +15,7 @@ interface MessageBubbleProps {
 export function MessageBubble({ message }: MessageBubbleProps) {
   const { info, parts } = message;
   const isUser = info.role === 'user';
-  const timestamp = new Date(info.time.created * 1000);
+  const timestamp = toSafeDateFromEpoch(info.time?.created);
 
   const optimisticMessageID = useChatStore((s) => s.optimisticMessageID);
   const isOptimistic = info.id === optimisticMessageID;
@@ -119,7 +119,23 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   );
 }
 
-function formatTime(date: Date): string {
+function toSafeDateFromEpoch(created: unknown): Date | undefined {
+  // OpenCode server uses epoch milliseconds; some client-side optimistic messages use seconds.
+  const n = typeof created === 'number'
+    ? created
+    : typeof created === 'string'
+      ? Number(created)
+      : NaN;
+
+  if (!Number.isFinite(n)) return undefined;
+
+  const ms = n >= 1e11 ? n : n * 1000;
+  const d = new Date(ms);
+  return Number.isNaN(d.getTime()) ? undefined : d;
+}
+
+function formatTime(date: Date | undefined): string {
+  if (!date) return '';
   return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
