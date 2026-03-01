@@ -163,12 +163,24 @@ body {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
 .chat-messages--empty {
   justify-content: center;
   align-items: center;
+}
+
+/* ========================================
+   Virtuoso Virtual Scrolling
+   ======================================== */
+
+.chat-virtuoso {
+  flex: 1;
+  min-height: 0;
+}
+
+.chat-virtuoso-footer {
+  padding: 0 12px 12px;
 }
 
 /* ========================================
@@ -241,6 +253,12 @@ body {
   flex-direction: column;
   gap: 6px;
   max-width: 100%;
+  margin-bottom: 12px;
+  padding: 0 12px;
+}
+
+.message-bubble:first-child {
+  padding-top: 12px;
 }
 
 .message-bubble--user {

@@ -1,9 +1,11 @@
 /**
  * ChatApp - Main chat panel component
  * Displays messages, handles user input, and communicates with the extension host
+ * Uses react-virtuoso for virtual scrolling of the message list.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import { useChatStore } from '../../stores/chatStore';
 import { useMessageListener } from '../../hooks/useMessageListener';
 import { postMessage } from '../../utils/vscodeApi';
@@ -12,11 +14,11 @@ import { ChatInput } from '../../components/ChatInput';
 import { PermissionCard } from '../../components/PermissionCard';
 import { QuestionCard } from '../../components/QuestionCard';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
+import type { MessageWithParts } from '../../types/opencode';
 
 export function ChatApp() {
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
+  const [atBottom, setAtBottom] = useState(true);
 
   // Store state
   const connected = useChatStore((s) => s.connected);
@@ -131,20 +133,6 @@ export function ChatApp() {
     postMessage({ type: 'ready' });
   }, []);
 
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
-    // Only auto-scroll if user is near the bottom
-    const isNearBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
-
-    if (isNearBottom) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, isStreaming]);
-
   // Handle new session creation
   const handleNewSession = useCallback(() => {
     postMessage({ type: 'session:create' });
@@ -167,6 +155,63 @@ export function ChatApp() {
     if (sessionStatus === 'error') return 'Error';
     return 'Connected';
   };
+
+  // Virtuoso: followOutput callback — auto-scroll when streaming and user is at bottom
+  const followOutput = useCallback(
+    () => {
+      if (isStreaming && atBottom) {
+        return 'smooth';
+      }
+      return false;
+    },
+    [isStreaming, atBottom]
+  );
+
+  // Virtuoso: render each message item
+  const itemContent = useCallback(
+    (_index: number, msg: MessageWithParts) => (
+      <MessageBubble message={msg} />
+    ),
+    []
+  );
+
+  // Virtuoso: stable key from message id
+  const computeItemKey = useCallback(
+    (_index: number, msg: MessageWithParts) => msg.info.id,
+    []
+  );
+
+  // Virtuoso: footer with permission card, question card, and streaming indicator
+  const Footer = useCallback(() => {
+    const hasFooterContent = pendingPermission || pendingQuestion || isStreaming;
+    if (!hasFooterContent) return null;
+
+    return (
+      <div className="chat-virtuoso-footer">
+        {/* Permission request card */}
+        {pendingPermission && (
+          <PermissionCard permission={pendingPermission} />
+        )}
+
+        {/* Question card */}
+        {pendingQuestion && (
+          <QuestionCard question={pendingQuestion} />
+        )}
+
+        {/* Streaming indicator */}
+        {isStreaming && (
+          <div className="chat-streaming-indicator">
+            <div className="chat-streaming-indicator__dots">
+              <span className="chat-streaming-indicator__dot" />
+              <span className="chat-streaming-indicator__dot" />
+              <span className="chat-streaming-indicator__dot" />
+            </div>
+            <span>Generating...</span>
+          </div>
+        )}
+      </div>
+    );
+  }, [pendingPermission, pendingQuestion, isStreaming]);
 
   // Show connecting state if not yet connected
   if (!connected) {
@@ -212,12 +257,9 @@ export function ChatApp() {
         </div>
       )}
 
-      {/* Messages */}
-      <div
-        ref={messagesContainerRef}
-        className={`chat-messages ${messages.length === 0 ? 'chat-messages--empty' : ''}`}
-      >
-        {messages.length === 0 ? (
+      {/* Messages — Welcome screen (no Virtuoso) or Virtuoso-powered list */}
+      {messages.length === 0 ? (
+        <div className="chat-messages chat-messages--empty">
           <div className="chat-welcome">
             <div className="chat-welcome__icon">
               <svg width="40" height="40" viewBox="0 0 16 16" fill="currentColor" opacity="0.5">
@@ -231,36 +273,21 @@ export function ChatApp() {
               Use <strong>@</strong> to reference files, <strong>/</strong> for commands.
             </div>
           </div>
-        ) : (
-          messages.map((msg) => (
-            <MessageBubble key={msg.info.id} message={msg} />
-          ))
-        )}
-
-        {/* Permission request card */}
-        {pendingPermission && (
-          <PermissionCard permission={pendingPermission} />
-        )}
-
-        {/* Question card */}
-        {pendingQuestion && (
-          <QuestionCard question={pendingQuestion} />
-        )}
-
-        {/* Streaming indicator */}
-        {isStreaming && (
-          <div className="chat-streaming-indicator">
-            <div className="chat-streaming-indicator__dots">
-              <span className="chat-streaming-indicator__dot" />
-              <span className="chat-streaming-indicator__dot" />
-              <span className="chat-streaming-indicator__dot" />
-            </div>
-            <span>Generating...</span>
-          </div>
-        )}
-
-        <div ref={messagesEndRef} />
-      </div>
+        </div>
+      ) : (
+        <Virtuoso
+          className="chat-virtuoso"
+          data={messages}
+          alignToBottom
+          followOutput={followOutput}
+          atBottomThreshold={150}
+          atBottomStateChange={setAtBottom}
+          increaseViewportBy={{ top: 200, bottom: 200 }}
+          computeItemKey={computeItemKey}
+          itemContent={itemContent}
+          components={{ Footer }}
+        />
+      )}
 
       {/* Input */}
       <ChatInput />
