@@ -114,25 +114,41 @@ export interface TextPart {
   type: 'text';
   id: string;
   text: string;
+  time?: unknown;
+  sessionID?: string;
+  messageID?: string;
 }
 
 export interface FilePart {
   type: 'file';
   id: string;
-  mediaType: string;
+  /** API returns 'mime' but some paths may use 'mediaType' */
+  mime?: string;
+  mediaType?: string;
   filename: string;
   url?: string;
+}
+
+export type ToolStatus = 'pending' | 'running' | 'completed' | 'error';
+
+export interface ToolState {
+  status: ToolStatus;
+  input?: Record<string, unknown>;
+  output?: string;
+  error?: string;
+  title?: string;
+  metadata?: Record<string, unknown>;
+  time?: { start?: number; end?: number };
 }
 
 export interface ToolPart {
   type: 'tool';
   id: string;
+  callID?: string;
   tool: string;
-  state: 'pending' | 'running' | 'completed' | 'error';
-  input: Record<string, unknown>;
-  output?: string;
-  error?: string;
-  duration?: number;
+  state: ToolState;
+  sessionID?: string;
+  messageID?: string;
 }
 
 export interface ReasoningPart {
@@ -152,13 +168,17 @@ export interface SubtaskPart {
 export interface StepStartPart {
   type: 'step-start';
   id: string;
+  sessionID?: string;
+  messageID?: string;
 }
 
 export interface StepFinishPart {
   type: 'step-finish';
   id: string;
-  tokens: TokenUsage;
-  cost: number;
+  tokens?: TokenUsage;
+  cost?: number;
+  sessionID?: string;
+  messageID?: string;
 }
 
 export interface SnapshotPart {

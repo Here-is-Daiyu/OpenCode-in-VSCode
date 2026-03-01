@@ -1,24 +1,33 @@
 /**
  * ChatApp - Main chat panel component
- * Displays messages, handles user input, and communicates with the extension host
- * Uses react-virtuoso for virtual scrolling of the message list.
+ *
+ * Displays messages, handles user input, and communicates with the extension host.
+ * Uses a simple scrollable container instead of virtualization for reliability
+ * in VSCode's sidebar/auxiliary panel environment (matching Desktop's approach).
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Virtuoso } from 'react-virtuoso';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useMessageListener } from '../../hooks/useMessageListener';
 import { postMessage } from '../../utils/vscodeApi';
-import { MessageBubble } from '../../components/MessageBubble';
+import { MessageBubble } from '../../components/message';
 import { ChatInput } from '../../components/ChatInput';
 import { PermissionCard } from '../../components/PermissionCard';
 import { QuestionCard } from '../../components/QuestionCard';
+import { MessageErrorBoundary } from '../../components/ErrorBoundary';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
-import type { MessageWithParts } from '../../types/opencode';
+
+/** Distance from bottom (px) within which we consider the user "at bottom" */
+const AT_BOTTOM_THRESHOLD = 150;
 
 export function ChatApp() {
   const [error, setError] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+
+  // Refs for scroll management
+  const messagesRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const prevMessageCountRef = useRef(0);
 
   // Store state
   const connected = useChatStore((s) => s.connected);
@@ -43,7 +52,57 @@ export function ChatApp() {
   const rollbackOptimisticMessage = useChatStore((s) => s.rollbackOptimisticMessage);
   const confirmOptimisticMessage = useChatStore((s) => s.confirmOptimisticMessage);
 
-  // Handle messages from extension host
+  // ── Scroll helpers ────────────────────────────────────────────────────
+
+  /** Check whether the scroll container is near the bottom */
+  const checkAtBottom = useCallback(() => {
+    const el = messagesRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < AT_BOTTOM_THRESHOLD;
+  }, []);
+
+  /** Scroll to the bottom of the messages container */
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+  }, []);
+
+  // Track scroll position to update atBottom state
+  const handleScroll = useCallback(() => {
+    setAtBottom(checkAtBottom());
+  }, [checkAtBottom]);
+
+  // Auto-scroll on new messages or streaming content updates
+  useLayoutEffect(() => {
+    const newCount = messages.length;
+    const isNewMessage = newCount > prevMessageCountRef.current;
+    prevMessageCountRef.current = newCount;
+
+    if (atBottom || isNewMessage) {
+      // Use instant scroll for initial load / session switch, smooth for streaming
+      scrollToBottom(isNewMessage ? 'instant' : 'smooth');
+    }
+  }, [messages, atBottom, scrollToBottom]);
+
+  // Also auto-scroll when streaming content updates (part changes)
+  useEffect(() => {
+    if (isStreaming && atBottom) {
+      // Use requestAnimationFrame for smooth follow during streaming
+      const raf = requestAnimationFrame(() => {
+        scrollToBottom('instant');
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [isStreaming, atBottom, messages, scrollToBottom]);
+
+  // Scroll to bottom when permission or question cards appear
+  useEffect(() => {
+    if ((pendingPermission || pendingQuestion) && atBottom) {
+      scrollToBottom('smooth');
+    }
+  }, [pendingPermission, pendingQuestion, atBottom, scrollToBottom]);
+
+  // ── Extension message handler ─────────────────────────────────────────
+
   const handleExtensionMessage = useCallback(
     (message: ExtensionToWebviewMessage) => {
       switch (message.type) {
@@ -52,13 +111,12 @@ export function ChatApp() {
           break;
 
         case 'session:loaded':
-          // New session loaded: reset local scroll state and replace session/messages
           setAtBottom(true);
+          prevMessageCountRef.current = 0; // reset so auto-scroll triggers
           setSession(message.data.session, message.data.messages);
           break;
 
         case 'session:created':
-          // Session created but no messages yet
           setSession(message.data, []);
           break;
 
@@ -125,7 +183,6 @@ export function ChatApp() {
         case 'providers:updated':
         case 'agents:updated':
         case 'todos:updated':
-          // These can be handled later as needed
           break;
       }
     },
@@ -153,15 +210,16 @@ export function ChatApp() {
     postMessage({ type: 'ready' });
   }, []);
 
-  // Handle new session creation
+  // ── Handlers ──────────────────────────────────────────────────────────
+
   const handleNewSession = useCallback(() => {
     postMessage({ type: 'session:create' });
   }, []);
 
-  // Dismiss error
   const dismissError = useCallback(() => setError(null), []);
 
-  // Get session status display
+  // ── Status display helpers ────────────────────────────────────────────
+
   const getStatusDotClass = () => {
     if (!connected) return 'chat-header__status-dot--disconnected';
     if (sessionStatus === 'active') return 'chat-header__status-dot--active';
@@ -178,64 +236,8 @@ export function ChatApp() {
     return 'Connected';
   };
 
-  // Virtuoso: followOutput callback — auto-scroll when streaming and user is at bottom
-  const followOutput = useCallback(
-    () => {
-      if (isStreaming && atBottom) {
-        return 'smooth';
-      }
-      return false;
-    },
-    [isStreaming, atBottom]
-  );
+  // ── Connecting state ──────────────────────────────────────────────────
 
-  // Virtuoso: render each message item
-  const itemContent = useCallback(
-    (_index: number, msg: MessageWithParts) => (
-      <MessageBubble message={msg} />
-    ),
-    []
-  );
-
-  // Virtuoso: stable key from message id
-  const computeItemKey = useCallback(
-    (_index: number, msg: MessageWithParts) => msg.info.id,
-    []
-  );
-
-  // Virtuoso: footer with permission card, question card, and streaming indicator
-  const Footer = useCallback(() => {
-    const hasFooterContent = pendingPermission || pendingQuestion || isStreaming;
-    if (!hasFooterContent) return null;
-
-    return (
-      <div className="chat-virtuoso-footer">
-        {/* Permission request card */}
-        {pendingPermission && (
-          <PermissionCard permission={pendingPermission} />
-        )}
-
-        {/* Question card */}
-        {pendingQuestion && (
-          <QuestionCard question={pendingQuestion} />
-        )}
-
-        {/* Streaming indicator */}
-        {isStreaming && (
-          <div className="chat-streaming-indicator">
-            <div className="chat-streaming-indicator__dots">
-              <span className="chat-streaming-indicator__dot" />
-              <span className="chat-streaming-indicator__dot" />
-              <span className="chat-streaming-indicator__dot" />
-            </div>
-            <span>Generating...</span>
-          </div>
-        )}
-      </div>
-    );
-  }, [pendingPermission, pendingQuestion, isStreaming]);
-
-  // Show connecting state if not yet connected
   if (!connected) {
     return (
       <div className="chat-app">
@@ -247,24 +249,33 @@ export function ChatApp() {
     );
   }
 
+  // ── Main render ───────────────────────────────────────────────────────
+
+  const hasMessages = messages.length > 0;
+  const showScrollButton = hasMessages && !atBottom;
+
   return (
     <div className="chat-app">
       {/* Header */}
       <div className="chat-header">
-        <span className="chat-header__title">
-          {currentSession?.title || 'OpenCode Chat'}
-        </span>
-        <div className="chat-header__info">
+        <div className="chat-header__left">
           <span className="chat-header__status">
             <span className={`chat-header__status-dot ${getStatusDotClass()}`} />
-            <span>{getStatusText()}</span>
           </span>
+          <span className="chat-header__title">
+            {currentSession?.title || 'OpenCode'}
+          </span>
+        </div>
+        <div className="chat-header__actions">
+          <span className="chat-header__status-text">{getStatusText()}</span>
           <button
             className="chat-header__new-btn"
             onClick={handleNewSession}
             title="New Session"
           >
-            + New
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M14 7v1H8v6H7V8H1V7h6V1h1v6h6z" />
+            </svg>
           </button>
         </div>
       </div>
@@ -279,37 +290,87 @@ export function ChatApp() {
         </div>
       )}
 
-      {/* Messages — Welcome screen (no Virtuoso) or Virtuoso-powered list */}
-      {messages.length === 0 ? (
+      {/* Messages area */}
+      {!hasMessages ? (
         <div className="chat-messages chat-messages--empty">
           <div className="chat-welcome">
             <div className="chat-welcome__icon">
-              <svg width="40" height="40" viewBox="0 0 16 16" fill="currentColor" opacity="0.5">
-                <path d="M5 3a2 2 0 0 0-2 2v2h2V5h6v2h2V5a2 2 0 0 0-2-2H5zm8 6H3v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9zM6 10h1v1H6v-1zm3 0h1v1H9v-1z" />
+              {/* Stylized bot icon */}
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
+                <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
               </svg>
             </div>
-            <div className="chat-welcome__title">OpenCode</div>
+            <div className="chat-welcome__title">Start a conversation</div>
             <div className="chat-welcome__subtitle">
-              Start a conversation by typing below.
-              <br />
-              Use <strong>@</strong> to reference files, <strong>/</strong> for commands.
+              Ask questions, write code, or get help with your project.
+            </div>
+            <div className="chat-welcome__hints">
+              <span className="chat-welcome__hint">
+                <kbd>@</kbd> reference files
+              </span>
+              <span className="chat-welcome__hint-sep">·</span>
+              <span className="chat-welcome__hint">
+                <kbd>/</kbd> commands
+              </span>
             </div>
           </div>
         </div>
       ) : (
-        <Virtuoso
+        <div
+          className="chat-messages"
+          ref={messagesRef}
+          onScroll={handleScroll}
           key={currentSession?.id ?? 'no-session'}
-          className="chat-virtuoso"
-          data={messages}
-          alignToBottom
-          followOutput={followOutput}
-          atBottomThreshold={150}
-          atBottomStateChange={setAtBottom}
-          increaseViewportBy={{ top: 200, bottom: 200 }}
-          computeItemKey={computeItemKey}
-          itemContent={itemContent}
-          components={{ Footer }}
-        />
+        >
+          {messages.map((msg) => (
+            <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id}>
+              <MessageBubble message={msg} />
+            </MessageErrorBoundary>
+          ))}
+
+          {/* Permission request card */}
+          {pendingPermission && (
+            <PermissionCard permission={pendingPermission} />
+          )}
+
+          {/* Question card */}
+          {pendingQuestion && (
+            <QuestionCard question={pendingQuestion} />
+          )}
+
+          {/* Streaming indicator */}
+          {isStreaming && (
+            <div className="chat-streaming-indicator">
+              <div className="chat-streaming-indicator__dots">
+                <span className="chat-streaming-indicator__dot" />
+                <span className="chat-streaming-indicator__dot" />
+                <span className="chat-streaming-indicator__dot" />
+              </div>
+              <span>Generating...</span>
+            </div>
+          )}
+
+          {/* Scroll anchor */}
+          <div ref={bottomRef} className="chat-scroll-anchor" />
+        </div>
+      )}
+
+      {/* Scroll-to-bottom button */}
+      {showScrollButton && (
+        <button
+          className="chat-scroll-bottom"
+          onClick={() => scrollToBottom('smooth')}
+          title="Scroll to bottom"
+        >
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
+          </svg>
+        </button>
       )}
 
       {/* Input */}

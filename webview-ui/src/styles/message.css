@@ -1,0 +1,697 @@
+/**
+ * Message component styles - Modeled on OpenCode Desktop.
+ *
+ * Design tokens at the top, then component styles.
+ * Uses VSCode CSS variables for seamless theme integration.
+ */
+
+/* ========================================
+   Design Tokens
+   ======================================== */
+
+:root {
+  --msg-user-bg: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.1));
+  --msg-assistant-bg: transparent;
+  --msg-border-radius: 8px;
+  --msg-spacing: 16px;
+  --msg-header-color: var(--vscode-descriptionForeground);
+  --msg-timestamp-color: var(--vscode-disabledForeground);
+  --msg-reasoning-bg: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.05));
+  --msg-reasoning-border: var(--vscode-textBlockQuote-border, rgba(127, 127, 127, 0.2));
+  --msg-tool-bg: var(--vscode-editor-background);
+  --msg-tool-border: var(--vscode-panel-border);
+  --msg-tool-success: var(--vscode-testing-iconPassed);
+  --msg-tool-error: var(--vscode-errorForeground);
+  --msg-tool-running: var(--vscode-progressBar-background);
+  --msg-appear-duration: 0.3s;
+}
+
+/* ========================================
+   Message Bubble (main wrapper)
+   ======================================== */
+
+.msg-bubble {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+  padding: 8px 14px;
+  margin-bottom: 4px;
+  position: relative;
+  border-radius: var(--msg-border-radius);
+
+  /* Appear animation */
+  animation: msgAppear var(--msg-appear-duration) ease-out;
+}
+
+@keyframes msgAppear {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.msg-bubble--user {
+  background: var(--msg-user-bg);
+  border-bottom-right-radius: 2px;
+}
+
+.msg-bubble--assistant {
+  background: var(--msg-assistant-bg);
+}
+
+.msg-bubble--optimistic {
+  opacity: 0.65;
+}
+
+.msg-bubble--optimistic .msg-header__time::after {
+  content: ' (sending...)';
+  font-style: italic;
+  opacity: 0.7;
+}
+
+/* Hover copy button (user messages) */
+.msg-bubble__hover-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: var(--vscode-editor-background, rgba(30, 30, 30, 0.9));
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.3));
+  border-radius: 4px;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+  padding: 0;
+}
+
+.msg-bubble:hover .msg-bubble__hover-copy {
+  opacity: 1;
+}
+
+.msg-bubble__hover-copy:hover {
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+}
+
+/* Error display */
+.msg-bubble__error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: rgba(244, 67, 54, 0.08);
+  border: 1px solid rgba(244, 67, 54, 0.25);
+  border-radius: 6px;
+  color: var(--vscode-errorForeground, #f44336);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* ========================================
+   Message Header
+   ======================================== */
+
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--msg-header-color, rgba(128, 128, 128, 0.8));
+  padding-bottom: 2px;
+}
+
+.msg-header__icon {
+  display: flex;
+  align-items: center;
+  color: var(--vscode-editor-foreground);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.msg-header__role {
+  font-weight: 600;
+  color: var(--vscode-editor-foreground);
+  font-size: 12px;
+}
+
+.msg-header__model {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vscode-badge-foreground, var(--vscode-descriptionForeground));
+  background: var(--vscode-badge-background, rgba(128, 128, 128, 0.2));
+  padding: 1px 6px;
+  border-radius: 3px;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-header__time {
+  font-size: 10px;
+  color: var(--msg-timestamp-color, var(--vscode-disabledForeground));
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* ========================================
+   Message Content
+   ======================================== */
+
+.msg-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  line-height: 1.5;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.msg-content--user .msg-text .markdown-content {
+  white-space: normal;
+}
+
+.msg-content--user .msg-text .markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ========================================
+   Text Part
+   ======================================== */
+
+.msg-text {
+  font-size: var(--vscode-font-size, 13px);
+}
+
+.msg-text .markdown-content {
+  white-space: normal;
+}
+
+.msg-text .markdown-content > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ========================================
+   Reasoning Part
+   ======================================== */
+
+.msg-reasoning {
+  border-radius: 6px;
+  border: 1px solid var(--msg-reasoning-border, rgba(128, 128, 128, 0.15));
+  overflow: hidden;
+  background: var(--msg-reasoning-bg, rgba(128, 128, 128, 0.03));
+}
+
+.msg-reasoning__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  user-select: none;
+  transition: background 0.1s ease;
+}
+
+.msg-reasoning__header:hover {
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.msg-reasoning__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.msg-reasoning__title {
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground);
+}
+
+.msg-reasoning__shimmer {
+  font-size: 11px;
+}
+
+.msg-reasoning__chevron {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  opacity: 0.6;
+}
+
+.msg-reasoning__chevron--open {
+  transform: rotate(90deg);
+}
+
+.msg-reasoning__collapse {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.msg-reasoning--expanded .msg-reasoning__collapse {
+  overflow-y: auto;
+}
+
+.msg-reasoning__content {
+  padding: 8px 12px 10px;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground);
+  line-height: 1.5;
+}
+
+.msg-reasoning__markdown {
+  opacity: 0.85;
+}
+
+.msg-reasoning__placeholder {
+  font-style: italic;
+  opacity: 0.6;
+}
+
+/* ========================================
+   Tool Call Part
+   ======================================== */
+
+.msg-tool {
+  border: 1px solid var(--msg-tool-border, rgba(128, 128, 128, 0.25));
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.msg-tool--pending {
+  border-left: 3px solid var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.4));
+}
+
+.msg-tool--running {
+  border-left: 3px solid var(--msg-tool-running, #0e70c0);
+}
+
+.msg-tool--completed {
+  border-left: 3px solid var(--msg-tool-success, #73c991);
+}
+
+.msg-tool--error {
+  border-left: 3px solid var(--msg-tool-error, #f14c4c);
+}
+
+/* Grouped (inside ContextToolGroup) */
+.msg-tool--grouped {
+  border-radius: 4px;
+  border-left-width: 2px;
+}
+
+.msg-tool__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  user-select: none;
+  transition: background 0.1s ease;
+}
+
+.msg-tool__header:hover {
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.msg-tool__tool-icon {
+  display: flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.msg-tool__status {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.msg-tool__status--pending {
+  color: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.5));
+}
+
+.msg-tool__status--running {
+  color: var(--msg-tool-running, #0e70c0);
+}
+
+.msg-tool__status--completed {
+  color: var(--msg-tool-success, #73c991);
+}
+
+.msg-tool__status--error {
+  color: var(--msg-tool-error, #f14c4c);
+}
+
+.msg-tool__spinner {
+  animation: spin 1s linear infinite;
+}
+
+.msg-tool__name {
+  font-weight: 600;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.msg-tool__args {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
+  opacity: 0.8;
+}
+
+.msg-tool__duration {
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+
+.msg-tool__chevron {
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
+  flex-shrink: 0;
+}
+
+.msg-tool__chevron--open {
+  transform: rotate(90deg);
+}
+
+.msg-tool__collapse {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.msg-tool__body {
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.15));
+}
+
+.msg-tool__section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground);
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+}
+
+.msg-tool__code {
+  max-height: 300px;
+  overflow-y: auto;
+  border-radius: 4px;
+}
+
+.msg-tool__code .markdown-content {
+  font-size: 12px;
+}
+
+.msg-tool__code .code-block-wrapper {
+  margin: 0;
+}
+
+.msg-tool__error-text {
+  background: rgba(244, 67, 54, 0.06);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  color: var(--msg-tool-error, #f44336);
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+/* ========================================
+   Context Tool Group
+   ======================================== */
+
+.msg-context-group {
+  border: 1px solid var(--msg-tool-border, rgba(128, 128, 128, 0.25));
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.msg-context-group--done {
+  border-left: 3px solid var(--msg-tool-success, #73c991);
+}
+
+.msg-context-group--running {
+  border-left: 3px solid var(--msg-tool-running, #0e70c0);
+}
+
+.msg-context-group--error {
+  border-left: 3px solid var(--msg-tool-error, #f14c4c);
+}
+
+.msg-context-group__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  user-select: none;
+  transition: background 0.1s ease;
+}
+
+.msg-context-group__header:hover {
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.msg-context-group__icon {
+  display: flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+.msg-context-group__title {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.msg-context-group__summary {
+  color: var(--vscode-descriptionForeground);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.msg-context-group__running-indicator {
+  display: flex;
+  align-items: center;
+  color: var(--msg-tool-running, #0e70c0);
+}
+
+.msg-context-group__chevron {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  transition: transform 0.2s ease;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
+}
+
+.msg-context-group__chevron--open {
+  transform: rotate(90deg);
+}
+
+.msg-context-group__collapse {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.msg-context-group__body {
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.15));
+}
+
+/* ========================================
+   Step Indicators
+   ======================================== */
+
+.msg-step-start {
+  height: 1px;
+  background: var(--vscode-panel-border, rgba(128, 128, 128, 0.15));
+  margin: 4px 0;
+}
+
+.msg-step-finish {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.6;
+  padding: 2px 0;
+}
+
+.msg-step-finish__tokens,
+.msg-step-finish__reasoning,
+.msg-step-finish__cost {
+  white-space: nowrap;
+}
+
+/* ========================================
+   File Part
+   ======================================== */
+
+.msg-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--vscode-editor-foreground);
+  cursor: pointer;
+  transition: background 0.1s ease;
+}
+
+.msg-file:hover {
+  background: rgba(128, 128, 128, 0.06);
+}
+
+.msg-file__icon {
+  display: flex;
+  align-items: center;
+  color: var(--vscode-descriptionForeground);
+  opacity: 0.7;
+}
+
+.msg-file__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.msg-file__preview {
+  max-width: 200px;
+  max-height: 100px;
+  border-radius: 4px;
+  margin-top: 4px;
+}
+
+/* ========================================
+   Message Footer
+   ======================================== */
+
+.msg-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 10px;
+  color: var(--vscode-descriptionForeground);
+  padding: 2px 0 0;
+  opacity: 0.7;
+}
+
+.msg-footer__tokens,
+.msg-footer__cost {
+  white-space: nowrap;
+}
+
+.msg-footer__copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: auto;
+  padding: 2px 6px;
+  background: transparent;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+  border-radius: 3px;
+  color: var(--vscode-descriptionForeground);
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.1s ease;
+}
+
+.msg-bubble:hover .msg-footer__copy {
+  opacity: 1;
+}
+
+.msg-footer__copy:hover {
+  background: rgba(128, 128, 128, 0.1);
+  color: var(--vscode-editor-foreground);
+}
+
+/* ========================================
+   Text Shimmer Animation
+   ======================================== */
+
+@keyframes textShimmer {
+  0% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.3;
+  }
+}
+
+.text-shimmer {
+  display: inline-block;
+  animation: textShimmer 1.5s ease-in-out infinite;
+  letter-spacing: 2px;
+}
