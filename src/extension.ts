@@ -55,8 +55,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // 5. Register providers
   const chatProvider = new ChatViewProvider(context.extensionUri);
-  const sessionProvider = new SessionTreeProvider();
-  const statusProvider = new StatusTreeProvider();
+  const sessionProvider = new SessionTreeProvider(eventBus);
+  const statusProvider = new StatusTreeProvider(eventBus);
   const settingsProvider = new SettingsViewProvider(context.extensionUri);
   settingsProvider.setClient(client);
   settingsProvider.setLogger(logger);
@@ -199,7 +199,7 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
   try {
     // Load sessions
     const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.refresh(sessions);
+    ctx.sessionProvider.setSessions(sessions);
 
     // Load config (model info)
     const config = await ctx.client.getConfig();
@@ -358,7 +358,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 async function refreshSessionsQuietly(ctx: CommandContext): Promise<void> {
   try {
     const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.refresh(sessions);
+    ctx.sessionProvider.setSessions(sessions);
   } catch {
     // Silently ignore — the tree will be stale but that's acceptable
   }

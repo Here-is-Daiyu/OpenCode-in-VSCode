@@ -24,7 +24,9 @@ export type ExtensionToWebviewMessage =
   | { type: 'todos:updated'; data: Todo[] }
   | { type: 'server:status'; data: { connected: boolean; version?: string } }
   | { type: 'error'; data: { message: string; details?: string } }
-  | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } };
+  | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } }
+  | { type: 'file:added'; data: { path: string; name: string; content: string } }
+  | { type: 'selection:added'; data: { path: string; name: string; content: string; startLine: number; endLine: number } };
 
 // Webview → Extension messages
 export type WebviewToExtensionMessage =

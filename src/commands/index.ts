@@ -70,7 +70,7 @@ async function newSession(ctx: CommandContext): Promise<void> {
     ctx.eventBus.emit('session:created', session);
     // Refresh tree with fresh data from server
     const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.refresh(sessions);
+    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.info(`Created new session: ${session.id}`);
   } catch (err) {
     ctx.logger.error('Failed to create session', err);
@@ -101,7 +101,7 @@ async function deleteSession(ctx: CommandContext, sessionId?: string): Promise<v
     }
     ctx.eventBus.emit('session:deleted', { id });
     const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.refresh(sessions);
+    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.info(`Deleted session: ${id}`);
   } catch (err) {
     ctx.logger.error('Failed to delete session', err);
@@ -113,7 +113,7 @@ async function refreshSessions(ctx: CommandContext): Promise<void> {
   if (!requireConnected(ctx)) { return; }
   try {
     const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.refresh(sessions);
+    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.debug(`Refreshed sessions: ${sessions.length} found`);
   } catch (err) {
     ctx.logger.error('Failed to refresh sessions', err);
@@ -130,7 +130,7 @@ async function forkSession(ctx: CommandContext): Promise<void> {
     ctx.activeSessionId = forked.id;
     ctx.eventBus.emit('session:created', forked);
     const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.refresh(sessions);
+    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.info(`Forked session ${sessionId} → ${forked.id}`);
     vscode.window.showInformationMessage('Session forked successfully.');
   } catch (err) {
