@@ -197,11 +197,15 @@ export async function initMarkdownRenderer(): Promise<void> {
 
     // Try to load Shiki for syntax highlighting
     try {
-      const [{ createHighlighter, createCssVariablesTheme }, { fromHighlighter }] =
-        await Promise.all([
-          import('shiki/bundle/web'),
-          import('@shikijs/markdown-it/core'),
-        ]);
+      const [
+        { createHighlighterCore, createCssVariablesTheme },
+        { createJavaScriptRegexEngine },
+        { fromHighlighter },
+      ] = await Promise.all([
+        import('shiki/core'),
+        import('shiki/engine/javascript'),
+        import('@shikijs/markdown-it/core'),
+      ]);
 
       const cssVarTheme = createCssVariablesTheme({
         name: 'css-variables',
@@ -209,17 +213,52 @@ export async function initMarkdownRenderer(): Promise<void> {
         variableDefaults: {},
       });
 
-      const highlighter = await createHighlighter({
+      const highlighter = await createHighlighterCore({
         themes: [cssVarTheme],
-        langs: [...SHIKI_LANGS],
+        langs: [
+          import('@shikijs/langs/javascript'),
+          import('@shikijs/langs/typescript'),
+          import('@shikijs/langs/python'),
+          import('@shikijs/langs/shellscript'),    // bash, sh
+          import('@shikijs/langs/shellsession'),   // shell
+          import('@shikijs/langs/json'),
+          import('@shikijs/langs/yaml'),
+          import('@shikijs/langs/html'),
+          import('@shikijs/langs/css'),
+          import('@shikijs/langs/jsx'),
+          import('@shikijs/langs/tsx'),
+          import('@shikijs/langs/markdown'),
+          import('@shikijs/langs/diff'),
+          import('@shikijs/langs/go'),
+          import('@shikijs/langs/rust'),
+          import('@shikijs/langs/java'),
+          import('@shikijs/langs/c'),
+          import('@shikijs/langs/cpp'),
+          import('@shikijs/langs/csharp'),
+          import('@shikijs/langs/ruby'),
+          import('@shikijs/langs/php'),
+          import('@shikijs/langs/swift'),
+          import('@shikijs/langs/kotlin'),
+          import('@shikijs/langs/sql'),
+          import('@shikijs/langs/toml'),
+          import('@shikijs/langs/xml'),
+          import('@shikijs/langs/dockerfile'),
+          import('@shikijs/langs/graphql'),
+          import('@shikijs/langs/prisma'),
+          import('@shikijs/langs/vue'),
+          import('@shikijs/langs/svelte'),
+        ],
+        engine: createJavaScriptRegexEngine(),
       });
 
       // 'text' is a Shiki special language (always available, never needs
       // loading) but it is not part of the BuiltinLanguage type union.
       const TEXT_LANG = 'text' as const;
 
+      // Cast needed: createHighlighterCore returns HighlighterCore (= HighlighterGeneric<never, never>)
+      // but fromHighlighter expects HighlighterGeneric<any, any>. This is a known shiki type mismatch.
       md.use(
-        fromHighlighter(highlighter, {
+        fromHighlighter(highlighter as Parameters<typeof fromHighlighter>[0], {
           theme: 'css-variables',
           defaultLanguage: TEXT_LANG as unknown as typeof SHIKI_LANGS[number],
           fallbackLanguage: TEXT_LANG as unknown as typeof SHIKI_LANGS[number],
