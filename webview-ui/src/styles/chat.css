@@ -945,3 +945,358 @@ body {
 .chat-error__dismiss:hover {
   opacity: 1;
 }
+
+/* ========================================
+   Shiki CSS Variables → VSCode Theme Mapping
+   ======================================== */
+
+/*
+ * Shiki's CSS Variables theme outputs tokens styled with --shiki-* variables.
+ * We map them to VSCode's built-in CSS variables so code highlighting
+ * automatically matches whatever theme the user has active.
+ *
+ * VSCode doesn't expose per-token semantic colors in CSS vars, so we use
+ * the closest available variables with reasonable fallbacks.
+ */
+
+:root {
+  --shiki-color-text: var(--vscode-editor-foreground);
+  --shiki-color-background: transparent;
+  --shiki-token-constant: #79c0ff;
+  --shiki-token-string: #a5d6ff;
+  --shiki-token-comment: var(--vscode-editorLineNumber-foreground, #6a737d);
+  --shiki-token-keyword: #ff7b72;
+  --shiki-token-parameter: var(--vscode-editor-foreground);
+  --shiki-token-function: #d2a8ff;
+  --shiki-token-string-expression: #a5d6ff;
+  --shiki-token-punctuation: var(--vscode-editor-foreground, #c9d1d9);
+  --shiki-token-link: var(--vscode-textLink-foreground, #58a6ff);
+}
+
+/* Light theme overrides - detect via VSCode's body class */
+body[data-vscode-theme-kind="vscode-light"],
+body[data-vscode-theme-kind="vscode-high-contrast-light"] {
+  --shiki-token-constant: #0550ae;
+  --shiki-token-string: #0a3069;
+  --shiki-token-comment: var(--vscode-editorLineNumber-foreground, #6e7781);
+  --shiki-token-keyword: #cf222e;
+  --shiki-token-function: #8250df;
+  --shiki-token-string-expression: #0a3069;
+  --shiki-token-punctuation: var(--vscode-editor-foreground, #24292f);
+  --shiki-token-link: var(--vscode-textLink-foreground, #0969da);
+}
+
+/* ========================================
+   Markdown Content
+   ======================================== */
+
+.markdown-content {
+  line-height: 1.6;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.markdown-content--loading {
+  opacity: 0.7;
+}
+
+/* Headings */
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4,
+.markdown-content h5,
+.markdown-content h6 {
+  margin: 16px 0 8px 0;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--vscode-editor-foreground);
+}
+
+.markdown-content h1 { font-size: 1.4em; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.2)); padding-bottom: 4px; }
+.markdown-content h2 { font-size: 1.25em; border-bottom: 1px solid var(--vscode-panel-border, rgba(128,128,128,0.15)); padding-bottom: 4px; }
+.markdown-content h3 { font-size: 1.1em; }
+.markdown-content h4 { font-size: 1em; }
+.markdown-content h5 { font-size: 0.95em; }
+.markdown-content h6 { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+
+/* First heading in content should have less top margin */
+.markdown-content > h1:first-child,
+.markdown-content > h2:first-child,
+.markdown-content > h3:first-child {
+  margin-top: 4px;
+}
+
+/* Paragraphs */
+.markdown-content p {
+  margin: 0 0 8px 0;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Links */
+.markdown-content a {
+  color: var(--vscode-textLink-foreground, #3794ff);
+  text-decoration: none;
+}
+
+.markdown-content a:hover {
+  text-decoration: underline;
+  color: var(--vscode-textLink-activeForeground, #3794ff);
+}
+
+/* Inline code */
+.markdown-content code:not(pre code) {
+  background: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.15));
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 0.9em;
+  color: var(--vscode-editor-foreground);
+  word-break: break-word;
+}
+
+/* Lists */
+.markdown-content ul,
+.markdown-content ol {
+  margin: 4px 0 8px 0;
+  padding-left: 24px;
+}
+
+.markdown-content li {
+  margin: 2px 0;
+  line-height: 1.5;
+}
+
+.markdown-content li > p {
+  margin: 2px 0;
+}
+
+/* Nested lists */
+.markdown-content ul ul,
+.markdown-content ol ol,
+.markdown-content ul ol,
+.markdown-content ol ul {
+  margin: 2px 0;
+}
+
+/* Task lists */
+.markdown-content li input[type="checkbox"] {
+  margin-right: 6px;
+  vertical-align: middle;
+}
+
+/* Blockquotes */
+.markdown-content blockquote {
+  margin: 8px 0;
+  padding: 4px 12px;
+  border-left: 3px solid var(--vscode-textBlockQuote-border, rgba(128, 128, 128, 0.4));
+  background: var(--vscode-textBlockQuote-background, rgba(128, 128, 128, 0.05));
+  color: var(--vscode-editor-foreground);
+}
+
+.markdown-content blockquote p {
+  margin: 4px 0;
+}
+
+/* Horizontal rule */
+.markdown-content hr {
+  border: none;
+  border-top: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  margin: 16px 0;
+}
+
+/* Tables */
+.markdown-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 8px 0;
+  font-size: 0.92em;
+}
+
+.markdown-content th,
+.markdown-content td {
+  padding: 6px 12px;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.35));
+  text-align: left;
+}
+
+.markdown-content th {
+  background: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.1));
+  font-weight: 600;
+}
+
+.markdown-content tr:nth-child(even) {
+  background: rgba(128, 128, 128, 0.04);
+}
+
+/* Images */
+.markdown-content img {
+  max-width: 100%;
+  border-radius: 4px;
+  margin: 4px 0;
+}
+
+/* Strong / emphasis */
+.markdown-content strong {
+  font-weight: 600;
+}
+
+.markdown-content em {
+  font-style: italic;
+}
+
+/* ========================================
+   Code Block Wrapper (Copy Button + Lang Label)
+   ======================================== */
+
+.code-block-wrapper {
+  position: relative;
+  margin: 8px 0;
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  background: var(--vscode-textCodeBlock-background, rgba(0, 0, 0, 0.15));
+}
+
+.code-block-wrapper pre {
+  margin: 0 !important;
+  padding: 12px 14px !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  overflow-x: auto;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: calc(var(--vscode-editor-font-size, 13px) - 1px);
+  line-height: 1.5;
+  tab-size: 4;
+}
+
+.code-block-wrapper pre code {
+  font-family: inherit;
+  font-size: inherit;
+  background: none !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.code-block-lang {
+  position: absolute;
+  top: 0;
+  left: 0;
+  padding: 2px 10px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.8));
+  background: rgba(128, 128, 128, 0.1);
+  border-bottom-right-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  user-select: none;
+  pointer-events: none;
+}
+
+.code-block-copy-btn {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, rgba(128, 128, 128, 0.7));
+  background: var(--vscode-editor-background, rgba(30, 30, 30, 0.8));
+  border: 1px solid var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.1s ease;
+  z-index: 2;
+  font-family: var(--vscode-font-family);
+}
+
+.code-block-wrapper:hover .code-block-copy-btn {
+  opacity: 1;
+}
+
+.code-block-copy-btn:hover {
+  background: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+  color: var(--vscode-editor-foreground);
+}
+
+/* When code block has a language label, add top padding to pre */
+.code-block-wrapper .code-block-lang + pre {
+  padding-top: 24px !important;
+}
+
+/* ========================================
+   KaTeX Math Rendering
+   ======================================== */
+
+/* Block math */
+.katex-block {
+  margin: 12px 0;
+  padding: 8px 12px;
+  overflow-x: auto;
+  text-align: center;
+  background: rgba(128, 128, 128, 0.03);
+  border-radius: 4px;
+}
+
+/* KaTeX error fallback */
+.katex-error {
+  color: var(--vscode-errorForeground, #f44336);
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.9em;
+}
+
+/* Ensure KaTeX rendered content matches theme */
+.markdown-content .katex {
+  font-size: 1.1em;
+}
+
+.markdown-content .katex .base {
+  color: var(--vscode-editor-foreground);
+}
+
+/* ========================================
+   Markdown in Message Bubble Overrides
+   ======================================== */
+
+/* When markdown-content is inside a user message bubble, adjust colors */
+.message-bubble--user .markdown-content a {
+  color: var(--vscode-button-foreground, #fff);
+  text-decoration: underline;
+}
+
+.message-bubble--user .markdown-content code:not(pre code) {
+  background: rgba(255, 255, 255, 0.15);
+  color: inherit;
+}
+
+.message-bubble--user .code-block-wrapper {
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.message-bubble--user .code-block-lang {
+  color: rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.message-bubble--user .code-block-copy-btn {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(0, 0, 0, 0.3);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* Ensure text in message-bubble__text with markdown doesn't have white-space: pre-wrap 
+   since markdown-it handles line breaks */
+.message-bubble__text .markdown-content {
+  white-space: normal;
+}
+
+/* Reduce excessive margin on last paragraph in markdown */
+.message-bubble__text .markdown-content > *:last-child {
+  margin-bottom: 0;
+}

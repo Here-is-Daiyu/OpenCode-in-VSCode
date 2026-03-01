@@ -253,7 +253,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       style-src ${webview.cspSource} 'unsafe-inline';
       script-src 'nonce-${nonce}';
       img-src ${webview.cspSource} data: https:;
-      font-src ${webview.cspSource};
+      font-src ${webview.cspSource} data:;
       connect-src ${webview.cspSource};" />
   <title>OpenCode Chat</title>
   <style>

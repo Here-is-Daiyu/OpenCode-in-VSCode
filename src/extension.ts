@@ -116,7 +116,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  // 11. Auto-start server if configured
+  // 11. Listen to VSCode color theme changes and forward to webview
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveColorTheme(theme => {
+      const kind =
+        theme.kind === vscode.ColorThemeKind.Light ||
+        theme.kind === vscode.ColorThemeKind.HighContrastLight
+          ? 'light'
+          : theme.kind === vscode.ColorThemeKind.HighContrast
+            ? 'highContrast'
+            : 'dark';
+      chatProvider.postMessage({
+        type: 'theme:changed',
+        data: { kind },
+      });
+      logger?.debug(`Theme changed to ${kind} (kind=${theme.kind})`);
+    })
+  );
+
+  // 12. Auto-start server if configured
   const autoStart = vscode.workspace
     .getConfiguration('opencode.server')
     .get<boolean>('autoStart', true);
