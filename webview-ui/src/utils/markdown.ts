@@ -97,6 +97,7 @@ function katexPlugin(mdInstance: MarkdownIt): void {
       return katex.renderToString(tokens[idx].content, {
         throwOnError: false,
         displayMode: false,
+        trust: false,
       });
     } catch {
       return `<code class="katex-error">${mdInstance.utils.escapeHtml(tokens[idx].content)}</code>`;
@@ -164,6 +165,7 @@ function katexPlugin(mdInstance: MarkdownIt): void {
       return `<div class="katex-block">${katex.renderToString(tokens[idx].content, {
         throwOnError: false,
         displayMode: true,
+        trust: false,
       })}</div>\n`;
     } catch {
       return `<pre class="katex-error"><code>${mdInstance.utils.escapeHtml(tokens[idx].content)}</code></pre>\n`;

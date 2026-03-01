@@ -6,6 +6,12 @@ import React, { useRef, useCallback, useEffect } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
 
+/** Maximum file size for image attachments in bytes (10 MB) */
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+
+/** Maximum height of the chat input textarea in pixels */
+const MAX_TEXTAREA_HEIGHT_PX = 200;
+
 export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,8 +32,7 @@ export function ChatInput() {
     const textarea = textareaRef.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
-    const maxHeight = 200;
-    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`;
   }, []);
 
   useEffect(() => {
@@ -85,10 +90,17 @@ export function ChatInput() {
 
       Array.from(files).forEach((file) => {
         if (!file.type.startsWith('image/')) return;
+        if (file.size > MAX_IMAGE_SIZE) {
+          console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`);
+          return;
+        }
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = reader.result as string;
           addImage(base64);
+        };
+        reader.onerror = () => {
+          console.error('Failed to read image file');
         };
         reader.readAsDataURL(file);
       });
@@ -110,10 +122,17 @@ export function ChatInput() {
       const files = e.dataTransfer.files;
       Array.from(files).forEach((file) => {
         if (!file.type.startsWith('image/')) return;
+        if (file.size > MAX_IMAGE_SIZE) {
+          console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`);
+          return;
+        }
         const reader = new FileReader();
         reader.onload = () => {
           const base64 = reader.result as string;
           addImage(base64);
+        };
+        reader.onerror = () => {
+          console.error('Failed to read image file');
         };
         reader.readAsDataURL(file);
       });

@@ -106,7 +106,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       {!isUser && lastStepFinish && (
         <div className="message-bubble__footer">
           <span className="message-bubble__tokens">
-            {formatTokens(lastStepFinish.tokens.input)} in / {formatTokens(lastStepFinish.tokens.output)} out
+            {formatTokens(lastStepFinish.tokens?.input ?? 0)} in / {formatTokens(lastStepFinish.tokens?.output ?? 0)} out
           </span>
           {lastStepFinish.cost > 0 && (
             <span className="message-bubble__cost">

@@ -85,15 +85,15 @@ export class StatusBarManager implements vscode.Disposable {
    * Update token usage display.
    */
   setTokenUsage(tokens: TokenUsage): void {
-    const inputK = (tokens.input / 1000).toFixed(1);
-    const outputK = (tokens.output / 1000).toFixed(1);
+    const inputK = ((tokens.input ?? 0) / 1000).toFixed(1);
+    const outputK = ((tokens.output ?? 0) / 1000).toFixed(1);
     this.tokenItem.text = `$(dashboard) ${inputK}k / ${outputK}k`;
     this.tokenItem.tooltip = [
-      `Input tokens: ${tokens.input.toLocaleString()}`,
-      `Output tokens: ${tokens.output.toLocaleString()}`,
-      `Reasoning tokens: ${tokens.reasoning.toLocaleString()}`,
-      `Cache read: ${tokens.cache.read.toLocaleString()}`,
-      `Cache write: ${tokens.cache.write.toLocaleString()}`,
+      `Input tokens: ${(tokens.input ?? 0).toLocaleString()}`,
+      `Output tokens: ${(tokens.output ?? 0).toLocaleString()}`,
+      `Reasoning tokens: ${(tokens.reasoning ?? 0).toLocaleString()}`,
+      `Cache read: ${(tokens.cache?.read ?? 0).toLocaleString()}`,
+      `Cache write: ${(tokens.cache?.write ?? 0).toLocaleString()}`,
     ].join('\n');
     this.tokenItem.show();
   }

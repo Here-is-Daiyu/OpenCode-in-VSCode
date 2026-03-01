@@ -475,6 +475,8 @@ export class ServerManager implements vscode.Disposable {
     this.healthFailures = 0;
 
     this.healthTimer = setInterval(async () => {
+      if (this.state !== 'running') { return; }
+
       try {
         const health = await this.performHealthCheck();
         if (health) {

@@ -29,6 +29,7 @@ let serverManager: ServerManager | undefined;
 let client: OpenCodeClient | undefined;
 let statusBarManager: StatusBarManager | undefined;
 let sseAbort: AbortController | undefined;
+let sseStreamActive = false;
 let eventUnsubscribers: Array<() => void> = [];
 
 // ---------------------------------------------------------------------------
@@ -168,6 +169,7 @@ export async function deactivate(): Promise<void> {
     sseAbort.abort();
     sseAbort = undefined;
   }
+  sseStreamActive = false;
 
   // Unsubscribe all EventBus listeners
   for (const unsub of eventUnsubscribers) {
@@ -187,6 +189,12 @@ export async function deactivate(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function onServerStarted(ctx: CommandContext): Promise<void> {
+  // Verify the server is still running before connecting
+  if (!ctx.serverManager.isRunning()) {
+    ctx.logger.warn('Server no longer running when onServerStarted fired — aborting');
+    return;
+  }
+
   try {
     // Point the client at the running server
     ctx.client.setBaseUrl(ctx.serverManager.getBaseUrl());
@@ -241,12 +249,20 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
 // SSE event stream
 // ---------------------------------------------------------------------------
 
-function startEventStream(ctx: CommandContext): void {
+async function startEventStream(ctx: CommandContext): Promise<void> {
   try {
-    // Cancel any existing SSE subscription
+    // Abort previous stream if any
     if (sseAbort) {
       sseAbort.abort();
+      sseAbort = undefined;
     }
+
+    // Wait for previous stream to finish cleanup
+    if (sseStreamActive) {
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    sseStreamActive = true;
 
     sseAbort = ctx.client.subscribeToEvents((event: ServerEvent) => {
       routeSSEEvent(ctx, event);
@@ -254,6 +270,7 @@ function startEventStream(ctx: CommandContext): void {
 
     ctx.logger.debug('SSE event stream started');
   } catch (err) {
+    sseStreamActive = false;
     ctx.logger.error('Failed to start SSE event stream', err);
   }
 }
@@ -268,6 +285,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
   switch (type) {
     case 'session.created': {
       const session = properties as unknown as Session;
+      if (!session?.id) { break; }
       ctx.activeSessionId = session.id;
       ctx.eventBus.emit('session:created', session);
       ctx.chatProvider.postMessageToWebview({ type: 'session:created', data: session });
@@ -277,6 +295,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'session.updated': {
       const session = properties as unknown as Session;
+      if (!session?.id) { break; }
       ctx.eventBus.emit('session:updated', session);
       ctx.chatProvider.postMessageToWebview({ type: 'session:updated', data: session });
       refreshSessionsQuietly(ctx);
@@ -285,6 +304,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'session.deleted': {
       const payload = properties as unknown as { id: string };
+      if (!payload?.id) { break; }
       ctx.eventBus.emit('session:deleted', payload);
       ctx.chatProvider.postMessageToWebview({ type: 'session:deleted', data: payload });
       if (ctx.activeSessionId === payload.id) {
@@ -296,6 +316,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'session.status': {
       const status = properties as unknown as { sessionID: string; status: SessionStatus };
+      if (!status?.sessionID || !status?.status) { break; }
       ctx.eventBus.emit('session:status', status);
       ctx.chatProvider.postMessageToWebview({ type: 'session:status', data: status });
 
@@ -312,11 +333,12 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'message.updated': {
       const msg = properties as unknown as MessageWithParts;
+      if (!msg?.info) { break; }
       ctx.eventBus.emit('message:updated', msg);
       ctx.chatProvider.postMessageToWebview({ type: 'message:updated', data: msg });
 
       // Update token usage from assistant messages
-      if (msg.info.role === 'assistant' && 'tokens' in msg.info) {
+      if (msg.info.role === 'assistant' && 'tokens' in msg.info && msg.info.tokens) {
         ctx.statusBarManager.setTokenUsage(msg.info.tokens);
       }
       break;
@@ -324,6 +346,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'message.part.updated': {
       const part = properties as unknown as { sessionID: string; messageID: string; part: Part };
+      if (!part?.sessionID || !part?.messageID) { break; }
       ctx.eventBus.emit('message:partUpdated', part);
       ctx.chatProvider.postMessageToWebview({ type: 'message:partUpdated', data: part });
       break;
@@ -331,6 +354,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'message.removed': {
       const removed = properties as unknown as { sessionID: string; messageID: string };
+      if (!removed?.sessionID || !removed?.messageID) { break; }
       ctx.eventBus.emit('message:removed', removed);
       ctx.chatProvider.postMessageToWebview({ type: 'message:removed', data: removed });
       break;
@@ -338,6 +362,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'permission.asked': {
       const perm = properties as unknown as PermissionRequest;
+      if (!perm?.id) { break; }
       ctx.eventBus.emit('permission:asked', perm);
       ctx.chatProvider.postMessageToWebview({ type: 'permission:asked', data: perm });
       break;
@@ -345,6 +370,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'question.asked': {
       const question = properties as unknown as Question;
+      if (!question?.id) { break; }
       ctx.eventBus.emit('question:asked', question);
       ctx.chatProvider.postMessageToWebview({ type: 'question:asked', data: question });
       break;
@@ -352,6 +378,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'config.updated': {
       const config = properties as unknown as OpenCodeConfig;
+      if (!config) { break; }
       ctx.eventBus.emit('config:updated', config);
       ctx.chatProvider.postMessageToWebview({ type: 'config:updated', data: config });
       break;
@@ -359,6 +386,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'todo.updated': {
       const todos = properties as unknown as { sessionID: string; todos: Todo[] };
+      if (!todos?.sessionID) { break; }
       ctx.eventBus.emit('todo:updated', todos);
       ctx.chatProvider.postMessageToWebview({ type: 'todos:updated', data: todos.todos });
       break;
@@ -366,6 +394,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 
     case 'file.edited': {
       const file = properties as unknown as { path: string; content: string };
+      if (!file?.path) { break; }
       ctx.eventBus.emit('file:edited', file);
       break;
     }

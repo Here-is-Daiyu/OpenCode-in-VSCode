@@ -107,6 +107,12 @@ export interface ServerEvent {
 /** Default HTTP request timeout (30 seconds). */
 const DEFAULT_TIMEOUT_MS = 30_000;
 
+/** Delay before reconnecting after an SSE connection failure. */
+const SSE_RECONNECT_DELAY_MS = 3_000;
+
+/** Delay before reconnecting after an SSE stream ends normally. */
+const SSE_ERROR_RETRY_DELAY_MS = 1_000;
+
 /**
  * OpenCode REST API client.
  *
@@ -123,6 +129,21 @@ export class OpenCodeClient {
   private authHeader: string | null = null;
 
   constructor() {}
+
+  // ---------------------------------------------------------------------------
+  //  Validation
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Validate that a required ID parameter is not empty.
+   * @throws If the id is falsy or an empty string.
+   */
+  private requireId(id: string, name: string): string {
+    if (!id) {
+      throw new Error(`${name} is required`);
+    }
+    return id;
+  }
 
   // ---------------------------------------------------------------------------
   //  Configuration
@@ -280,6 +301,7 @@ export class OpenCodeClient {
    * `GET /session/:id`
    */
   async getSession(id: string): Promise<Session> {
+    this.requireId(id, 'Session ID');
     return this.get<Session>(`/session/${enc(id)}`);
   }
 
@@ -289,6 +311,7 @@ export class OpenCodeClient {
    * `DELETE /session/:id`
    */
   async deleteSession(id: string): Promise<boolean> {
+    this.requireId(id, 'Session ID');
     await this.delete(`/session/${enc(id)}`);
     return true;
   }
@@ -299,6 +322,7 @@ export class OpenCodeClient {
    * `PUT /session/:id`
    */
   async updateSession(id: string, data: UpdateSessionData): Promise<Session> {
+    this.requireId(id, 'Session ID');
     return this.put<Session>(`/session/${enc(id)}`, data);
   }
 
@@ -348,6 +372,7 @@ export class OpenCodeClient {
    * `POST /session/:id/abort`
    */
   async abortSession(id: string): Promise<boolean> {
+    this.requireId(id, 'Session ID');
     await this.post(`/session/${enc(id)}/abort`, {});
     return true;
   }
@@ -436,6 +461,7 @@ export class OpenCodeClient {
    * `GET /session/:id/message`
    */
   async listMessages(sessionID: string, limit?: number): Promise<MessageWithParts[]> {
+    this.requireId(sessionID, 'Session ID');
     const params = limit ? `?limit=${limit}` : '';
     return this.get<MessageWithParts[]>(`/session/${enc(sessionID)}/message${params}`);
   }
@@ -446,6 +472,7 @@ export class OpenCodeClient {
    * `POST /session/:id/prompt`
    */
   async sendMessage(sessionID: string, data: SendMessageData): Promise<MessageWithParts> {
+    this.requireId(sessionID, 'Session ID');
     return this.post<MessageWithParts>(`/session/${enc(sessionID)}/prompt`, data);
   }
 
@@ -456,6 +483,7 @@ export class OpenCodeClient {
    * `POST /session/:id/prompt_async`
    */
   async sendMessageAsync(sessionID: string, data: SendMessageData): Promise<void> {
+    this.requireId(sessionID, 'Session ID');
     await this.post(`/session/${enc(sessionID)}/prompt_async`, data);
   }
 
@@ -465,6 +493,8 @@ export class OpenCodeClient {
    * `GET /session/:id/message/:messageID`
    */
   async getMessage(sessionID: string, messageID: string): Promise<MessageWithParts> {
+    this.requireId(sessionID, 'Session ID');
+    this.requireId(messageID, 'Message ID');
     return this.get<MessageWithParts>(
       `/session/${enc(sessionID)}/message/${enc(messageID)}`,
     );
@@ -626,13 +656,13 @@ export class OpenCodeClient {
         if (!response.ok) {
           this.logger?.warn(`SSE connection failed: ${response.status} ${response.statusText}`);
           // Wait before reconnecting
-          await this.sleep(3000, signal);
+          await this.sleep(SSE_RECONNECT_DELAY_MS, signal);
           continue;
         }
 
         if (!response.body) {
           this.logger?.warn('SSE response has no body');
-          await this.sleep(3000, signal);
+          await this.sleep(SSE_RECONNECT_DELAY_MS, signal);
           continue;
         }
 
@@ -687,12 +717,12 @@ export class OpenCodeClient {
         // If we got here without abort, the stream ended — reconnect
         if (!signal.aborted) {
           this.logger?.debug('SSE stream ended — reconnecting…');
-          await this.sleep(1000, signal);
+          await this.sleep(SSE_ERROR_RETRY_DELAY_MS, signal);
         }
       } catch (err) {
         if (signal.aborted) { break; }
         this.logger?.warn('SSE error:', err instanceof Error ? err.message : String(err));
-        await this.sleep(3000, signal);
+        await this.sleep(SSE_RECONNECT_DELAY_MS, signal);
       }
     }
 
