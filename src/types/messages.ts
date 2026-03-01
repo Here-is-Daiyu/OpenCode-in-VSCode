@@ -11,6 +11,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'session:created'; data: Session }
   | { type: 'session:updated'; data: Session }
   | { type: 'session:deleted'; data: { id: string } }
+  | { type: 'session:cleared'; data: undefined }
   | { type: 'session:status'; data: { sessionID: string; status: SessionStatus } }
   | { type: 'message:updated'; data: MessageWithParts }
   | { type: 'message:partUpdated'; data: { sessionID: string; messageID: string; part: import('./opencode').Part } }
