@@ -1,13 +1,21 @@
+# Build & dev tooling
 .vscode/**
+.git/**
 src/**
 webview-ui/src/**
 webview-ui/node_modules/**
 webview-ui/package.json
+webview-ui/package-lock.json
 webview-ui/tsconfig.json
 webview-ui/vite.config.ts
 docs/**
+docsresearch/**
 node_modules/**
 .gitignore
 tsconfig.json
 esbuild.mjs
+generate-icon.js
 **/*.map
+
+# Development docs (not for users)
+AGENTS.md

@@ -5,14 +5,30 @@
   "version": "0.1.0",
   "publisher": "opencode-community",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/opencode-community/opencode-vscode"
+  },
   "engines": {
     "vscode": "^1.94.0"
   },
-  "categories": ["AI", "Chat", "Programming Languages"],
-  "keywords": ["ai", "opencode", "coding assistant", "chat", "code generation"],
+  "categories": [
+    "AI",
+    "Chat",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "opencode",
+    "coding assistant",
+    "chat",
+    "code generation"
+  ],
   "icon": "media/icon.png",
   "main": "./out/extension.js",
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "contributes": {
     "viewsContainers": {
       "activitybar": [
@@ -43,42 +59,164 @@
       ]
     },
     "commands": [
-      { "command": "opencode.newSession", "title": "New Session", "category": "OpenCode", "icon": "$(add)" },
-      { "command": "opencode.deleteSession", "title": "Delete Session", "category": "OpenCode", "icon": "$(trash)" },
-      { "command": "opencode.refreshSessions", "title": "Refresh Sessions", "category": "OpenCode", "icon": "$(refresh)" },
-      { "command": "opencode.forkSession", "title": "Fork Session", "category": "OpenCode", "icon": "$(git-branch)" },
-      { "command": "opencode.shareSession", "title": "Share Session", "category": "OpenCode", "icon": "$(link)" },
-      { "command": "opencode.abortSession", "title": "Abort Current Session", "category": "OpenCode", "icon": "$(debug-stop)" },
-      { "command": "opencode.undoMessage", "title": "Undo Last Message", "category": "OpenCode", "icon": "$(discard)" },
-      { "command": "opencode.redoMessage", "title": "Redo Message", "category": "OpenCode", "icon": "$(redo)" },
-      { "command": "opencode.startServer", "title": "Start Server", "category": "OpenCode" },
-      { "command": "opencode.stopServer", "title": "Stop Server", "category": "OpenCode" },
-      { "command": "opencode.restartServer", "title": "Restart Server", "category": "OpenCode" },
-      { "command": "opencode.selectModel", "title": "Select Model", "category": "OpenCode", "icon": "$(symbol-enum)" },
-      { "command": "opencode.selectAgent", "title": "Select Agent", "category": "OpenCode" },
-      { "command": "opencode.openSettings", "title": "Open Settings", "category": "OpenCode", "icon": "$(gear)" },
-      { "command": "opencode.addFileToPrompt", "title": "Add File to Prompt", "category": "OpenCode" },
-      { "command": "opencode.addSelectionToPrompt", "title": "Add Selection to Prompt", "category": "OpenCode" },
-      { "command": "opencode.openTerminal", "title": "Open Terminal", "category": "OpenCode" },
-      { "command": "opencode.showDiff", "title": "Show Session Diff", "category": "OpenCode" },
-      { "command": "opencode.focusChat", "title": "Focus Chat Panel", "category": "OpenCode" },
-      { "command": "opencode.compactSession", "title": "Compact Session", "category": "OpenCode" }
+      {
+        "command": "opencode.newSession",
+        "title": "New Session",
+        "category": "OpenCode",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencode.deleteSession",
+        "title": "Delete Session",
+        "category": "OpenCode",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "opencode.refreshSessions",
+        "title": "Refresh Sessions",
+        "category": "OpenCode",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencode.forkSession",
+        "title": "Fork Session",
+        "category": "OpenCode",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "opencode.shareSession",
+        "title": "Share Session",
+        "category": "OpenCode",
+        "icon": "$(link)"
+      },
+      {
+        "command": "opencode.abortSession",
+        "title": "Abort Current Session",
+        "category": "OpenCode",
+        "icon": "$(debug-stop)"
+      },
+      {
+        "command": "opencode.undoMessage",
+        "title": "Undo Last Message",
+        "category": "OpenCode",
+        "icon": "$(discard)"
+      },
+      {
+        "command": "opencode.redoMessage",
+        "title": "Redo Message",
+        "category": "OpenCode",
+        "icon": "$(redo)"
+      },
+      {
+        "command": "opencode.startServer",
+        "title": "Start Server",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.stopServer",
+        "title": "Stop Server",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.restartServer",
+        "title": "Restart Server",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.selectModel",
+        "title": "Select Model",
+        "category": "OpenCode",
+        "icon": "$(symbol-enum)"
+      },
+      {
+        "command": "opencode.selectAgent",
+        "title": "Select Agent",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.openSettings",
+        "title": "Open Settings",
+        "category": "OpenCode",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "opencode.addFileToPrompt",
+        "title": "Add File to Prompt",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.addSelectionToPrompt",
+        "title": "Add Selection to Prompt",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.openTerminal",
+        "title": "Open Terminal",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.showDiff",
+        "title": "Show Session Diff",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.focusChat",
+        "title": "Focus Chat Panel",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.compactSession",
+        "title": "Compact Session",
+        "category": "OpenCode"
+      }
     ],
     "menus": {
       "view/title": [
-        { "command": "opencode.newSession", "when": "view == opencode.sessions", "group": "navigation" },
-        { "command": "opencode.refreshSessions", "when": "view == opencode.sessions", "group": "navigation" },
-        { "command": "opencode.openSettings", "when": "view == opencode.status", "group": "navigation" }
+        {
+          "command": "opencode.newSession",
+          "when": "view == opencode.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.refreshSessions",
+          "when": "view == opencode.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.openSettings",
+          "when": "view == opencode.status",
+          "group": "navigation"
+        }
       ],
       "editor/context": [
-        { "command": "opencode.addSelectionToPrompt", "when": "editorHasSelection", "group": "opencode" },
-        { "command": "opencode.addFileToPrompt", "group": "opencode" }
+        {
+          "command": "opencode.addSelectionToPrompt",
+          "when": "editorHasSelection",
+          "group": "opencode"
+        },
+        {
+          "command": "opencode.addFileToPrompt",
+          "group": "opencode"
+        }
       ]
     },
     "keybindings": [
-      { "command": "opencode.focusChat", "key": "ctrl+shift+o", "mac": "cmd+shift+o" },
-      { "command": "opencode.newSession", "key": "ctrl+shift+n", "mac": "cmd+shift+n", "when": "opencode.serverConnected" },
-      { "command": "opencode.abortSession", "key": "escape", "when": "opencode.sessionBusy" }
+      {
+        "command": "opencode.focusChat",
+        "key": "ctrl+shift+o",
+        "mac": "cmd+shift+o"
+      },
+      {
+        "command": "opencode.newSession",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n",
+        "when": "opencode.serverConnected"
+      },
+      {
+        "command": "opencode.abortSession",
+        "key": "escape",
+        "when": "opencode.sessionBusy"
+      }
     ],
     "configuration": {
       "title": "OpenCode",
@@ -128,7 +266,11 @@
         "opencode.chat.showToolCalls": {
           "type": "string",
           "default": "collapsed",
-          "enum": ["expanded", "collapsed", "hidden"],
+          "enum": [
+            "expanded",
+            "collapsed",
+            "hidden"
+          ],
           "description": "Tool call display mode"
         },
         "opencode.editor.showInlineDiffs": {
@@ -163,6 +305,7 @@
     "concurrently": "^9.0.0",
     "esbuild": "^0.25.0",
     "eslint": "^9.0.0",
+    "sharp": "^0.34.5",
     "typescript": "^5.8.0"
   },
   "dependencies": {

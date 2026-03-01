@@ -4,7 +4,6 @@
     {
       "type": "npm",
       "script": "dev:extension",
-      "problemMatcher": ["$esbuild-watch"],
       "isBackground": true,
       "presentation": {
         "reveal": "never"
@@ -13,7 +12,38 @@
         "kind": "build",
         "isDefault": true
       },
-      "label": "npm: dev:extension"
+      "label": "npm: dev:extension",
+      "problemMatcher": {
+        "owner": "esbuild",
+        "fileLocation": ["relative", "${workspaceFolder}"],
+        "pattern": {
+          "regexp": "^✘ \\[ERROR\\] (.+?):(\\d+):(\\d+): (.+)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "message": 4
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "^\\[esbuild\\]",
+          "endsPattern": "^\\[esbuild\\] Build complete|Done in"
+        }
+      }
+    },
+    {
+      "type": "npm",
+      "script": "build:webview",
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "silent"
+      },
+      "label": "npm: build:webview"
+    },
+    {
+      "label": "Build All (Debug)",
+      "dependsOn": ["npm: build:webview", "npm: dev:extension"],
+      "dependsOrder": "sequence",
+      "problemMatcher": []
     }
   ]
 }
