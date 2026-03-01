@@ -92,7 +92,7 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 
 | Method | Path | Body / Query | Response |
 |--------|------|--------------|----------|
-| GET | `/session/:id/message` | query: `?limit` | `{ info: Message, parts: Part[] }[]` |
+| GET | `/session/:id/message` | query: `?limit` | `{ info: Message, parts: Part[] }[]` — see [Message Fetching Notes](#message-fetching-notes) |
 | POST | `/session/:id/message` | `{ messageID?, model?, agent?, noReply?, system?, tools?, parts }` | `{ info: Message, parts: Part[] }` |
 | GET | `/session/:id/message/:messageID` | — | `{ info: Message, parts: Part[] }` |
 | POST | `/session/:id/prompt_async` | same body as `/message` | `204 No Content` |
@@ -237,6 +237,52 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 
 ---
 
+## Message Fetching Notes
+
+### `GET /session/:id/message`
+
+Important behavioral details discovered through live server probing:
+
+#### Timestamp Format
+
+All `time.created` and `time.completed` fields across Session, UserMessage, and AssistantMessage are **epoch milliseconds** (not seconds). Example observed value: `1772332788695`.
+
+To convert: `new Date(info.time.created)` works directly in JavaScript (no `* 1000` needed).
+
+#### Without `?limit=` — Full History
+
+Calling `GET /session/:id/message` **without** a `?limit=` query parameter returns the **complete message history** for that session.
+
+- Long-running sessions can have **300+ messages**
+- Response payload can be **4MB+** in size
+- All messages are returned in a flat array of `{ info: Message, parts: Part[] }` objects
+
+#### With `?limit=N` — Newest N Messages
+
+Adding `?limit=N` returns the **newest N messages**, but still sorted in **ascending order** (oldest first).
+
+```
+GET /session/abc123/message?limit=20
+→ Returns the 20 most recent messages, sorted oldest→newest
+```
+
+This is ideal for initial page load — fetch the last ~50 messages, then load earlier history on demand (scroll-up pagination).
+
+#### Message Ordering
+
+Messages are **always sorted ascending by `info.time.created`** (oldest first), regardless of whether `?limit=` is used. This matches natural chat display order (scroll down = newer).
+
+#### Large Payload Considerations for Webview Integration
+
+| Concern | Detail |
+|---------|--------|
+| **Serialization cost** | 4MB+ JSON payloads take measurable time to serialize/deserialize through `postMessage` |
+| **Memory pressure** | Webview holds full message list in memory; consider pagination or virtualization |
+| **Initial load** | Use `?limit=50` for initial session load, then lazy-load earlier messages on scroll |
+| **Incremental updates** | After initial load, use SSE events (`EventMessagePartDelta`, etc.) for real-time updates — don't re-fetch full history |
+
+---
+
 ## TypeScript Types
 
 ### Session
@@ -253,6 +299,8 @@ type Session = {
   title: string
   version: string
   time: { created: number; updated: number; compacting?: number; archived?: number }
+  // NOTE: All `time` fields are epoch MILLISECONDS (not seconds).
+  // Example observed value: 1772332788695 (≈ year 2026 in ms)
   permission?: PermissionRuleset
   revert?: { messageID: string; partID?: string; snapshot?: string; diff?: string }
 }
@@ -266,6 +314,8 @@ type Message = UserMessage | AssistantMessage
 type UserMessage = {
   id: string; sessionID: string; role: "user"
   time: { created: number }
+  // NOTE: `time.created` is epoch MILLISECONDS (not seconds).
+  // Example: 1772332788695
   format?: OutputFormat
   agent: string
   model: { providerID: string; modelID: string }
@@ -275,7 +325,7 @@ type UserMessage = {
 
 type AssistantMessage = {
   id: string; sessionID: string; role: "assistant"
-  time: { created: number; completed?: number }
+  time: { created: number; completed?: number }  // epoch MILLISECONDS
   error?: ProviderAuthError | UnknownError
   parentID: string
   modelID: string; providerID: string

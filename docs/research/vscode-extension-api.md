@@ -331,8 +331,131 @@ export default defineConfig({
 - Uses **React + Vite** for webview rendering
 - Registers sidebar via `registerWebviewViewProvider`
 - Separate build pipelines for extension and webview
-- Good reference for:
-  - Chat UI patterns in VS Code
-  - Message streaming in webviews
-  - Integration with VS Code's sidebar system
-  - State management between extension and webview
+  - Good reference for:
+    - Chat UI patterns in VS Code
+    - Message streaming in webviews
+    - Integration with VS Code's sidebar system
+    - State management between extension and webview
+
+---
+
+## Webview postMessage Considerations
+
+Practical findings and patterns for reliable extension ↔ webview communication, especially with large payloads and async state.
+
+### postMessage Return Value
+
+`webview.postMessage(message)` returns `Thenable<boolean>`:
+- Resolves to `true` if the message was delivered
+- Resolves to `false` if the webview is disposed or not ready
+- **Should be awaited or `.then()` handled** — fire-and-forget can silently lose messages
+
+```typescript
+// ❌ Fire-and-forget — message may be lost silently
+webviewView.webview.postMessage({ type: 'session:loaded', data })
+
+// ✅ Await and handle failure
+const delivered = await webviewView.webview.postMessage({ type: 'session:loaded', data })
+if (!delivered) {
+  // Webview not ready — queue for resend when ready
+  this.pendingMessages.push({ type: 'session:loaded', data })
+}
+```
+
+### Large Payload Performance
+
+Sessions with long histories (300+ messages) can produce **4MB+ payloads** when sent via `postMessage`:
+
+| Payload Size | Approximate Latency | Risk |
+|-------------|---------------------|------|
+| < 100KB | Negligible | None |
+| 100KB–1MB | Low (~10-50ms) | None |
+| 1MB–4MB | Moderate (~50-200ms) | UI may stutter |
+| > 4MB | High (200ms+) | May fail on low-memory machines |
+
+**Mitigation strategies:**
+- Use `?limit=50` on initial message fetch, lazy-load history on scroll
+- Send large payloads in chunks if needed
+- Consider using `vscode.setState()` in webview for persistence (survives hide/show, avoids re-send)
+
+### Session Switching Race Conditions
+
+When users rapidly switch sessions, multiple async `session:loaded` responses can be in-flight simultaneously. Without protection, a stale response can overwrite the current session's data.
+
+**Problem scenario:**
+1. User selects Session A → extension starts fetching Session A messages
+2. User quickly switches to Session B → extension starts fetching Session B messages
+3. Session A response arrives → webview displays Session A data (WRONG!)
+4. Session B response arrives → webview displays Session B data (correct, but user saw a flash)
+
+**Solution — Nonce/Token pattern:**
+
+```typescript
+// Extension side
+private requestNonce = 0
+
+async switchSession(sessionId: string) {
+  const nonce = ++this.requestNonce
+  const messages = await this.fetchMessages(sessionId)
+
+  // Only send if this is still the latest request
+  if (nonce === this.requestNonce) {
+    webview.postMessage({
+      type: 'session:loaded',
+      nonce,
+      sessionId,
+      data: messages
+    })
+  }
+}
+```
+
+```typescript
+// Webview side — additional safety check
+window.addEventListener('message', (event) => {
+  const msg = event.data
+  if (msg.type === 'session:loaded') {
+    // Only apply if sessionId matches what we're currently viewing
+    if (msg.sessionId === currentSessionId) {
+      setMessages(msg.data)
+    }
+  }
+})
+```
+
+### Caching for Webview Ready/Visibility Resend
+
+When the webview becomes visible (or is first created), it sends a `webview:ready` message. The extension should resend essential state. **Cache the last known values** to avoid re-fetching:
+
+```typescript
+class ChatViewProvider implements vscode.WebviewViewProvider {
+  // Cached state for resend
+  private lastServerStatus: ServerStatus | null = null
+  private lastSessionData: SessionLoadedPayload | null = null
+
+  handleServerStatus(status: ServerStatus) {
+    this.lastServerStatus = status
+    this.postMessage({ type: 'server:status', data: status })
+  }
+
+  handleSessionLoaded(data: SessionLoadedPayload) {
+    this.lastSessionData = data
+    this.postMessage({ type: 'session:loaded', data })
+  }
+
+  // Called when webview sends 'webview:ready'
+  onWebviewReady() {
+    if (this.lastServerStatus) {
+      this.postMessage({ type: 'server:status', data: this.lastServerStatus })
+    }
+    if (this.lastSessionData) {
+      this.postMessage({ type: 'session:loaded', data: this.lastSessionData })
+    }
+  }
+}
+```
+
+This pattern ensures the webview always has up-to-date state, even after:
+- Tab switching (webview hidden → shown)
+- VS Code window losing/regaining focus
+- Webview being disposed and re-created (without `retainContextWhenHidden`)
