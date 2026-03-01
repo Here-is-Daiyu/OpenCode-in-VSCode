@@ -8,6 +8,10 @@ import type { MessageWithParts } from '../types/opencode';
 import type { OpenCodeClient } from '../services/openCodeClient';
 import type { Logger } from '../services/logger';
 
+type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:status' }>;
+type SessionLoadedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:loaded' }>;
+type SessionCreatedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:created' }>;
+
 /**
  * Provides the chat WebviewView for the sidebar panel.
  * Loads a Vite-built React app and handles bidirectional message passing.
@@ -20,6 +24,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private disposables: vscode.Disposable[] = [];
   private client?: OpenCodeClient;
   private logger?: Logger;
+
+  // Cache latest state so it can be re-sent when the webview becomes ready/visible.
+  private lastServerStatus?: ServerStatusMessage['data'];
+  private lastSessionLoaded?: SessionLoadedMessage['data'];
+  // Optional: helps keep provider-side currentSessionID correct even if webview isn't ready.
+  private lastSessionCreated?: SessionCreatedMessage['data'];
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -80,6 +90,31 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * Returns true if the message was sent, false if the webview is not available.
    */
   postMessage(message: ExtensionToWebviewMessage): boolean {
+    // Cache important state even if the webview isn't available/ready yet.
+    switch (message.type) {
+      case 'server:status':
+        this.lastServerStatus = message.data;
+        break;
+      case 'session:loaded':
+        this.lastSessionLoaded = message.data;
+        this.currentSessionID = message.data.session.id;
+        break;
+      case 'session:created':
+        this.lastSessionCreated = message.data;
+        this.currentSessionID = message.data.id;
+        break;
+      case 'session:cleared':
+        this.lastSessionLoaded = undefined;
+        this.currentSessionID = undefined;
+        break;
+      case 'session:deleted':
+        if (this.currentSessionID && message.data.id === this.currentSessionID) {
+          this.lastSessionLoaded = undefined;
+          this.currentSessionID = undefined;
+        }
+        break;
+    }
+
     if (this.view) {
       this.view.webview.postMessage(message);
       return true;
@@ -306,20 +341,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * Called when the webview sends the 'ready' message
    */
   private onWebviewReady(): void {
-    // Send initial connection status
-    // The actual server status will be forwarded by the extension
-    // when the server manager establishes a connection
+    // Send latest known connection + session state.
     this.postMessage({
       type: 'server:status',
-      data: { connected: false },
+      data: this.lastServerStatus ?? { connected: false },
     });
+
+    if (this.lastSessionLoaded) {
+      this.postMessage({
+        type: 'session:loaded',
+        data: this.lastSessionLoaded,
+      });
+    }
   }
 
   /**
    * Called when the webview becomes visible again
    */
   private onWebviewVisible(): void {
-    // Could resend current session state here if needed
+    // Safe, idempotent re-sync when the view becomes visible.
+    if (this.lastServerStatus) {
+      this.postMessage({
+        type: 'server:status',
+        data: this.lastServerStatus,
+      });
+    }
+
+    if (this.lastSessionLoaded) {
+      this.postMessage({
+        type: 'session:loaded',
+        data: this.lastSessionLoaded,
+      });
+    }
   }
 
   /**
