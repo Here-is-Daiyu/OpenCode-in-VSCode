@@ -58,6 +58,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const sessionProvider = new SessionTreeProvider();
   const statusProvider = new StatusTreeProvider();
   const settingsProvider = new SettingsViewProvider(context.extensionUri);
+  settingsProvider.setClient(client);
+  settingsProvider.setLogger(logger);
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(

@@ -14,6 +14,8 @@ import type {
   Question,
   Part,
   SessionStatus,
+  MCPStatus,
+  MCPServerConfig,
 } from './opencode';
 
 // Extension -> Webview messages
@@ -57,3 +59,22 @@ export type WebviewToExtensionMessage =
   | { type: 'diff:show'; data: { path: string; original: string; modified: string } }
   | { type: 'command:execute'; data: { command: string; args?: string } }
   | { type: 'ready' };
+
+// Settings panel messages (Webview → Extension)
+export type SettingsToExtensionMessage =
+  | { type: 'settings:get' }
+  | { type: 'settings:update'; data: { section: string; key: string; value: unknown } }
+  | { type: 'settings:opencode:get' }
+  | { type: 'settings:opencode:update'; data: Partial<OpenCodeConfig> }
+  | { type: 'settings:mcp:add'; data: { name: string; config: MCPServerConfig } }
+  | { type: 'settings:mcp:remove'; data: { name: string } }
+  | { type: 'settings:mcp:toggle'; data: { name: string; enabled: boolean } }
+  | { type: 'ready' };
+
+// Settings panel messages (Extension → Webview)
+export type ExtensionToSettingsMessage =
+  | { type: 'settings:loaded'; data: { vscode: Record<string, unknown>; opencode: OpenCodeConfig } }
+  | { type: 'settings:updated'; data: { section: string; key: string; value: unknown } }
+  | { type: 'providers:loaded'; data: { providers: Provider[]; connected: string[] } }
+  | { type: 'mcp:status'; data: Record<string, MCPStatus> }
+  | { type: 'error'; data: { message: string } };
