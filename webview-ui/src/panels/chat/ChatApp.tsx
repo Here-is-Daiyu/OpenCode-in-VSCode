@@ -40,6 +40,8 @@ export function ChatApp() {
   const removeMessage = useChatStore((s) => s.removeMessage);
   const setPermission = useChatStore((s) => s.setPermission);
   const setQuestion = useChatStore((s) => s.setQuestion);
+  const rollbackOptimisticMessage = useChatStore((s) => s.rollbackOptimisticMessage);
+  const confirmOptimisticMessage = useChatStore((s) => s.confirmOptimisticMessage);
 
   // Handle messages from extension host
   const handleExtensionMessage = useCallback(
@@ -102,6 +104,15 @@ export function ChatApp() {
           setError(message.data.message);
           break;
 
+        case 'chat:sendResult':
+          if (message.data.success) {
+            confirmOptimisticMessage();
+          } else {
+            rollbackOptimisticMessage();
+            setError(message.data.error ?? 'Failed to send message');
+          }
+          break;
+
         case 'theme:changed':
         case 'config:updated':
         case 'providers:updated':
@@ -123,6 +134,8 @@ export function ChatApp() {
       removeMessage,
       setPermission,
       setQuestion,
+      rollbackOptimisticMessage,
+      confirmOptimisticMessage,
     ]
   );
 
@@ -145,6 +158,7 @@ export function ChatApp() {
   const getStatusDotClass = () => {
     if (!connected) return 'chat-header__status-dot--disconnected';
     if (sessionStatus === 'active') return 'chat-header__status-dot--active';
+    if (sessionStatus === 'retry') return 'chat-header__status-dot--retry';
     return 'chat-header__status-dot--connected';
   };
 
@@ -152,6 +166,7 @@ export function ChatApp() {
     if (!connected) return 'Disconnected';
     if (sessionStatus === 'active') return 'Generating...';
     if (sessionStatus === 'compacting') return 'Compacting...';
+    if (sessionStatus === 'retry') return 'Retrying...';
     if (sessionStatus === 'error') return 'Error';
     return 'Connected';
   };

@@ -14,13 +14,12 @@ export function ChatInput() {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const attachedImages = useChatStore((s) => s.attachedImages);
   const connected = useChatStore((s) => s.connected);
-  const currentSession = useChatStore((s) => s.currentSession);
   const setInputText = useChatStore((s) => s.setInputText);
   const removeImage = useChatStore((s) => s.removeImage);
   const addImage = useChatStore((s) => s.addImage);
-  const clearImages = useChatStore((s) => s.clearImages);
+  const addOptimisticMessage = useChatStore((s) => s.addOptimisticMessage);
 
-  const canSend = connected && inputText.trim().length > 0 && !isStreaming;
+  const canSend = connected && inputText.trim().length > 0;
 
   // Auto-resize textarea
   const adjustHeight = useCallback(() => {
@@ -41,24 +40,20 @@ export function ChatInput() {
     const text = inputText.trim();
     const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
 
-    // If no current session, create one first then send
-    if (!currentSession) {
-      postMessage({ type: 'session:create' });
-    }
+    // Optimistic update: add message to store immediately, clear input
+    addOptimisticMessage(text, images);
 
+    // Fire-and-forget: send to extension host
     postMessage({
       type: 'chat:send',
       data: { text, images },
     });
 
-    setInputText('');
-    clearImages();
-
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [canSend, inputText, attachedImages, currentSession, setInputText, clearImages]);
+  }, [canSend, inputText, attachedImages, addOptimisticMessage]);
 
   const handleStop = useCallback(() => {
     postMessage({ type: 'chat:abort' });
@@ -188,17 +183,19 @@ export function ChatInput() {
           rows={1}
         />
 
-        {isStreaming ? (
-          <button
-            className="chat-input__stop-btn"
-            onClick={handleStop}
-            title="Stop generation"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <rect x="3" y="3" width="10" height="10" rx="1" />
-            </svg>
-          </button>
-        ) : (
+        {/* Action buttons */}
+        <div className="chat-input__actions">
+          {isStreaming && (
+            <button
+              className="chat-input__stop-btn"
+              onClick={handleStop}
+              title="Stop generation"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                <rect x="3" y="3" width="10" height="10" rx="1" />
+              </svg>
+            </button>
+          )}
           <button
             className="chat-input__send-btn"
             onClick={handleSend}
@@ -209,7 +206,7 @@ export function ChatInput() {
               <path d="M1 1.5l14 6.5-14 6.5V9l8-1-8-1V1.5z" />
             </svg>
           </button>
-        )}
+        </div>
       </div>
 
       <div className="chat-input__hint">

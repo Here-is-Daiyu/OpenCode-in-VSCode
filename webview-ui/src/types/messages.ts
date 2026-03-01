@@ -36,6 +36,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'todos:updated'; data: Todo[] }
   | { type: 'server:status'; data: { connected: boolean; version?: string } }
   | { type: 'error'; data: { message: string; details?: string } }
+  | { type: 'chat:sendResult'; data: { success: boolean; messageID?: string; error?: string } }
   | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } };
 
 // Webview -> Extension messages

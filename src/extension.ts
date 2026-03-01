@@ -55,6 +55,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // 5. Register providers
   const chatProvider = new ChatViewProvider(context.extensionUri);
+  chatProvider.setClient(client);
+  chatProvider.setLogger(logger);
   const sessionProvider = new SessionTreeProvider(eventBus);
   const statusProvider = new StatusTreeProvider(eventBus);
   const settingsProvider = new SettingsViewProvider(context.extensionUri);
@@ -266,6 +268,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
   switch (type) {
     case 'session.created': {
       const session = properties as unknown as Session;
+      ctx.activeSessionId = session.id;
       ctx.eventBus.emit('session:created', session);
       ctx.chatProvider.postMessageToWebview({ type: 'session:created', data: session });
       refreshSessionsQuietly(ctx);
