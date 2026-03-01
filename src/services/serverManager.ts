@@ -80,7 +80,7 @@ export class ServerManager implements vscode.Disposable {
     );
 
     // Build command arguments
-    const args = ['serve', '--host', config.hostname];
+    const args = ['serve', '--print-logs', '--hostname', config.hostname];
     if (config.port > 0) {
       args.push('--port', String(config.port));
     }
