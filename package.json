@@ -1,0 +1,171 @@
+{
+  "name": "opencode-vscode",
+  "displayName": "OpenCode for VSCode",
+  "description": "Full-featured OpenCode AI coding assistant integration for Visual Studio Code",
+  "version": "0.1.0",
+  "publisher": "opencode-community",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.94.0"
+  },
+  "categories": ["AI", "Chat", "Programming Languages"],
+  "keywords": ["ai", "opencode", "coding assistant", "chat", "code generation"],
+  "icon": "media/icon.png",
+  "main": "./out/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "opencode",
+          "title": "OpenCode",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "opencode": [
+        {
+          "id": "opencode.chatView",
+          "name": "Chat",
+          "type": "webview"
+        },
+        {
+          "id": "opencode.sessions",
+          "name": "Sessions",
+          "type": "tree"
+        },
+        {
+          "id": "opencode.status",
+          "name": "Status",
+          "type": "tree"
+        }
+      ]
+    },
+    "commands": [
+      { "command": "opencode.newSession", "title": "New Session", "category": "OpenCode", "icon": "$(add)" },
+      { "command": "opencode.deleteSession", "title": "Delete Session", "category": "OpenCode", "icon": "$(trash)" },
+      { "command": "opencode.refreshSessions", "title": "Refresh Sessions", "category": "OpenCode", "icon": "$(refresh)" },
+      { "command": "opencode.forkSession", "title": "Fork Session", "category": "OpenCode", "icon": "$(git-branch)" },
+      { "command": "opencode.shareSession", "title": "Share Session", "category": "OpenCode", "icon": "$(link)" },
+      { "command": "opencode.abortSession", "title": "Abort Current Session", "category": "OpenCode", "icon": "$(debug-stop)" },
+      { "command": "opencode.undoMessage", "title": "Undo Last Message", "category": "OpenCode", "icon": "$(discard)" },
+      { "command": "opencode.redoMessage", "title": "Redo Message", "category": "OpenCode", "icon": "$(redo)" },
+      { "command": "opencode.startServer", "title": "Start Server", "category": "OpenCode" },
+      { "command": "opencode.stopServer", "title": "Stop Server", "category": "OpenCode" },
+      { "command": "opencode.restartServer", "title": "Restart Server", "category": "OpenCode" },
+      { "command": "opencode.selectModel", "title": "Select Model", "category": "OpenCode", "icon": "$(symbol-enum)" },
+      { "command": "opencode.selectAgent", "title": "Select Agent", "category": "OpenCode" },
+      { "command": "opencode.openSettings", "title": "Open Settings", "category": "OpenCode", "icon": "$(gear)" },
+      { "command": "opencode.addFileToPrompt", "title": "Add File to Prompt", "category": "OpenCode" },
+      { "command": "opencode.addSelectionToPrompt", "title": "Add Selection to Prompt", "category": "OpenCode" },
+      { "command": "opencode.openTerminal", "title": "Open Terminal", "category": "OpenCode" },
+      { "command": "opencode.showDiff", "title": "Show Session Diff", "category": "OpenCode" },
+      { "command": "opencode.focusChat", "title": "Focus Chat Panel", "category": "OpenCode" },
+      { "command": "opencode.compactSession", "title": "Compact Session", "category": "OpenCode" }
+    ],
+    "menus": {
+      "view/title": [
+        { "command": "opencode.newSession", "when": "view == opencode.sessions", "group": "navigation" },
+        { "command": "opencode.refreshSessions", "when": "view == opencode.sessions", "group": "navigation" },
+        { "command": "opencode.openSettings", "when": "view == opencode.status", "group": "navigation" }
+      ],
+      "editor/context": [
+        { "command": "opencode.addSelectionToPrompt", "when": "editorHasSelection", "group": "opencode" },
+        { "command": "opencode.addFileToPrompt", "group": "opencode" }
+      ]
+    },
+    "keybindings": [
+      { "command": "opencode.focusChat", "key": "ctrl+shift+o", "mac": "cmd+shift+o" },
+      { "command": "opencode.newSession", "key": "ctrl+shift+n", "mac": "cmd+shift+n", "when": "opencode.serverConnected" },
+      { "command": "opencode.abortSession", "key": "escape", "when": "opencode.sessionBusy" }
+    ],
+    "configuration": {
+      "title": "OpenCode",
+      "properties": {
+        "opencode.server.hostname": {
+          "type": "string",
+          "default": "127.0.0.1",
+          "description": "OpenCode server hostname"
+        },
+        "opencode.server.port": {
+          "type": "number",
+          "default": 0,
+          "description": "OpenCode server port (0 = auto-detect)"
+        },
+        "opencode.server.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start OpenCode server on activation"
+        },
+        "opencode.server.executablePath": {
+          "type": "string",
+          "default": "opencode",
+          "description": "Path to the opencode CLI executable"
+        },
+        "opencode.chat.fontSize": {
+          "type": "number",
+          "default": 14,
+          "minimum": 10,
+          "maximum": 24,
+          "description": "Chat panel font size"
+        },
+        "opencode.chat.showTimestamps": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show timestamps on messages"
+        },
+        "opencode.chat.wordWrap": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable word wrap in chat"
+        },
+        "opencode.chat.maxImageSize": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum image attachment size in MB"
+        },
+        "opencode.chat.showToolCalls": {
+          "type": "string",
+          "default": "collapsed",
+          "enum": ["expanded", "collapsed", "hidden"],
+          "description": "Tool call display mode"
+        },
+        "opencode.editor.showInlineDiffs": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show inline diff decorations in editor"
+        },
+        "opencode.editor.codeLensEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show AI CodeLens suggestions"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "node esbuild.mjs --production && npm run build:webview",
+    "build:extension": "node esbuild.mjs --production",
+    "build:webview": "cd webview-ui && npx vite build",
+    "dev": "concurrently \"node esbuild.mjs --watch\" \"cd webview-ui && npx vite build --watch\"",
+    "dev:extension": "node esbuild.mjs --watch",
+    "dev:webview": "cd webview-ui && npx vite build --watch",
+    "lint": "eslint src/ webview-ui/src/",
+    "typecheck": "tsc --noEmit && cd webview-ui && npx tsc --noEmit",
+    "package": "npx @vscode/vsce package",
+    "test": "node --experimental-vm-modules node_modules/vitest/vitest.mjs run"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.94.0",
+    "concurrently": "^9.0.0",
+    "esbuild": "^0.25.0",
+    "eslint": "^9.0.0",
+    "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.2.15"
+  }
+}
