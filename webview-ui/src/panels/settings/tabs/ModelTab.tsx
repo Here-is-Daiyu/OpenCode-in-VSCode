@@ -43,14 +43,14 @@ export function ModelTab({
   const currentModelObj = useMemo(() => {
     for (const provider of providers) {
       if (provider.id === currentProviderID) {
-        return provider.models.find((m) => m.id === currentModelID);
+        return Object.values(provider.models).find((m) => m.id === currentModelID);
       }
     }
     return undefined;
   }, [providers, currentProviderID, currentModelID]);
 
   // Check if the current model supports reasoning
-  const supportsReasoning = currentModelObj?.reasoning ?? false;
+  const supportsReasoning = currentModelObj?.capabilities?.reasoning ?? false;
 
   // Select a model
   const handleModelSelect = useCallback(
@@ -86,7 +86,7 @@ export function ModelTab({
     const opts: DropdownOption[] = [];
     for (const provider of sortedProviders) {
       const isConnected = connectedProviders.includes(provider.id);
-      for (const model of provider.models) {
+      for (const model of Object.values(provider.models)) {
         opts.push({
           value: `${provider.id}/${model.id}`,
           label: `${model.name || model.id}`,
@@ -130,10 +130,10 @@ export function ModelTab({
               </div>
             )}
             <div className="model-current-summary__badges">
-              {currentModelObj?.reasoning && (
+              {currentModelObj?.capabilities?.reasoning && (
                 <span className="model-option__badge">Reasoning</span>
               )}
-              {currentModelObj?.attachment && (
+              {currentModelObj?.capabilities?.attachment && (
                 <span className="model-option__badge">Attachments</span>
               )}
             </div>
@@ -171,7 +171,7 @@ export function ModelTab({
                     </span>
                   </div>
                   <div className="model-group__models">
-                    {provider.models.map((model) => {
+                    {Object.values(provider.models).map((model) => {
                       const isSelected =
                         currentProviderID === provider.id &&
                         currentModelID === model.id;
@@ -215,12 +215,12 @@ export function ModelTab({
                           )}
 
                           <span className="model-option__badges">
-                            {model.reasoning && (
+                            {model.capabilities?.reasoning && (
                               <span className="model-option__badge">
                                 Reasoning
                               </span>
                             )}
-                            {model.attachment && (
+                            {model.capabilities?.attachment && (
                               <span className="model-option__badge">
                                 Attachments
                               </span>

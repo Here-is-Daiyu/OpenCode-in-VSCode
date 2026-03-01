@@ -15,7 +15,7 @@ export interface Session {
   title: string;
   version: string;
   time: SessionTime;
-  permission?: PermissionRuleset;
+  permission?: PermissionRule[];
   revert?: RevertInfo;
 }
 
@@ -203,15 +203,36 @@ export interface MessageWithParts {
 export interface Provider {
   id: string;
   name: string;
-  models: ProviderModel[];
+  source?: string;
+  env?: string[];
+  options?: Record<string, unknown>;
+  models: Record<string, ProviderModel>;
 }
 
 export interface ProviderModel {
   id: string;
   name: string;
+  providerID?: string;
+  family?: string;
+  api?: { id: string; url?: string; npm?: string };
+  status?: 'active' | 'inactive' | string;
+  headers?: Record<string, string>;
+  options?: Record<string, unknown>;
+  cost?: { input: number; output: number; cache: { read: number; write: number } };
   limit?: { context: number; output: number };
+  capabilities?: ModelCapabilities;
+  release_date?: string;
+  variants?: Record<string, Record<string, unknown>>;
+}
+
+export interface ModelCapabilities {
+  temperature?: boolean;
   reasoning?: boolean;
   attachment?: boolean;
+  toolcall?: boolean;
+  input?: { text?: boolean; audio?: boolean; image?: boolean; video?: boolean; pdf?: boolean };
+  output?: { text?: boolean; audio?: boolean; image?: boolean; video?: boolean; pdf?: boolean };
+  interleaved?: boolean | { field: string };
 }
 
 // Config types
@@ -226,6 +247,12 @@ export interface OpenCodeConfig {
 
 export type PermissionRuleset = Record<string, PermissionValue | Record<string, PermissionValue>>;
 export type PermissionValue = 'allow' | 'ask' | 'deny';
+
+export interface PermissionRule {
+  permission: string;
+  pattern: string;
+  action: PermissionValue;
+}
 
 export interface MCPServerConfig {
   type: 'local' | 'remote';

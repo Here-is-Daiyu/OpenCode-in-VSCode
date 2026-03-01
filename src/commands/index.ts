@@ -269,13 +269,13 @@ async function selectModel(ctx: CommandContext): Promise<void> {
     const items: (vscode.QuickPickItem & { _providerID: string; _modelID: string })[] = [];
 
     for (const provider of response.providers) {
-      for (const model of provider.models) {
+      for (const model of Object.values(provider.models)) {
         items.push({
           label: `$(symbol-enum) ${model.name || model.id}`,
           description: provider.name || provider.id,
           detail: [
-            model.reasoning ? '$(lightbulb) Reasoning' : '',
-            model.attachment ? '$(file-media) Attachments' : '',
+            model.capabilities?.reasoning ? '$(lightbulb) Reasoning' : '',
+            model.capabilities?.attachment ? '$(file-media) Attachments' : '',
             model.limit ? `Context: ${(model.limit.context / 1000).toFixed(0)}k` : '',
           ].filter(Boolean).join('  ') || undefined,
           _providerID: provider.id,
@@ -459,7 +459,11 @@ async function compactSession(ctx: CommandContext): Promise<void> {
 
 function errorMessage(err: unknown): string {
   if (err instanceof Error) { return err.message; }
-  return String(err);
+  if (typeof err === 'string') { return err; }
+  if (err && typeof err === 'object' && 'message' in err) {
+    return String((err as { message: unknown }).message);
+  }
+  try { return JSON.stringify(err); } catch { return String(err); }
 }
 
 // ---------------------------------------------------------------------------

@@ -345,7 +345,8 @@ export class StatusTreeProvider
 
     return this.providersData.providers.map((provider) => {
       const connected = connectedSet.has(provider.id);
-      const modelCount = provider.models?.length ?? 0;
+      const models = Object.values(provider.models ?? {});
+      const modelCount = models.length;
       return new StatusTreeItem(provider.name || provider.id, {
         description: connected
           ? `Connected · ${modelCount} model${modelCount === 1 ? '' : 's'}`
@@ -426,12 +427,13 @@ function buildProviderTooltip(provider: Provider, connected: boolean): vscode.Ma
   md.isTrusted = true;
   md.appendMarkdown(`### ${provider.name || provider.id}\n\n`);
   md.appendMarkdown(`**Status:** ${connected ? '$(check) Connected' : '$(x) Disconnected'}\n\n`);
-  if (provider.models && provider.models.length > 0) {
-    md.appendMarkdown(`**Models (${provider.models.length}):**\n\n`);
-    for (const model of provider.models) {
+  if (provider.models && Object.keys(provider.models).length > 0) {
+    const models = Object.values(provider.models);
+    md.appendMarkdown(`**Models (${models.length}):**\n\n`);
+    for (const model of models) {
       const tags: string[] = [];
-      if (model.reasoning) { tags.push('reasoning'); }
-      if (model.attachment) { tags.push('attachments'); }
+      if (model.capabilities?.reasoning) { tags.push('reasoning'); }
+      if (model.capabilities?.attachment) { tags.push('attachments'); }
       const suffix = tags.length > 0 ? ` _(${tags.join(', ')})_` : '';
       md.appendMarkdown(`- \`${model.id}\`${suffix}\n`);
     }
