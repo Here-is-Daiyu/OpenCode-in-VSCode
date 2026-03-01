@@ -19,12 +19,16 @@ export interface ChatState {
   // Session
   currentSession?: Session;
   messages: MessageWithParts[];
-  sessionStatus: 'idle' | 'active' | 'error' | 'compacting';
+  sessionStatus: 'idle' | 'active' | 'error' | 'compacting' | 'retry';
 
   // UI
   inputText: string;
   isStreaming: boolean;
   attachedImages: string[];
+
+  // Optimistic message tracking for rollback
+  optimisticMessageID?: string;
+  savedInputText?: string;
 
   // Prompts
   pendingPermission?: PermissionRequest;
@@ -35,7 +39,7 @@ export interface ChatState {
   setSession: (session: Session, messages: MessageWithParts[]) => void;
   updateSession: (session: Session) => void;
   clearSession: () => void;
-  setSessionStatus: (status: 'idle' | 'active' | 'error' | 'compacting') => void;
+  setSessionStatus: (status: 'idle' | 'active' | 'error' | 'compacting' | 'retry') => void;
   addMessage: (message: MessageWithParts) => void;
   updateMessage: (message: MessageWithParts) => void;
   updatePart: (messageID: string, part: Part) => void;
@@ -47,6 +51,9 @@ export interface ChatState {
   clearImages: () => void;
   setPermission: (permission?: PermissionRequest) => void;
   setQuestion: (question?: Question) => void;
+  addOptimisticMessage: (text: string, images?: string[]) => string;
+  rollbackOptimisticMessage: () => void;
+  confirmOptimisticMessage: () => void;
   clear: () => void;
 }
 
@@ -60,6 +67,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   inputText: '',
   isStreaming: false,
   attachedImages: [],
+  optimisticMessageID: undefined,
+  savedInputText: undefined,
   pendingPermission: undefined,
   pendingQuestion: undefined,
 
@@ -89,16 +98,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isStreaming: false,
       pendingPermission: undefined,
       pendingQuestion: undefined,
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
     }),
 
   setSessionStatus: (status) => {
     set({ sessionStatus: status });
-    // When session becomes idle after being active, stop streaming
     if (status === 'idle') {
       set({ isStreaming: false });
     } else if (status === 'active') {
       set({ isStreaming: true });
     }
+    // 'retry' keeps isStreaming as-is (server is retrying)
   },
 
   addMessage: (message) =>
@@ -176,6 +187,60 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setQuestion: (question) => set({ pendingQuestion: question }),
 
+  addOptimisticMessage: (text, images) => {
+    const messageID = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const state = get();
+    const sessionID = state.currentSession?.id ?? '';
+
+    const optimisticMessage: MessageWithParts = {
+      info: {
+        id: messageID,
+        sessionID,
+        role: 'user' as const,
+        time: { created: Math.floor(Date.now() / 1000) },
+        agent: '',
+        model: { providerID: '', modelID: '' },
+      },
+      parts: [
+        {
+          type: 'text' as const,
+          id: `${messageID}_text`,
+          text,
+        },
+      ],
+    };
+
+    set({
+      messages: [...state.messages, optimisticMessage],
+      optimisticMessageID: messageID,
+      savedInputText: state.inputText,
+      inputText: '',
+      attachedImages: [],
+    });
+
+    return messageID;
+  },
+
+  rollbackOptimisticMessage: () => {
+    const state = get();
+    if (!state.optimisticMessageID) return;
+
+    set({
+      messages: state.messages.filter(m => m.info.id !== state.optimisticMessageID),
+      inputText: state.savedInputText ?? '',
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
+    });
+  },
+
+  confirmOptimisticMessage: () => {
+    set({
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
+    });
+  },
+
   clear: () =>
     set({
       currentSession: undefined,
@@ -184,6 +249,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       inputText: '',
       isStreaming: false,
       attachedImages: [],
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
       pendingPermission: undefined,
       pendingQuestion: undefined,
     }),

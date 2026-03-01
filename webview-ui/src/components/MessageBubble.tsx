@@ -6,6 +6,7 @@ import React from 'react';
 import type { MessageWithParts, Part, AssistantMessage, StepFinishPart } from '../types/opencode';
 import { ToolCallCard } from './ToolCallCard';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { useChatStore } from '../stores/chatStore';
 
 interface MessageBubbleProps {
   message: MessageWithParts;
@@ -15,6 +16,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const { info, parts } = message;
   const isUser = info.role === 'user';
   const timestamp = new Date(info.time.created * 1000);
+
+  const optimisticMessageID = useChatStore((s) => s.optimisticMessageID);
+  const isOptimistic = info.id === optimisticMessageID;
 
   // Extract content from parts by type
   const textParts = parts.filter((p) => p.type === 'text');
@@ -38,7 +42,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
     .join('');
 
   return (
-    <div className={`message-bubble ${isUser ? 'message-bubble--user' : 'message-bubble--assistant'}`}>
+    <div className={`message-bubble ${isUser ? 'message-bubble--user' : 'message-bubble--assistant'}${isOptimistic ? ' message-bubble--optimistic' : ''}`}>
       <div className="message-bubble__header">
         <span className="message-bubble__role-icon">
           {isUser ? (

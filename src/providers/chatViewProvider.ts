@@ -5,6 +5,8 @@ import type {
   WebviewToExtensionMessage,
 } from '../types/messages';
 import type { MessageWithParts } from '../types/opencode';
+import type { OpenCodeClient } from '../services/openCodeClient';
+import type { Logger } from '../services/logger';
 
 /**
  * Provides the chat WebviewView for the sidebar panel.
@@ -16,8 +18,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private view?: vscode.WebviewView;
   private currentSessionID?: string;
   private disposables: vscode.Disposable[] = [];
+  private client?: OpenCodeClient;
+  private logger?: Logger;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
+
+  setClient(client: OpenCodeClient): void { this.client = client; }
+  setLogger(logger: Logger): void { this.logger = logger; }
 
   /**
    * Called by VS Code when the webview view is first made visible
@@ -121,16 +128,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'chat:send':
-        // Forward to command handler / API client
-        vscode.commands.executeCommand(
-          'opencode.sendMessage',
-          message.data.text,
-          message.data.images
-        );
+        this.handleChatSend(message.data.text, message.data.images);
         break;
 
       case 'chat:abort':
-        vscode.commands.executeCommand('opencode.abortGeneration');
+        vscode.commands.executeCommand('opencode.abortSession');
         break;
 
       case 'session:create':
@@ -318,6 +320,49 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    */
   private onWebviewVisible(): void {
     // Could resend current session state here if needed
+  }
+
+  /**
+   * Handle sending a chat message. Uses fire-and-forget pattern:
+   * - Call promptAsync (returns 204 immediately)
+   * - On HTTP error, notify webview to rollback
+   */
+  private async handleChatSend(text: string, images?: string[]): Promise<void> {
+    if (!this.client) {
+      this.logger?.error('Client not available for chat:send');
+      this.postMessage({ type: 'chat:sendResult', data: { success: false, error: 'Client not available' } });
+      return;
+    }
+
+    // Ensure we have a session
+    let sessionId = this.currentSessionID;
+    if (!sessionId) {
+      try {
+        const session = await this.client.createSession();
+        sessionId = session.id;
+        this.currentSessionID = session.id;
+        this.postMessage({ type: 'session:created', data: session });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger?.error('Failed to create session for chat:send', err);
+        this.postMessage({ type: 'chat:sendResult', data: { success: false, error: errMsg } });
+        return;
+      }
+    }
+
+    // Fire-and-forget: send the prompt asynchronously
+    try {
+      await this.client.sendMessageAsync(sessionId, {
+        content: text,
+        ...(images && images.length > 0 ? { images } : {}),
+      });
+      // promptAsync returns 204 — success means HTTP call succeeded
+      this.postMessage({ type: 'chat:sendResult', data: { success: true } });
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      this.logger?.error('Failed to send message', err);
+      this.postMessage({ type: 'chat:sendResult', data: { success: false, error: errMsg } });
+    }
   }
 
   /**

@@ -41,7 +41,7 @@ export interface RevertInfo {
 }
 
 export interface SessionStatus {
-  status: 'idle' | 'active' | 'error' | 'compacting';
+  status: 'idle' | 'active' | 'error' | 'compacting' | 'retry';
   error?: string;
 }
 
