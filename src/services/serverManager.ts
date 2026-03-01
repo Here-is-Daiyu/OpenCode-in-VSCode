@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as os from 'os';
 import { spawn, type ChildProcess, execFile } from 'child_process';
 import { EventBus } from './eventBus';
 import { Logger } from './logger';
@@ -74,9 +75,10 @@ export class ServerManager implements vscode.Disposable {
     this.state = 'starting';
     const config = this.readConfig();
     this.hostname = config.hostname;
+    const cwd = this.getServerCwd();
 
     this.logger.info(
-      `Starting opencode server (exec="${config.executablePath}", host=${config.hostname}, port=${config.port})`,
+      `Starting opencode server (exec="${config.executablePath}", host=${config.hostname}, port=${config.port}, cwd="${cwd}")`,
     );
 
     // Build command arguments
@@ -222,8 +224,9 @@ export class ServerManager implements vscode.Disposable {
       });
 
       // Spawn
+      const cwd = this.getServerCwd();
       const child = spawn(executable, args, {
-        cwd: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        cwd,
         env: { ...process.env },
         stdio: ['ignore', 'pipe', 'pipe'],
         // On Windows hide the console window
@@ -314,6 +317,19 @@ export class ServerManager implements vscode.Disposable {
         }, 1000);
       }
     });
+  }
+
+  /**
+   * Determine a stable working directory for the server process.
+   * - If a local (file://) workspace exists, use its first folder.
+   * - Otherwise default to the user's home directory.
+   */
+  private getServerCwd(): string {
+    const firstFolder = vscode.workspace.workspaceFolders?.[0];
+    if (firstFolder?.uri.scheme === 'file') {
+      return firstFolder.uri.fsPath;
+    }
+    return os.homedir();
   }
 
   /**
