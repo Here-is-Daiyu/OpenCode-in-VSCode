@@ -1,19 +1,269 @@
-import React from 'react';
+/**
+ * ChatApp - Main chat panel component
+ * Displays messages, handles user input, and communicates with the extension host
+ */
+
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useChatStore } from '../../stores/chatStore';
+import { useMessageListener } from '../../hooks/useMessageListener';
+import { postMessage } from '../../utils/vscodeApi';
+import { MessageBubble } from '../../components/MessageBubble';
+import { ChatInput } from '../../components/ChatInput';
+import { PermissionCard } from '../../components/PermissionCard';
+import { QuestionCard } from '../../components/QuestionCard';
+import type { ExtensionToWebviewMessage } from '../../types/messages';
 
 export function ChatApp() {
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Store state
+  const connected = useChatStore((s) => s.connected);
+  const currentSession = useChatStore((s) => s.currentSession);
+  const messages = useChatStore((s) => s.messages);
+  const sessionStatus = useChatStore((s) => s.sessionStatus);
+  const isStreaming = useChatStore((s) => s.isStreaming);
+  const pendingPermission = useChatStore((s) => s.pendingPermission);
+  const pendingQuestion = useChatStore((s) => s.pendingQuestion);
+
+  // Store actions
+  const setConnected = useChatStore((s) => s.setConnected);
+  const setSession = useChatStore((s) => s.setSession);
+  const updateSession = useChatStore((s) => s.updateSession);
+  const clearSession = useChatStore((s) => s.clearSession);
+  const setSessionStatus = useChatStore((s) => s.setSessionStatus);
+  const updateMessage = useChatStore((s) => s.updateMessage);
+  const updatePart = useChatStore((s) => s.updatePart);
+  const removeMessage = useChatStore((s) => s.removeMessage);
+  const setPermission = useChatStore((s) => s.setPermission);
+  const setQuestion = useChatStore((s) => s.setQuestion);
+
+  // Handle messages from extension host
+  const handleExtensionMessage = useCallback(
+    (message: ExtensionToWebviewMessage) => {
+      switch (message.type) {
+        case 'server:status':
+          setConnected(message.data.connected, message.data.version);
+          break;
+
+        case 'session:loaded':
+          setSession(message.data.session, message.data.messages);
+          break;
+
+        case 'session:created':
+          // Session created but no messages yet
+          setSession(message.data, []);
+          break;
+
+        case 'session:updated':
+          updateSession(message.data);
+          break;
+
+        case 'session:deleted':
+          if (currentSession?.id === message.data.id) {
+            clearSession();
+          }
+          break;
+
+        case 'session:status':
+          if (currentSession?.id === message.data.sessionID) {
+            setSessionStatus(message.data.status.status);
+          }
+          break;
+
+        case 'message:updated':
+          updateMessage(message.data);
+          break;
+
+        case 'message:partUpdated':
+          if (currentSession?.id === message.data.sessionID) {
+            updatePart(message.data.messageID, message.data.part);
+          }
+          break;
+
+        case 'message:removed':
+          if (currentSession?.id === message.data.sessionID) {
+            removeMessage(message.data.messageID);
+          }
+          break;
+
+        case 'permission:asked':
+          setPermission(message.data);
+          break;
+
+        case 'question:asked':
+          setQuestion(message.data);
+          break;
+
+        case 'error':
+          setError(message.data.message);
+          break;
+
+        case 'theme:changed':
+        case 'config:updated':
+        case 'providers:updated':
+        case 'agents:updated':
+        case 'todos:updated':
+          // These can be handled later as needed
+          break;
+      }
+    },
+    [
+      currentSession?.id,
+      setConnected,
+      setSession,
+      updateSession,
+      clearSession,
+      setSessionStatus,
+      updateMessage,
+      updatePart,
+      removeMessage,
+      setPermission,
+      setQuestion,
+    ]
+  );
+
+  useMessageListener(handleExtensionMessage);
+
+  // Send ready signal to extension on mount
+  useEffect(() => {
+    postMessage({ type: 'ready' });
+  }, []);
+
+  // Auto-scroll to bottom on new messages
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    // Only auto-scroll if user is near the bottom
+    const isNearBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight < 100;
+
+    if (isNearBottom) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, isStreaming]);
+
+  // Handle new session creation
+  const handleNewSession = useCallback(() => {
+    postMessage({ type: 'session:create' });
+  }, []);
+
+  // Dismiss error
+  const dismissError = useCallback(() => setError(null), []);
+
+  // Get session status display
+  const getStatusDotClass = () => {
+    if (!connected) return 'chat-header__status-dot--disconnected';
+    if (sessionStatus === 'active') return 'chat-header__status-dot--active';
+    return 'chat-header__status-dot--connected';
+  };
+
+  const getStatusText = () => {
+    if (!connected) return 'Disconnected';
+    if (sessionStatus === 'active') return 'Generating...';
+    if (sessionStatus === 'compacting') return 'Compacting...';
+    if (sessionStatus === 'error') return 'Error';
+    return 'Connected';
+  };
+
+  // Show connecting state if not yet connected
+  if (!connected) {
+    return (
+      <div className="chat-app">
+        <div className="chat-connecting">
+          <div className="chat-connecting__spinner" />
+          <div className="chat-connecting__text">Connecting to OpenCode server...</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="chat-app">
+      {/* Header */}
       <div className="chat-header">
-        <h2>OpenCode Chat</h2>
+        <span className="chat-header__title">
+          {currentSession?.title || 'OpenCode Chat'}
+        </span>
+        <div className="chat-header__info">
+          <span className="chat-header__status">
+            <span className={`chat-header__status-dot ${getStatusDotClass()}`} />
+            <span>{getStatusText()}</span>
+          </span>
+          <button
+            className="chat-header__new-btn"
+            onClick={handleNewSession}
+            title="New Session"
+          >
+            + New
+          </button>
+        </div>
       </div>
-      <div className="chat-messages">
-        <p>Welcome to OpenCode for VSCode!</p>
-        <p>Start a conversation by typing below.</p>
+
+      {/* Error banner */}
+      {error && (
+        <div className="chat-error">
+          <span>&#x26A0; {error}</span>
+          <button className="chat-error__dismiss" onClick={dismissError}>
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Messages */}
+      <div
+        ref={messagesContainerRef}
+        className={`chat-messages ${messages.length === 0 ? 'chat-messages--empty' : ''}`}
+      >
+        {messages.length === 0 ? (
+          <div className="chat-welcome">
+            <div className="chat-welcome__icon">
+              <svg width="40" height="40" viewBox="0 0 16 16" fill="currentColor" opacity="0.5">
+                <path d="M5 3a2 2 0 0 0-2 2v2h2V5h6v2h2V5a2 2 0 0 0-2-2H5zm8 6H3v2a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2V9zM6 10h1v1H6v-1zm3 0h1v1H9v-1z" />
+              </svg>
+            </div>
+            <div className="chat-welcome__title">OpenCode</div>
+            <div className="chat-welcome__subtitle">
+              Start a conversation by typing below.
+              <br />
+              Use <strong>@</strong> to reference files, <strong>/</strong> for commands.
+            </div>
+          </div>
+        ) : (
+          messages.map((msg) => (
+            <MessageBubble key={msg.info.id} message={msg} />
+          ))
+        )}
+
+        {/* Permission request card */}
+        {pendingPermission && (
+          <PermissionCard permission={pendingPermission} />
+        )}
+
+        {/* Question card */}
+        {pendingQuestion && (
+          <QuestionCard question={pendingQuestion} />
+        )}
+
+        {/* Streaming indicator */}
+        {isStreaming && (
+          <div className="chat-streaming-indicator">
+            <div className="chat-streaming-indicator__dots">
+              <span className="chat-streaming-indicator__dot" />
+              <span className="chat-streaming-indicator__dot" />
+              <span className="chat-streaming-indicator__dot" />
+            </div>
+            <span>Generating...</span>
+          </div>
+        )}
+
+        <div ref={messagesEndRef} />
       </div>
-      <div className="chat-input">
-        <textarea placeholder="Type your message... (@ to reference files, / for commands)" />
-        <button>Send</button>
-      </div>
+
+      {/* Input */}
+      <ChatInput />
     </div>
   );
 }

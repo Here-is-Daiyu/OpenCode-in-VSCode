@@ -1,0 +1,59 @@
+/**
+ * Message types for Extension <-> Webview communication
+ * Mirrored from src/types/messages.ts for the webview build
+ */
+
+import type {
+  Session,
+  MessageWithParts,
+  OpenCodeConfig,
+  Provider,
+  Agent,
+  Todo,
+  PermissionRequest,
+  Question,
+  Part,
+  SessionStatus,
+} from './opencode';
+
+// Extension -> Webview messages
+export type ExtensionToWebviewMessage =
+  | { type: 'session:loaded'; data: { session: Session; messages: MessageWithParts[] } }
+  | { type: 'session:created'; data: Session }
+  | { type: 'session:updated'; data: Session }
+  | { type: 'session:deleted'; data: { id: string } }
+  | { type: 'session:status'; data: { sessionID: string; status: SessionStatus } }
+  | { type: 'message:updated'; data: MessageWithParts }
+  | { type: 'message:partUpdated'; data: { sessionID: string; messageID: string; part: Part } }
+  | { type: 'message:removed'; data: { sessionID: string; messageID: string } }
+  | { type: 'permission:asked'; data: PermissionRequest }
+  | { type: 'question:asked'; data: Question }
+  | { type: 'config:updated'; data: OpenCodeConfig }
+  | { type: 'providers:updated'; data: { providers: Provider[]; connected: string[] } }
+  | { type: 'agents:updated'; data: Agent[] }
+  | { type: 'todos:updated'; data: Todo[] }
+  | { type: 'server:status'; data: { connected: boolean; version?: string } }
+  | { type: 'error'; data: { message: string; details?: string } }
+  | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } };
+
+// Webview -> Extension messages
+export type WebviewToExtensionMessage =
+  | { type: 'chat:send'; data: { text: string; images?: string[] } }
+  | { type: 'chat:abort' }
+  | { type: 'session:create'; data?: { title?: string } }
+  | { type: 'session:switch'; data: { id: string } }
+  | { type: 'session:delete'; data: { id: string } }
+  | { type: 'session:fork'; data: { messageID?: string } }
+  | { type: 'session:share' }
+  | { type: 'session:revert'; data: { messageID: string; partID?: string } }
+  | { type: 'session:unrevert' }
+  | { type: 'permission:respond'; data: { id: string; response: string; remember?: boolean } }
+  | { type: 'question:respond'; data: { id: string; answer: string } }
+  | { type: 'config:get' }
+  | { type: 'config:update'; data: Partial<OpenCodeConfig> }
+  | { type: 'model:select'; data: { providerID: string; modelID: string } }
+  | { type: 'agent:select'; data: { id: string } }
+  | { type: 'file:open'; data: { path: string } }
+  | { type: 'diff:show'; data: { path: string; original: string; modified: string } }
+  | { type: 'command:execute'; data: { command: string; args?: string } }
+  | { type: 'ready' };
