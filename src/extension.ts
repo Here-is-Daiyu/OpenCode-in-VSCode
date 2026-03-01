@@ -7,7 +7,7 @@ import {
   StatusTreeProvider,
   SettingsViewProvider,
 } from './providers';
-import { StatusBarManager } from './managers';
+import { StatusBarManager, SessionManager } from './managers';
 import { registerCommands, type CommandContext } from './commands';
 import type {
   Session,
@@ -90,7 +90,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarManager = new StatusBarManager();
   context.subscriptions.push(statusBarManager);
 
-  // 7. Build command context and register commands
+  // 7. Create session manager (coordinates session switching + sync)
+  const sessionManager = new SessionManager(client, eventBus, sessionProvider, chatProvider, logger);
+  context.subscriptions.push(sessionManager);
+
+  // 8. Build command context and register commands
   const cmdCtx: CommandContext = {
     serverManager,
     client,
@@ -101,25 +105,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusProvider,
     settingsProvider,
     statusBarManager,
+    sessionManager,
     activeSessionId: undefined,
   };
   registerCommands(context, cmdCtx);
 
-  // 8. Set initial context values
+  // 9. Set initial context values
   vscode.commands.executeCommand('setContext', 'opencode.serverConnected', false);
   vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', false);
 
-  // 9. Subscribe to EventBus events (extension-internal routing)
+  // 10. Subscribe to EventBus events (extension-internal routing)
   subscribeToEvents(cmdCtx);
 
-  // 10. Listen to VSCode configuration changes
+  // 11. Listen to VSCode configuration changes
   context.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration(e => {
       handleConfigChange(e, cmdCtx);
     })
   );
 
-  // 11. Listen to VSCode color theme changes and forward to webview
+  // 12. Listen to VSCode color theme changes and forward to webview
   context.subscriptions.push(
     vscode.window.onDidChangeActiveColorTheme(theme => {
       const kind =
@@ -137,7 +142,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  // 12. Auto-start server if configured
+  // 13. Auto-start server if configured
   const autoStart = vscode.workspace
     .getConfiguration('opencode.server')
     .get<boolean>('autoStart', true);

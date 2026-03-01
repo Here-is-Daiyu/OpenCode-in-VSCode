@@ -78,6 +78,11 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "opencode.switchSession",
+        "title": "Switch Session",
+        "category": "OpenCode"
+      },
+      {
         "command": "opencode.forkSession",
         "title": "Fork Session",
         "category": "OpenCode",

@@ -8,6 +8,7 @@ import type { SessionTreeProvider } from '../providers/sessionTreeProvider';
 import type { StatusTreeProvider } from '../providers/statusTreeProvider';
 import type { SettingsViewProvider } from '../providers/settingsViewProvider';
 import type { StatusBarManager } from '../managers/statusBarManager';
+import type { SessionManager } from '../managers/sessionManager';
 
 /**
  * Services and providers needed by command handlers.
@@ -22,6 +23,7 @@ export interface CommandContext {
   statusProvider: StatusTreeProvider;
   settingsProvider: SettingsViewProvider;
   statusBarManager: StatusBarManager;
+  sessionManager: SessionManager;
   /** Track the currently active session ID. */
   activeSessionId: string | undefined;
 }
@@ -119,6 +121,20 @@ async function refreshSessions(ctx: CommandContext): Promise<void> {
     ctx.logger.error('Failed to refresh sessions', err);
     vscode.window.showErrorMessage(`Failed to refresh sessions: ${errorMessage(err)}`);
   }
+}
+
+async function switchSession(ctx: CommandContext, sessionId?: unknown): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  if (typeof sessionId !== 'string' || sessionId.trim() === '') {
+    vscode.window.showWarningMessage('No session selected to switch.');
+    return;
+  }
+
+  const id = sessionId.trim();
+  await ctx.sessionManager.setActiveSession(id);
+  ctx.activeSessionId = id;
+  focusChat(ctx);
 }
 
 async function forkSession(ctx: CommandContext): Promise<void> {
@@ -481,6 +497,7 @@ export function registerCommands(
     ['opencode.newSession', () => newSession(ctx)],
     ['opencode.deleteSession', (sessionId?: unknown) => deleteSession(ctx, sessionId as string | undefined)],
     ['opencode.refreshSessions', () => refreshSessions(ctx)],
+    ['opencode.switchSession', (sessionId?: unknown) => switchSession(ctx, sessionId)],
     ['opencode.forkSession', () => forkSession(ctx)],
     ['opencode.shareSession', () => shareSession(ctx)],
     ['opencode.abortSession', () => abortSession(ctx)],
