@@ -5,6 +5,7 @@
 import React from 'react';
 import type { MessageWithParts, Part, AssistantMessage, StepFinishPart } from '../types/opencode';
 import { ToolCallCard } from './ToolCallCard';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface MessageBubbleProps {
   message: MessageWithParts;
@@ -15,7 +16,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = info.role === 'user';
   const timestamp = new Date(info.time.created * 1000);
 
-  // Extract text content from parts
+  // Extract content from parts by type
   const textParts = parts.filter((p) => p.type === 'text');
   const toolParts = parts.filter((p) => p.type === 'tool');
   const reasoningParts = parts.filter((p) => p.type === 'reasoning');
@@ -25,6 +26,16 @@ export function MessageBubble({ message }: MessageBubbleProps) {
   const lastStepFinish = stepFinishParts.length > 0
     ? stepFinishParts[stepFinishParts.length - 1]
     : undefined;
+
+  // Combine all text parts into a single string for markdown rendering
+  const textContent = textParts
+    .map((p) => (p.type === 'text' ? p.text : ''))
+    .join('\n\n');
+
+  // Combine reasoning text
+  const reasoningContent = reasoningParts
+    .map((p) => (p.type === 'reasoning' ? p.text : ''))
+    .join('');
 
   return (
     <div className={`message-bubble ${isUser ? 'message-bubble--user' : 'message-bubble--assistant'}`}>
@@ -54,24 +65,22 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       </div>
 
       <div className="message-bubble__content">
-        {/* Reasoning parts */}
-        {reasoningParts.length > 0 && (
+        {/* Reasoning parts (collapsible) */}
+        {reasoningContent && (
           <details className="message-bubble__reasoning">
             <summary>Thinking...</summary>
             <div className="message-bubble__reasoning-text">
-              {reasoningParts.map((p) => (
-                <span key={p.id}>{p.type === 'reasoning' ? p.text : ''}</span>
-              ))}
+              <MarkdownRenderer content={reasoningContent} />
             </div>
           </details>
         )}
 
-        {/* Text parts */}
-        {textParts.map((part) => (
-          <div key={part.id} className="message-bubble__text">
-            {renderTextContent(part)}
+        {/* Text content rendered as Markdown */}
+        {textContent && (
+          <div className="message-bubble__text">
+            <MarkdownRenderer content={textContent} />
           </div>
-        ))}
+        )}
 
         {/* Tool call parts */}
         {toolParts.map((part) => (
@@ -104,40 +113,6 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       )}
     </div>
   );
-}
-
-/** Render text content - for now just plain text, markdown rendering will be enhanced later */
-function renderTextContent(part: Part): React.ReactNode {
-  if (part.type !== 'text') return null;
-  // Simple text rendering with basic code block detection
-  const text = part.text;
-
-  // Split by code blocks for basic formatting
-  const segments = text.split(/(```[\s\S]*?```)/g);
-  return segments.map((segment, i) => {
-    if (segment.startsWith('```') && segment.endsWith('```')) {
-      // Extract language and code
-      const firstNewline = segment.indexOf('\n');
-      const lang = segment.slice(3, firstNewline).trim();
-      const code = segment.slice(firstNewline + 1, -3);
-      return (
-        <pre key={i} className="message-bubble__code-block" data-lang={lang || undefined}>
-          <code>{code}</code>
-        </pre>
-      );
-    }
-    // Regular text - preserve newlines
-    return (
-      <span key={i}>
-        {segment.split('\n').map((line, j, arr) => (
-          <React.Fragment key={j}>
-            {line}
-            {j < arr.length - 1 && <br />}
-          </React.Fragment>
-        ))}
-      </span>
-    );
-  });
 }
 
 function formatTime(date: Date): string {
