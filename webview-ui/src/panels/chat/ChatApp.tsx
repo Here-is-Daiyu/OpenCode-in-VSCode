@@ -341,7 +341,7 @@ export function ChatApp() {
           key={currentSession?.id ?? 'no-session'}
         >
           {messages.map((msg) => (
-            <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id}>
+            <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
               <MessageBubble message={msg} />
             </MessageErrorBoundary>
           ))}

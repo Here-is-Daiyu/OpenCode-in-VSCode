@@ -125,7 +125,8 @@ export interface FilePart {
   /** API returns 'mime' but some paths may use 'mediaType' */
   mime?: string;
   mediaType?: string;
-  filename: string;
+  /** Runtime payloads may omit filename and only provide url + mime */
+  filename?: string;
   url?: string;
 }
 

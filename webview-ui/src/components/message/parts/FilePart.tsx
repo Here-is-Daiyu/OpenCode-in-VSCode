@@ -10,19 +10,62 @@ interface FilePartProps {
   part: FilePartType;
 }
 
+function getBaseName(path?: string): string | undefined {
+  if (!path) {
+    return undefined;
+  }
+
+  const normalizedPath = path
+    .replace(/\\/g, '/')
+    .split('#')[0]
+    .split('?')[0];
+  const segments = normalizedPath.split('/').filter(Boolean);
+
+  return segments[segments.length - 1];
+}
+
+function getUrlFileName(url?: string): string | undefined {
+  if (!url || url.startsWith('data:')) {
+    return undefined;
+  }
+
+  try {
+    return getBaseName(new URL(url).pathname);
+  } catch {
+    return getBaseName(url);
+  }
+}
+
+function getFallbackLabel(mimeType: string): string {
+  if (mimeType.startsWith('image/')) {
+    return 'Image attachment';
+  }
+
+  return 'File attachment';
+}
+
 export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
   const mimeType = part.mime ?? part.mediaType ?? '';
   const isImage = mimeType.startsWith('image/');
-  const fileName = part.filename.split('/').pop() ?? part.filename;
+  const fileName =
+    getBaseName(part.filename) ??
+    getUrlFileName(part.url) ??
+    getFallbackLabel(mimeType);
+  const canOpenFile = !isImage && Boolean(part.filename);
 
   const handleClick = useCallback(() => {
-    if (!isImage) {
+    if (canOpenFile && part.filename) {
       postMessage({ type: 'file:open', data: { path: part.filename } });
     }
-  }, [part.filename, isImage]);
+  }, [canOpenFile, part.filename]);
 
   return (
-    <div className="msg-file" onClick={handleClick} role={isImage ? undefined : 'button'} tabIndex={isImage ? undefined : 0}>
+    <div
+      className="msg-file"
+      onClick={canOpenFile ? handleClick : undefined}
+      role={canOpenFile ? 'button' : undefined}
+      tabIndex={canOpenFile ? 0 : undefined}
+    >
       <span className="msg-file__icon">
         {isImage ? (
           <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -34,7 +77,7 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
           </svg>
         )}
       </span>
-      <span className="msg-file__name" title={part.filename}>{fileName}</span>
+      <span className="msg-file__name" title={part.filename ?? fileName}>{fileName}</span>
       {isImage && part.url && (
         <img className="msg-file__preview" src={part.url} alt={fileName} loading="lazy" />
       )}

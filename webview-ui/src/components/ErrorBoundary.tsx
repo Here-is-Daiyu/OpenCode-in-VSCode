@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import type { MessageWithParts } from '../types/opencode';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -112,10 +113,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
  * Shows a compact inline error instead of killing the whole chat.
  */
 export class MessageErrorBoundary extends React.Component<
-  { messageId: string; children: React.ReactNode },
+  { messageId: string; message: MessageWithParts; children: React.ReactNode },
   { hasError: boolean; error?: Error }
 > {
-  constructor(props: { messageId: string; children: React.ReactNode }) {
+  constructor(props: { messageId: string; message: MessageWithParts; children: React.ReactNode }) {
     super(props);
     this.state = { hasError: false };
   }
@@ -127,6 +128,14 @@ export class MessageErrorBoundary extends React.Component<
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error(`[MessageErrorBoundary] Error rendering message ${this.props.messageId}:`, error);
     console.error('[MessageErrorBoundary] Component stack:', errorInfo.componentStack);
+  }
+
+  componentDidUpdate(
+    prevProps: Readonly<{ messageId: string; message: MessageWithParts; children: React.ReactNode }>,
+  ): void {
+    if (this.state.hasError && prevProps.message !== this.props.message) {
+      this.setState({ hasError: false, error: undefined });
+    }
   }
 
   render(): React.ReactNode {
