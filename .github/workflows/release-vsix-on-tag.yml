@@ -15,10 +15,23 @@ jobs:
       contents: read
 
     steps:
+      - name: Detect release tag
+        id: tag_check
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "is_tag=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "is_tag=false" >> "${GITHUB_OUTPUT}"
+            echo "No tag detected; skipping packaging steps."
+          fi
+
       - name: Checkout repository
+        if: steps.tag_check.outputs.is_tag == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Node.js
+        if: steps.tag_check.outputs.is_tag == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -28,13 +41,15 @@ jobs:
             webview-ui/package-lock.json
 
       - name: Install root dependencies
+        if: steps.tag_check.outputs.is_tag == 'true'
         run: npm ci
 
       - name: Install webview dependencies
+        if: steps.tag_check.outputs.is_tag == 'true'
         run: npm ci --prefix webview-ui
 
       - name: Parse version from tag
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.tag_check.outputs.is_tag == 'true'
         id: version
         shell: bash
         run: |
@@ -56,17 +71,19 @@ jobs:
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
       - name: Sync package.json version from tag
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.tag_check.outputs.is_tag == 'true'
         run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build extension
+        if: steps.tag_check.outputs.is_tag == 'true'
         run: npm run build
 
       - name: Typecheck
+        if: steps.tag_check.outputs.is_tag == 'true'
         run: npm run typecheck
 
       - name: Package VSIX
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.tag_check.outputs.is_tag == 'true'
         id: package
         shell: bash
         run: |
@@ -88,7 +105,7 @@ jobs:
           echo "vsix_path=${packaged_vsix[0]}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload VSIX artifact
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.tag_check.outputs.is_tag == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: opencode-vscode-${{ steps.version.outputs.version }}-vsix
