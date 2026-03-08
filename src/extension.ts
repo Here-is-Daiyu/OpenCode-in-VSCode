@@ -280,6 +280,52 @@ async function startEventStream(ctx: CommandContext): Promise<void> {
   }
 }
 
+function normalizeMessageUpdatedPayload(
+  properties: Record<string, unknown>
+): MessageWithParts | undefined {
+  const payload = properties as Partial<MessageWithParts>;
+  if (!payload.info) {
+    return undefined;
+  }
+
+  return {
+    info: payload.info,
+    parts: Array.isArray(payload.parts) ? payload.parts : [],
+  };
+}
+
+function normalizeMessagePartUpdatedPayload(
+  properties: Record<string, unknown>
+): { sessionID: string; messageID: string; part: Part } | undefined {
+  const payload = properties as {
+    sessionID?: string;
+    messageID?: string;
+    part?: Part;
+  };
+
+  if (!payload.part) {
+    return undefined;
+  }
+
+  const partWithIDs = payload.part as Part & {
+    sessionID?: string;
+    messageID?: string;
+  };
+
+  const sessionID = partWithIDs.sessionID ?? payload.sessionID;
+  const messageID = partWithIDs.messageID ?? payload.messageID;
+
+  if (!sessionID || !messageID) {
+    return undefined;
+  }
+
+  return {
+    sessionID,
+    messageID,
+    part: payload.part,
+  };
+}
+
 /**
  * Route an incoming SSE event to the correct EventBus event and webview messages.
  */
@@ -337,8 +383,8 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
     }
 
     case 'message.updated': {
-      const msg = properties as unknown as MessageWithParts;
-      if (!msg?.info) { break; }
+      const msg = normalizeMessageUpdatedPayload(properties);
+      if (!msg) { break; }
       ctx.eventBus.emit('message:updated', msg);
       ctx.chatProvider.postMessageToWebview({ type: 'message:updated', data: msg });
 
@@ -350,8 +396,8 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
     }
 
     case 'message.part.updated': {
-      const part = properties as unknown as { sessionID: string; messageID: string; part: Part };
-      if (!part?.sessionID || !part?.messageID) { break; }
+      const part = normalizeMessagePartUpdatedPayload(properties);
+      if (!part) { break; }
       ctx.eventBus.emit('message:partUpdated', part);
       ctx.chatProvider.postMessageToWebview({ type: 'message:partUpdated', data: part });
       break;

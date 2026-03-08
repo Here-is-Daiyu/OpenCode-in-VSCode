@@ -32,6 +32,26 @@ function normalizeSessionStatus(status: string | undefined): ChatSessionStatus {
   }
 }
 
+function normalizeMessageParts(
+  message: MessageWithParts,
+  existingParts?: Part[]
+): MessageWithParts {
+  const incomingParts = Array.isArray(message.parts) ? message.parts : undefined;
+  const shouldPreserveExistingParts =
+    Array.isArray(existingParts) && existingParts.length > 0 && (!incomingParts || incomingParts.length === 0);
+
+  return {
+    ...message,
+    parts: shouldPreserveExistingParts
+      ? existingParts
+      : incomingParts ?? existingParts ?? [],
+  };
+}
+
+function getMessageParts(message: MessageWithParts): Part[] {
+  return Array.isArray(message.parts) ? message.parts : [];
+}
+
 export interface ChatState {
   // Connection
   connected: boolean;
@@ -101,7 +121,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSession: (session, messages) =>
     set({
       currentSession: session,
-      messages,
+      messages: messages.map((message) => normalizeMessageParts(message)),
       sessionStatus: 'idle',
       isStreaming: false,
       pendingPermission: undefined,
@@ -139,15 +159,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   prependMessages: (messages) => {
     let prependedCount = 0;
+    const normalizedMessages = messages.map((message) => normalizeMessageParts(message));
 
     set((state) => {
-      if (messages.length === 0) {
+      if (normalizedMessages.length === 0) {
         return state;
       }
 
       const existingIds = new Set(state.messages.map((message) => message.info.id));
       const seenIncomingIds = new Set<string>();
-      const uniqueMessages = messages.filter((message) => {
+      const uniqueMessages = normalizedMessages.filter((message) => {
         const messageId = message.info.id;
         if (existingIds.has(messageId) || seenIncomingIds.has(messageId)) {
           return false;
@@ -170,28 +191,36 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addMessage: (message) =>
     set((state) => {
+      const normalizedMessage = normalizeMessageParts(message);
+
       // Don't add duplicate messages
-      const exists = state.messages.some((m) => m.info.id === message.info.id);
+      const existingMessage = state.messages.find((m) => m.info.id === normalizedMessage.info.id);
+      const exists = Boolean(existingMessage);
       if (exists) {
         // Update instead
         return {
           messages: state.messages.map((m) =>
-            m.info.id === message.info.id ? message : m
+            m.info.id === normalizedMessage.info.id
+              ? normalizeMessageParts(normalizedMessage, existingMessage?.parts)
+              : m
           ),
         };
       }
-      return { messages: [...state.messages, message] };
+      return { messages: [...state.messages, normalizedMessage] };
     }),
 
   updateMessage: (message) =>
     set((state) => {
       const index = state.messages.findIndex((m) => m.info.id === message.info.id);
+      const existingMessage = index === -1 ? undefined : state.messages[index];
+      const normalizedMessage = normalizeMessageParts(message, existingMessage?.parts);
+
       if (index === -1) {
         // Message not found, add it
-        return { messages: [...state.messages, message] };
+        return { messages: [...state.messages, normalizedMessage] };
       }
       const updated = [...state.messages];
-      updated[index] = message;
+      updated[index] = normalizedMessage;
       return { messages: updated };
     }),
 
@@ -201,15 +230,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (msgIndex === -1) return state;
 
       const msg = state.messages[msgIndex];
-      const partIndex = msg.parts.findIndex((p) => p.id === part.id);
+      const currentParts = getMessageParts(msg);
+      const partIndex = currentParts.findIndex((p) => p.id === part.id);
 
       let newParts: Part[];
       if (partIndex === -1) {
         // New part, append
-        newParts = [...msg.parts, part];
+        newParts = [...currentParts, part];
       } else {
         // Update existing part
-        newParts = [...msg.parts];
+        newParts = [...currentParts];
         newParts[partIndex] = part;
       }
 
@@ -230,7 +260,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       const msg = state.messages[msgIndex];
-      const partIndex = msg.parts.findIndex((p) => p.id === partID);
+      const currentParts = getMessageParts(msg);
+      const partIndex = currentParts.findIndex((p) => p.id === partID);
 
       let newParts: Part[];
       if (partIndex === -1) {
@@ -241,14 +272,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           sessionID: msg.info.sessionID,
           messageID,
         };
-        newParts = [...msg.parts, streamedTextPart];
+        newParts = [...currentParts, streamedTextPart];
       } else {
-        const existingPart = msg.parts[partIndex];
+        const existingPart = currentParts[partIndex];
         if (existingPart.type !== 'text' && existingPart.type !== 'reasoning') {
           return state;
         }
 
-        newParts = [...msg.parts];
+        newParts = [...currentParts];
         newParts[partIndex] = {
           ...existingPart,
           text: existingPart.text + delta,
