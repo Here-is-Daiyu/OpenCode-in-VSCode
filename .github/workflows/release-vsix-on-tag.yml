@@ -1,0 +1,105 @@
+name: Build and release VSIX
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+      - "V*"
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            webview-ui/package-lock.json
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install webview dependencies
+        run: npm ci --prefix webview-ui
+
+      - name: Parse version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        id: version
+        shell: bash
+        run: |
+          raw_tag="${GITHUB_REF_NAME}"
+          version="${raw_tag#v}"
+          version="${version#V}"
+
+          if [[ -z "${version}" || "${version}" == "${raw_tag}" ]]; then
+            echo "::error::Tag '${raw_tag}' must start with v or V."
+            exit 1
+          fi
+
+          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::Parsed version '${version}' is not a valid semver-like version."
+            exit 1
+          fi
+
+          echo "raw_tag=${raw_tag}" >> "${GITHUB_OUTPUT}"
+          echo "version=${version}" >> "${GITHUB_OUTPUT}"
+
+      - name: Sync package.json version from tag
+        if: startsWith(github.ref, 'refs/tags/')
+        run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build extension
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Package VSIX
+        if: startsWith(github.ref, 'refs/tags/')
+        id: package
+        shell: bash
+        run: |
+          shopt -s nullglob
+          existing_vsix=( *.vsix )
+          if (( ${#existing_vsix[@]} > 0 )); then
+            rm -f -- "${existing_vsix[@]}"
+          fi
+
+          npm run package
+
+          packaged_vsix=( *.vsix )
+          if (( ${#packaged_vsix[@]} != 1 )); then
+            echo "::error::Expected exactly one VSIX file, found ${#packaged_vsix[@]}."
+            printf 'Found files: %s\n' "${packaged_vsix[@]}"
+            exit 1
+          fi
+
+          echo "vsix_path=${packaged_vsix[0]}" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload VSIX artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-vscode-${{ steps.version.outputs.version }}-vsix
+          path: ${{ steps.package.outputs.vsix_path }}
+          if-no-files-found: error
+
+      - name: Upload VSIX to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: ${{ steps.package.outputs.vsix_path }}
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.version.outputs.version, '-') }}
