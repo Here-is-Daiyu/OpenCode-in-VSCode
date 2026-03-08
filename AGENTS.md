@@ -34,6 +34,18 @@ OpenCode for VSCode is a VSCode extension that provides a full-featured OpenCode
 - Use discriminated unions for message/event types
 - NO `any` types except at API boundaries with proper validation
 
+## Documentation Index
+
+The `docs/` directory contains detailed research notes — read them before duplicating investigation:
+
+| File | Content |
+|------|---------|
+| `docs/research/opencode-api-reference.md` | Complete REST API endpoints, SSE event types, TypeScript types, SDK usage, message fetching notes (timestamp format, `?limit=` behavior, payload size) |
+| `docs/research/desktop-features-comparison.md` | Feature matrix (Desktop vs Extension), Desktop chat UI architecture deep dive (SolidJS, part registry, throttled rendering, context tool grouping, overflow-anchor scrolling) |
+| `docs/research/vscode-extension-api.md` | WebviewView API, TreeView, Configuration, Editor integration, build systems (esbuild + Vite), postMessage patterns (large payload, race conditions, caching/resend) |
+
+- 遇到 endpoint response / request format 问题时，排查顺序必须固定：先查本地 docs（优先 `docs/research/opencode-api-reference.md`），再对照 `opencode` / `opencode desktop` 源码确认真实结构，最后才连到 `23452` 端口做实测，避免过早依赖 runtime probing。
+
 ## OpenCode API Reference
 See `docs/research/opencode-api-reference.md` for the complete API documentation.
 
@@ -74,6 +86,7 @@ Key points:
 - Fix branches: `fix/<name>`
 - Commit messages: Conventional Commits (feat:, fix:, docs:, refactor:, etc.)
 - Each logical change = one commit
+- 后续如果需要开多个 subagent 顺序修复问题，每个 subagent 必须在不同的 git 分支里进行修改，避免相互污染工作区与上下文。
 
 ## Testing
 - Extension: Use VSCode Extension Testing framework

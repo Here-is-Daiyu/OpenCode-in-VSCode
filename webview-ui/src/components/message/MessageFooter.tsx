@@ -19,7 +19,7 @@ export const MessageFooter = React.memo(function MessageFooter({
   // Aggregate token counts from the message's own info (preferred) or step-finish parts
   const tokens = info.tokens;
   const cost = info.cost ?? 0;
-  const hasTokens = tokens && (tokens.input > 0 || tokens.output > 0);
+  const hasTokens = tokens && typeof tokens.input === 'number' && typeof tokens.output === 'number' && (tokens.input > 0 || tokens.output > 0);
 
   // Copy handler: copies all text content from parts
   const handleCopy = useCallback(() => {
@@ -73,7 +73,8 @@ export const MessageFooter = React.memo(function MessageFooter({
   );
 });
 
-function formatTokens(count: number): string {
+function formatTokens(count: number | undefined): string {
+  if (count == null) return '0';
   if (count >= 1000) {
     return `${(count / 1000).toFixed(1)}k`;
   }

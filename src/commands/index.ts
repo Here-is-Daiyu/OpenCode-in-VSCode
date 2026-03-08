@@ -461,7 +461,9 @@ async function compactSession(ctx: CommandContext): Promise<void> {
 
   try {
     ctx.logger.info(`Compacting session ${sessionId}`);
-    await ctx.client.sendMessageAsync(sessionId, { content: '/compact' });
+    await ctx.client.sendMessageAsync(sessionId, {
+      parts: [{ type: 'text', text: '/compact' }],
+    });
     vscode.window.showInformationMessage('Session compaction started.');
   } catch (err) {
     ctx.logger.error('Failed to compact session', err);

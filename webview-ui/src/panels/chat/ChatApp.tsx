@@ -46,6 +46,7 @@ export function ChatApp() {
   const setSessionStatus = useChatStore((s) => s.setSessionStatus);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const updatePart = useChatStore((s) => s.updatePart);
+  const appendPartDelta = useChatStore((s) => s.appendPartDelta);
   const removeMessage = useChatStore((s) => s.removeMessage);
   const setPermission = useChatStore((s) => s.setPermission);
   const setQuestion = useChatStore((s) => s.setQuestion);
@@ -105,89 +106,100 @@ export function ChatApp() {
 
   const handleExtensionMessage = useCallback(
     (message: ExtensionToWebviewMessage) => {
-      switch (message.type) {
-        case 'server:status':
-          setConnected(message.data.connected, message.data.version);
-          break;
+      try {
+        const getActiveSessionID = () => useChatStore.getState().currentSession?.id;
 
-        case 'session:loaded':
-          setAtBottom(true);
-          prevMessageCountRef.current = 0; // reset so auto-scroll triggers
-          setSession(message.data.session, message.data.messages);
-          break;
+        switch (message.type) {
+          case 'server:status':
+            setConnected(message.data.connected, message.data.version);
+            break;
 
-        case 'session:created':
-          setSession(message.data, []);
-          break;
+          case 'session:loaded':
+            setAtBottom(true);
+            prevMessageCountRef.current = 0; // reset so auto-scroll triggers
+            setSession(message.data.session, message.data.messages);
+            break;
 
-        case 'session:updated':
-          updateSession(message.data);
-          break;
+          case 'session:created':
+            setSession(message.data, []);
+            break;
 
-        case 'session:deleted':
-          if (currentSession?.id === message.data.id) {
+          case 'session:updated':
+            updateSession(message.data);
+            break;
+
+          case 'session:deleted':
+            if (getActiveSessionID() === message.data.id) {
+              clearSession();
+            }
+            break;
+
+          case 'session:cleared':
+            setAtBottom(true);
             clearSession();
-          }
-          break;
+            break;
 
-        case 'session:cleared':
-          setAtBottom(true);
-          clearSession();
-          break;
+          case 'session:status':
+            if (getActiveSessionID() === message.data.sessionID) {
+              setSessionStatus(message.data.status.status);
+            }
+            break;
 
-        case 'session:status':
-          if (currentSession?.id === message.data.sessionID) {
-            setSessionStatus(message.data.status.status);
-          }
-          break;
+          case 'message:updated':
+            updateMessage(message.data);
+            break;
 
-        case 'message:updated':
-          updateMessage(message.data);
-          break;
+          case 'message:partUpdated':
+            if (getActiveSessionID() === message.data.sessionID) {
+              updatePart(message.data.messageID, message.data.part);
+            }
+            break;
 
-        case 'message:partUpdated':
-          if (currentSession?.id === message.data.sessionID) {
-            updatePart(message.data.messageID, message.data.part);
-          }
-          break;
+          case 'message:partDelta':
+            if (getActiveSessionID() === message.data.sessionID) {
+              appendPartDelta(message.data.messageID, message.data.partID, message.data.delta);
+            }
+            break;
 
-        case 'message:removed':
-          if (currentSession?.id === message.data.sessionID) {
-            removeMessage(message.data.messageID);
-          }
-          break;
+          case 'message:removed':
+            if (getActiveSessionID() === message.data.sessionID) {
+              removeMessage(message.data.messageID);
+            }
+            break;
 
-        case 'permission:asked':
-          setPermission(message.data);
-          break;
+          case 'permission:asked':
+            setPermission(message.data);
+            break;
 
-        case 'question:asked':
-          setQuestion(message.data);
-          break;
+          case 'question:asked':
+            setQuestion(message.data);
+            break;
 
-        case 'error':
-          setError(message.data.message);
-          break;
+          case 'error':
+            setError(message.data.message);
+            break;
 
-        case 'chat:sendResult':
-          if (message.data.success) {
-            confirmOptimisticMessage();
-          } else {
-            rollbackOptimisticMessage();
-            setError(message.data.error ?? 'Failed to send message');
-          }
-          break;
+          case 'chat:sendResult':
+            if (message.data.success) {
+              confirmOptimisticMessage();
+            } else {
+              rollbackOptimisticMessage();
+              setError(message.data.error ?? 'Failed to send message');
+            }
+            break;
 
-        case 'theme:changed':
-        case 'config:updated':
-        case 'providers:updated':
-        case 'agents:updated':
-        case 'todos:updated':
-          break;
+          case 'theme:changed':
+          case 'config:updated':
+          case 'providers:updated':
+          case 'agents:updated':
+          case 'todos:updated':
+            break;
+        }
+      } catch (err) {
+        console.error('[ChatApp] Error handling extension message:', message.type, err);
       }
     },
     [
-      currentSession?.id,
       setConnected,
       setSession,
       updateSession,
@@ -195,6 +207,7 @@ export function ChatApp() {
       setSessionStatus,
       updateMessage,
       updatePart,
+      appendPartDelta,
       removeMessage,
       setPermission,
       setQuestion,

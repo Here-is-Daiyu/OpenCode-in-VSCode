@@ -57,20 +57,32 @@ export interface CreateSessionOptions {
   model?: string;
 }
 
+/** Text prompt part accepted by the API. */
+export interface PromptTextPart {
+  type: 'text';
+  text: string;
+}
+
+/** File / image prompt part accepted by the API. */
+export interface PromptFilePart {
+  type: 'file';
+  mime: string;
+  filename?: string;
+  url: string;
+}
+
+/** Prompt part accepted by `/message`, `/prompt`, and `/prompt_async`. */
+export type PromptPart = PromptTextPart | PromptFilePart;
+
 /** Payload for sending a message. */
 export interface SendMessageData {
-  content: string;
-  attachments?: MessageAttachment[];
+  parts: PromptPart[];
   agent?: string;
   model?: string;
 }
 
-/** A single file attachment on a message. */
-export interface MessageAttachment {
-  filename: string;
-  mediaType: string;
-  url?: string;
-}
+/** Backward-compatible alias for file prompt parts. */
+export type MessageAttachment = PromptFilePart;
 
 /** Payload for updating a session. */
 export interface UpdateSessionData {
@@ -784,16 +796,7 @@ export class OpenCodeClient {
       const response = await fetch(url, init);
       clearTimeout(timeoutId);
 
-      // Read response body
-      const contentType = response.headers.get('content-type') ?? '';
-      let responseBody: unknown;
-
-      if (contentType.includes('application/json')) {
-        responseBody = await response.json();
-      } else {
-        const text = await response.text();
-        responseBody = text || undefined;
-      }
+      const responseBody = await this.parseResponseBody(response);
 
       this.logger?.debug(`← ${response.status} ${response.statusText} ${path}`);
 
@@ -819,6 +822,32 @@ export class OpenCodeClient {
         `OpenCode API request failed: ${method} ${path} — ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  /**
+   * Parse an HTTP response body while handling empty / no-content responses.
+   */
+  private async parseResponseBody(response: Response): Promise<unknown> {
+    if (response.status === 204 || response.status === 205) {
+      return undefined;
+    }
+
+    const contentLength = response.headers.get('content-length');
+    if (contentLength === '0') {
+      return undefined;
+    }
+
+    const text = await response.text();
+    if (text.trim().length === 0) {
+      return undefined;
+    }
+
+    const contentType = response.headers.get('content-type') ?? '';
+    if (contentType.includes('application/json')) {
+      return JSON.parse(text) as unknown;
+    }
+
+    return text;
   }
 
   /**

@@ -44,7 +44,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
   // Copy full text on hover-click
   const handleCopyAll = useCallback(() => {
-    const textContent = parts
+    const textContent = (parts ?? [])
       .filter((p) => p.type === 'text')
       .map((p) => (p.type === 'text' ? p.text : ''))
       .join('\n\n');
@@ -71,14 +71,18 @@ export const MessageBubble = React.memo(function MessageBubble({
       />
 
       {/* Error display */}
-      {!isUser && (info as AssistantMessage).error && (
-        <div className="msg-bubble__error">
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 10.5a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5zM8.75 4v4.5h-1.5V4h1.5z" />
-          </svg>
-          <span>{(info as AssistantMessage).error!.message}</span>
-        </div>
-      )}
+      {!isUser && (info as AssistantMessage).error && (() => {
+        const err = (info as AssistantMessage).error;
+        const errMsg = typeof err === 'string' ? err : (err as any)?.message ?? 'Unknown error';
+        return (
+          <div className="msg-bubble__error">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 10.5a.75.75 0 1 1 0-1.5.75.75 0 0 1 0 1.5zM8.75 4v4.5h-1.5V4h1.5z" />
+            </svg>
+            <span>{errMsg}</span>
+          </div>
+        );
+      })()}
 
       {/* Footer for completed assistant messages */}
       {!isUser && !showStreamingEffects && (

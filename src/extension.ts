@@ -357,6 +357,21 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       break;
     }
 
+    case 'message.part.delta': {
+      const delta = properties as unknown as {
+        sessionID: string;
+        messageID: string;
+        partID: string;
+        delta: string;
+      };
+      if (!delta?.sessionID || !delta?.messageID || !delta?.partID || typeof delta.delta !== 'string') {
+        break;
+      }
+      ctx.eventBus.emit('message:partDelta', delta);
+      ctx.chatProvider.postMessageToWebview({ type: 'message:partDelta', data: delta });
+      break;
+    }
+
     case 'message.removed': {
       const removed = properties as unknown as { sessionID: string; messageID: string };
       if (!removed?.sessionID || !removed?.messageID) { break; }

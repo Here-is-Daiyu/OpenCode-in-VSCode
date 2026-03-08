@@ -95,7 +95,7 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 | GET | `/session/:id/message` | query: `?limit` | `{ info: Message, parts: Part[] }[]` — see [Message Fetching Notes](#message-fetching-notes) |
 | POST | `/session/:id/message` | `{ messageID?, model?, agent?, noReply?, system?, tools?, parts }` | `{ info: Message, parts: Part[] }` |
 | GET | `/session/:id/message/:messageID` | — | `{ info: Message, parts: Part[] }` |
-| POST | `/session/:id/prompt_async` | same body as `/message` | `204 No Content` |
+| POST | `/session/:id/prompt_async` | same body as `/message`; `parts` required in practice | `204 No Content` |
 | POST | `/session/:id/command` | `{ messageID?, agent?, model?, command, arguments }` | `{ info: Message, parts: Part[] }` |
 | POST | `/session/:id/shell` | `{ agent, model?, command }` | `{ info: Message, parts: Part[] }` |
 
@@ -280,6 +280,135 @@ Messages are **always sorted ascending by `info.time.created`** (oldest first), 
 | **Memory pressure** | Webview holds full message list in memory; consider pagination or virtualization |
 | **Initial load** | Use `?limit=50` for initial session load, then lazy-load earlier messages on scroll |
 | **Incremental updates** | After initial load, use SSE events (`EventMessagePartDelta`, etc.) for real-time updates — don't re-fetch full history |
+
+---
+
+## Prompt Submission Notes
+
+### `POST /session/:id/message` and `POST /session/:id/prompt_async`
+
+`prompt_async` uses the same request body shape as `/message`. In practice, text prompts must still be sent via `parts`; sending only `content` is rejected by validation.
+
+#### Text Payloads
+
+Accepted (`prompt_async` returns `HTTP 204 No Content`):
+
+```json
+{
+  "parts": [
+    { "type": "text", "text": "What is the weather today?" }
+  ]
+}
+```
+
+Rejected:
+
+```json
+{
+  "content": "What is the weather today?"
+}
+```
+
+Observed validation response:
+
+```json
+HTTP 400
+{
+  "data": {
+    "content": "What is the weather today?"
+  },
+  "error": [
+    {
+      "expected": "array",
+      "code": "invalid_type",
+      "path": ["parts"],
+      "message": "Invalid input: expected array, received undefined"
+    }
+  ],
+  "success": false
+}
+```
+
+#### File / Image Parts
+
+Accepted request shape:
+
+```json
+{
+  "parts": [
+    { "type": "text", "text": "Please describe this image briefly." },
+    {
+      "type": "file",
+      "mime": "image/png",
+      "filename": "pixel.png",
+      "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X8ZkAAAAASUVORK5CYII="
+    }
+  ]
+}
+```
+
+Also accepted without `filename`:
+
+```json
+{
+  "parts": [
+    { "type": "text", "text": "Please describe this image briefly." },
+    {
+      "type": "file",
+      "mime": "image/png",
+      "url": "data:image/png;base64,..."
+    }
+  ]
+}
+```
+
+Use `mime` (not `mimeType`). Rejected example:
+
+```json
+{
+  "parts": [
+    { "type": "text", "text": "Please describe this image briefly." },
+    {
+      "type": "file",
+      "mimeType": "image/png",
+      "filename": "pixel.png",
+      "url": "data:image/png;base64,..."
+    }
+  ]
+}
+```
+
+Observed validation response:
+
+```json
+HTTP 400
+{
+  "error": [
+    {
+      "expected": "string",
+      "code": "invalid_type",
+      "path": ["parts", 1, "mime"],
+      "message": "Invalid input: expected string, received undefined"
+    }
+  ]
+}
+```
+
+#### Stored File Part Shape Returned by `GET /session/:id/message`
+
+Observed file parts include request fields plus server-assigned identifiers:
+
+```json
+{
+  "type": "file",
+  "mime": "image/png",
+  "filename": "pixel.png",
+  "url": "data:image/png;base64,...",
+  "id": "prt_...",
+  "sessionID": "ses_...",
+  "messageID": "msg_..."
+}
+```
 
 ---
 

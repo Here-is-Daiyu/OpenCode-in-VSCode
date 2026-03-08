@@ -9,6 +9,7 @@ import type {
   Part,
   PermissionRequest,
   Question,
+  TextPart,
 } from '../types/opencode';
 
 export interface ChatState {
@@ -43,6 +44,7 @@ export interface ChatState {
   addMessage: (message: MessageWithParts) => void;
   updateMessage: (message: MessageWithParts) => void;
   updatePart: (messageID: string, part: Part) => void;
+  appendPartDelta: (messageID: string, partID: string, delta: string) => void;
   removeMessage: (messageID: string) => void;
   setInputText: (text: string) => void;
   setStreaming: (streaming: boolean) => void;
@@ -155,6 +157,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // Update existing part
         newParts = [...msg.parts];
         newParts[partIndex] = part;
+      }
+
+      const updated = [...state.messages];
+      updated[msgIndex] = { ...msg, parts: newParts };
+      return { messages: updated };
+    }),
+
+  appendPartDelta: (messageID, partID, delta) =>
+    set((state) => {
+      if (!delta) {
+        return state;
+      }
+
+      const msgIndex = state.messages.findIndex((m) => m.info.id === messageID);
+      if (msgIndex === -1) {
+        return state;
+      }
+
+      const msg = state.messages[msgIndex];
+      const partIndex = msg.parts.findIndex((p) => p.id === partID);
+
+      let newParts: Part[];
+      if (partIndex === -1) {
+        const streamedTextPart: TextPart = {
+          type: 'text',
+          id: partID,
+          text: delta,
+          sessionID: msg.info.sessionID,
+          messageID,
+        };
+        newParts = [...msg.parts, streamedTextPart];
+      } else {
+        const existingPart = msg.parts[partIndex];
+        if (existingPart.type !== 'text' && existingPart.type !== 'reasoning') {
+          return state;
+        }
+
+        newParts = [...msg.parts];
+        newParts[partIndex] = {
+          ...existingPart,
+          text: existingPart.text + delta,
+        };
       }
 
       const updated = [...state.messages];

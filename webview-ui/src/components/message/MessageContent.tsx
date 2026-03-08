@@ -42,6 +42,7 @@ type RenderChunk =
  * and merges adjacent text/reasoning parts.
  */
 function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] {
+  if (!parts || !Array.isArray(parts)) return [];
   const chunks: RenderChunk[] = [];
   let contextBuffer: ToolPart[] = [];
   let textBuffer = '';
@@ -154,7 +155,7 @@ export const MessageContent = React.memo(function MessageContent({
   isStreaming,
 }: MessageContentProps) {
   const chunks = useMemo(
-    () => buildRenderChunks(parts, isStreaming),
+    () => buildRenderChunks(parts ?? [], isStreaming),
     [parts, isStreaming],
   );
 

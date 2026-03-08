@@ -12,6 +12,10 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 /** Maximum height of the chat input textarea in pixels */
 const MAX_TEXTAREA_HEIGHT_PX = 200;
 
+function isImageFile(file: File) {
+  return file.type.startsWith('image/');
+}
+
 export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -82,35 +86,51 @@ export function ChatInput() {
     [setInputText]
   );
 
+  const processImageFile = useCallback(
+    (file: File) => {
+      if (!isImageFile(file)) return;
+      if (file.size > MAX_IMAGE_SIZE) {
+        console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`);
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') {
+          console.error('Unexpected image reader result type');
+          return;
+        }
+        addImage(reader.result);
+      };
+      reader.onerror = () => {
+        console.error('Failed to read image file');
+      };
+      reader.readAsDataURL(file);
+    },
+    [addImage]
+  );
+
+  const processImageFiles = useCallback(
+    (files: Iterable<File>) => {
+      Array.from(files).forEach(processImageFile);
+    },
+    [processImageFile]
+  );
+
   // Image attachment via file input
   const handleImageSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (!files) return;
 
-      Array.from(files).forEach((file) => {
-        if (!file.type.startsWith('image/')) return;
-        if (file.size > MAX_IMAGE_SIZE) {
-          console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`);
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          addImage(base64);
-        };
-        reader.onerror = () => {
-          console.error('Failed to read image file');
-        };
-        reader.readAsDataURL(file);
-      });
+      processImageFiles(files);
 
       // Reset input
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
     },
-    [addImage]
+    [processImageFiles]
   );
 
   // Drag and drop support
@@ -120,24 +140,26 @@ export function ChatInput() {
       e.stopPropagation();
 
       const files = e.dataTransfer.files;
-      Array.from(files).forEach((file) => {
-        if (!file.type.startsWith('image/')) return;
-        if (file.size > MAX_IMAGE_SIZE) {
-          console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`);
-          return;
-        }
-        const reader = new FileReader();
-        reader.onload = () => {
-          const base64 = reader.result as string;
-          addImage(base64);
-        };
-        reader.onerror = () => {
-          console.error('Failed to read image file');
-        };
-        reader.readAsDataURL(file);
-      });
+      processImageFiles(files);
     },
-    [addImage]
+    [processImageFiles]
+  );
+
+  const handlePaste = useCallback(
+    (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const imageFiles = Array.from(e.clipboardData.items)
+        .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => file !== null);
+
+      if (imageFiles.length === 0) {
+        return;
+      }
+
+      e.preventDefault();
+      processImageFiles(imageFiles);
+    },
+    [processImageFiles]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -193,6 +215,7 @@ export function ChatInput() {
           value={inputText}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={
             connected
               ? 'Type your message... (@ for files, / for commands)'

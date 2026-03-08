@@ -1,16 +1,26 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
+import * as fs from 'fs';
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '../types/messages';
 import type { MessageWithParts } from '../types/opencode';
-import type { OpenCodeClient } from '../services/openCodeClient';
+import type {
+  OpenCodeClient,
+  PromptFilePart,
+  SendMessageData,
+} from '../services/openCodeClient';
 import type { Logger } from '../services/logger';
 
 type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:status' }>;
 type SessionLoadedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:loaded' }>;
 type SessionCreatedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:created' }>;
+
+const DEFAULT_IMAGE_MIME = 'image/png';
+const DATA_URL_PREFIX = /^data:/i;
+const DATA_URL_MIME_PATTERN = /^data:([^;,]+)(?:;[^,]*)?,/i;
+const BASE64_PATTERN = /^[A-Za-z0-9+/=\s]+$/;
 
 /**
  * Provides the chat WebviewView for the sidebar panel.
@@ -301,6 +311,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'assets', 'chat.js')
     );
 
+    // Find CSS files in the assets directory
+    const assetsDir = vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'assets');
+    let cssLinkTags = '';
+    try {
+      const assetFiles = fs.readdirSync(assetsDir.fsPath);
+      const cssFiles = assetFiles.filter(f => f.endsWith('.css'));
+      cssLinkTags = cssFiles.map(cssFile => {
+        const cssUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'assets', cssFile)
+        );
+        return `<link rel="stylesheet" href="${cssUri}" />`;
+      }).join('\n  ');
+    } catch (err) {
+      // CSS files not found — not critical, inline styles in JS will still work
+      console.warn('Failed to find CSS assets:', err);
+    }
+
     // Detect the current color theme
     const themeKind = vscode.window.activeColorTheme.kind;
     const theme =
@@ -351,6 +378,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       font-size: 12px;
     }
   </style>
+  ${cssLinkTags}
 </head>
 <body>
   <div id="root">
@@ -418,6 +446,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
+    const payload = this.buildPromptPayload(text, images);
+    if (!payload) {
+      this.postMessage({
+        type: 'chat:sendResult',
+        data: {
+          success: false,
+          error: 'Please enter a message or attach a valid image before sending.',
+        },
+      });
+      return;
+    }
+
     // Ensure we have a session
     let sessionId = this.currentSessionID;
     if (!sessionId) {
@@ -436,10 +476,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // Fire-and-forget: send the prompt asynchronously
     try {
-      await this.client.sendMessageAsync(sessionId, {
-        content: text,
-        ...(images && images.length > 0 ? { images } : {}),
-      });
+      await this.client.sendMessageAsync(sessionId, payload);
       // promptAsync returns 204 — success means HTTP call succeeded
       this.postMessage({ type: 'chat:sendResult', data: { success: true } });
     } catch (err) {
@@ -447,6 +484,64 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.logger?.error('Failed to send message', err);
       this.postMessage({ type: 'chat:sendResult', data: { success: false, error: errMsg } });
     }
+  }
+
+  private buildPromptPayload(text: string, images?: string[]): SendMessageData | undefined {
+    const parts: SendMessageData['parts'] = [];
+    const normalizedText = text.trim();
+
+    if (normalizedText) {
+      parts.push({ type: 'text', text: normalizedText });
+    }
+
+    if (images?.length) {
+      const imageParts = images
+        .map((image, index) => this.normalizeImagePart(image, index))
+        .filter((part): part is PromptFilePart => part !== undefined);
+
+      if (imageParts.length !== images.length) {
+        this.logger?.warn(
+          `Skipped ${images.length - imageParts.length} invalid image attachment(s) while building prompt payload`
+        );
+      }
+
+      parts.push(...imageParts);
+    }
+
+    if (parts.length === 0) {
+      return undefined;
+    }
+
+    return { parts };
+  }
+
+  private normalizeImagePart(image: string, index: number): PromptFilePart | undefined {
+    const normalized = stripWrappingQuotes(image);
+    if (!normalized) {
+      return undefined;
+    }
+
+    if (DATA_URL_PREFIX.test(normalized)) {
+      const mime = extractMimeFromDataUrl(normalized) ?? DEFAULT_IMAGE_MIME;
+      return {
+        type: 'file',
+        mime,
+        filename: `image-${index + 1}.${extensionForMime(mime)}`,
+        url: normalized,
+      };
+    }
+
+    const bareBase64 = normalized.replace(/\s+/g, '');
+    if (!looksLikeBase64(bareBase64)) {
+      return undefined;
+    }
+
+    return {
+      type: 'file',
+      mime: DEFAULT_IMAGE_MIME,
+      filename: `image-${index + 1}.${extensionForMime(DEFAULT_IMAGE_MIME)}`,
+      url: `data:${DEFAULT_IMAGE_MIME};base64,${bareBase64}`,
+    };
   }
 
   /**
@@ -461,6 +556,46 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       vscode.window.showErrorMessage(
         `Failed to open file: ${filePath}`
       );
+    }
+  }
+}
+
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length < 2) {
+    return trimmed;
+  }
+
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' || first === '\'') && last === first) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+}
+
+function extractMimeFromDataUrl(value: string): string | undefined {
+  const mime = DATA_URL_MIME_PATTERN.exec(value)?.[1]?.trim().toLowerCase();
+  return mime || undefined;
+}
+
+function looksLikeBase64(value: string): boolean {
+  return value.length > 0 && value.length % 4 === 0 && BASE64_PATTERN.test(value);
+}
+
+function extensionForMime(mime: string): string {
+  switch (mime.toLowerCase()) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/svg+xml':
+      return 'svg';
+    case 'image/x-icon':
+    case 'image/vnd.microsoft.icon':
+      return 'ico';
+    default: {
+      const subtype = mime.split('/')[1];
+      return subtype ? subtype.split('+')[0].toLowerCase() : 'bin';
     }
   }
 }
