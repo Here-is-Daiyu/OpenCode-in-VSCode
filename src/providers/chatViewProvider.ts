@@ -15,6 +15,7 @@ import type { Logger } from '../services/logger';
 
 type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:status' }>;
 type SessionLoadedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:loaded' }>;
+type SessionHistoryPrependedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:historyPrepended' }>;
 type SessionCreatedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:created' }>;
 
 const DEFAULT_IMAGE_MIME = 'image/png';
@@ -122,6 +123,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         }
         break;
+      case 'session:historyPrepended':
+        if (this.lastSessionLoaded?.session.id === message.data.sessionID) {
+          this.lastSessionLoaded = {
+            ...this.lastSessionLoaded,
+            messages: prependUniqueMessages(
+              this.lastSessionLoaded.messages,
+              message.data.messages,
+            ),
+          };
+        }
+        break;
       case 'session:created':
         this.lastSessionCreated = message.data;
         this.currentSessionID = message.data.id;
@@ -142,6 +154,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const type = message.type;
       const sessionIdForLog = message.type === 'session:loaded'
         ? message.data.session.id
+        : message.type === 'session:historyPrepended'
+          ? message.data.sessionID
         : undefined;
 
       Promise.resolve(this.view.webview.postMessage(message))
@@ -558,6 +572,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       );
     }
   }
+}
+
+function prependUniqueMessages(
+  existingMessages: MessageWithParts[],
+  olderMessages: SessionHistoryPrependedMessage['data']['messages'],
+): MessageWithParts[] {
+  const existingIds = new Set(existingMessages.map((message) => message.info.id));
+  const seenOlderIds = new Set<string>();
+  const uniqueOlderMessages = olderMessages.filter((message) => {
+    const messageId = message.info.id;
+    if (existingIds.has(messageId) || seenOlderIds.has(messageId)) {
+      return false;
+    }
+
+    seenOlderIds.add(messageId);
+    return true;
+  });
+
+  if (uniqueOlderMessages.length === 0) {
+    return existingMessages;
+  }
+
+  return [...uniqueOlderMessages, ...existingMessages];
 }
 
 function stripWrappingQuotes(value: string): string {

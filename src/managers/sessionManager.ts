@@ -6,6 +6,9 @@ import type { SessionTreeProvider } from '../providers/sessionTreeProvider';
 import type { ChatViewProvider } from '../providers/chatViewProvider';
 import type { Logger } from '../services/logger';
 
+const INITIAL_SESSION_MESSAGE_LIMIT = 50;
+const SESSION_HISTORY_BATCH_SIZE = 50;
+
 /**
  * Coordinates session state between the REST API client, the session tree
  * provider and the chat webview.
@@ -67,8 +70,8 @@ export class SessionManager implements vscode.Disposable {
   }
 
   /**
-   * Switch to a session: fetch its messages, update the tree highlighting
-   * and push the full conversation to the webview.
+   * Switch to a session: fetch a recent message batch first, update the tree
+   * highlighting and push the session to the webview immediately.
    */
   async setActiveSession(id: string): Promise<void> {
     const nonce = ++this.activeSessionLoadNonce;
@@ -84,11 +87,14 @@ export class SessionManager implements vscode.Disposable {
         this.sessions.set(id, session);
       }
 
-      // Fetch messages
-      const messages: MessageWithParts[] = await this.client.listMessages(id);
+      // Fetch only the newest messages first so the webview can paint quickly.
+      const messages: MessageWithParts[] = await this.client.listMessages(
+        id,
+        INITIAL_SESSION_MESSAGE_LIMIT,
+      );
 
       // Prevent stale loads from overwriting the current session
-      if (nonce !== this.activeSessionLoadNonce || this.activeSessionId !== id) {
+      if (!this.isCurrentSessionLoad(id, nonce)) {
         this.logger.debug(`SessionManager: ignoring stale session load for ${id}`);
         return;
       }
@@ -99,8 +105,10 @@ export class SessionManager implements vscode.Disposable {
         type: 'session:loaded',
         data: { session, messages },
       });
+
+      void this.hydrateOlderMessages(id, messages, nonce);
     } catch (err) {
-      if (nonce !== this.activeSessionLoadNonce || this.activeSessionId !== id) {
+      if (!this.isCurrentSessionLoad(id, nonce)) {
         // User switched sessions while this request was in-flight.
         this.logger.debug(
           `SessionManager: ignoring error from stale session load for ${id}`,
@@ -113,6 +121,70 @@ export class SessionManager implements vscode.Disposable {
         err instanceof Error ? err.message : String(err),
       );
       vscode.window.showErrorMessage(`Failed to load session: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private isCurrentSessionLoad(id: string, nonce: number): boolean {
+    return nonce === this.activeSessionLoadNonce && this.activeSessionId === id;
+  }
+
+  private async hydrateOlderMessages(
+    id: string,
+    recentMessages: MessageWithParts[],
+    nonce: number,
+  ): Promise<void> {
+    if (recentMessages.length < INITIAL_SESSION_MESSAGE_LIMIT) {
+      return;
+    }
+
+    try {
+      const fullMessages = await this.client.listMessages(id);
+
+      if (!this.isCurrentSessionLoad(id, nonce)) {
+        this.logger.debug(`SessionManager: ignoring stale history hydration for ${id}`);
+        return;
+      }
+
+      const olderMessages = extractOlderMessages(fullMessages, recentMessages);
+      if (olderMessages.length === 0) {
+        return;
+      }
+
+      this.logger.debug(
+        `SessionManager: hydrating ${olderMessages.length} older message(s) for ${id} in batches of ${SESSION_HISTORY_BATCH_SIZE}`,
+      );
+
+      for (let end = olderMessages.length; end > 0; end -= SESSION_HISTORY_BATCH_SIZE) {
+        if (!this.isCurrentSessionLoad(id, nonce)) {
+          this.logger.debug(`SessionManager: stopping stale history hydration for ${id}`);
+          return;
+        }
+
+        const start = Math.max(0, end - SESSION_HISTORY_BATCH_SIZE);
+        const batch = olderMessages.slice(start, end);
+
+        this.chatProvider.postMessage({
+          type: 'session:historyPrepended',
+          data: { sessionID: id, messages: batch },
+        });
+
+        if (start > 0) {
+          await waitForNextTick();
+        }
+      }
+    } catch (err) {
+      if (!this.isCurrentSessionLoad(id, nonce)) {
+        this.logger.debug(
+          `SessionManager: ignoring stale history hydration error for ${id}`,
+          err instanceof Error ? err.message : String(err),
+        );
+        return;
+      }
+
+      this.logger.warn(
+        'SessionManager: failed to hydrate older session messages',
+        err instanceof Error ? err.message : String(err),
+      );
     }
   }
 
@@ -207,4 +279,30 @@ export class SessionManager implements vscode.Disposable {
     }
     this.unsubscribers = [];
   }
+}
+
+function extractOlderMessages(
+  fullMessages: MessageWithParts[],
+  recentMessages: MessageWithParts[],
+): MessageWithParts[] {
+  if (recentMessages.length === 0 || fullMessages.length <= recentMessages.length) {
+    return [];
+  }
+
+  const firstRecentMessageId = recentMessages[0]?.info.id;
+  if (firstRecentMessageId) {
+    const recentStartIndex = fullMessages.findIndex(
+      (message) => message.info.id === firstRecentMessageId,
+    );
+
+    if (recentStartIndex >= 0) {
+      return fullMessages.slice(0, recentStartIndex);
+    }
+  }
+
+  return fullMessages.slice(0, Math.max(0, fullMessages.length - recentMessages.length));
+}
+
+function waitForNextTick(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }

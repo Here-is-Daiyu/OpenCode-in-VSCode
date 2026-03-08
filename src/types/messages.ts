@@ -8,6 +8,7 @@ import type { Session, MessageWithParts, OpenCodeConfig, Provider, Agent, Todo, 
 // Extension → Webview messages
 export type ExtensionToWebviewMessage =
   | { type: 'session:loaded'; data: { session: Session; messages: MessageWithParts[] } }
+  | { type: 'session:historyPrepended'; data: { sessionID: string; messages: MessageWithParts[] } }
   | { type: 'session:created'; data: Session }
   | { type: 'session:updated'; data: Session }
   | { type: 'session:deleted'; data: { id: string } }

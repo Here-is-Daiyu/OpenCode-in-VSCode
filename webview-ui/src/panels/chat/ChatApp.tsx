@@ -49,6 +49,11 @@ export function ChatApp() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
+  const pendingHistoryPrependScrollRef = useRef<{
+    previousScrollHeight: number;
+    previousScrollTop: number;
+  } | null>(null);
+  const skipNextAutoScrollRef = useRef(false);
   const bufferedSessionMessagesRef = useRef<Map<string, SessionScopedWebviewMessage[]>>(new Map());
 
   // Store state
@@ -66,6 +71,7 @@ export function ChatApp() {
   const updateSession = useChatStore((s) => s.updateSession);
   const clearSession = useChatStore((s) => s.clearSession);
   const setSessionStatus = useChatStore((s) => s.setSessionStatus);
+  const prependMessages = useChatStore((s) => s.prependMessages);
   const updateMessage = useChatStore((s) => s.updateMessage);
   const updatePart = useChatStore((s) => s.updatePart);
   const appendPartDelta = useChatStore((s) => s.appendPartDelta);
@@ -152,6 +158,28 @@ export function ChatApp() {
     [applySessionScopedMessage, bufferSessionMessage]
   );
 
+  const prependSessionHistory = useCallback(
+    (sessionID: string, olderMessages: typeof messages) => {
+      if (useChatStore.getState().currentSession?.id !== sessionID) {
+        return;
+      }
+
+      const scrollContainer = messagesRef.current;
+      if (scrollContainer) {
+        pendingHistoryPrependScrollRef.current = {
+          previousScrollHeight: scrollContainer.scrollHeight,
+          previousScrollTop: scrollContainer.scrollTop,
+        };
+      }
+
+      const prependedCount = prependMessages(olderMessages);
+      if (prependedCount === 0 || !scrollContainer) {
+        pendingHistoryPrependScrollRef.current = null;
+      }
+    },
+    [prependMessages]
+  );
+
   // ── Scroll helpers ────────────────────────────────────────────────────
 
   /** Check whether the scroll container is near the bottom */
@@ -171,8 +199,32 @@ export function ChatApp() {
     setAtBottom(checkAtBottom());
   }, [checkAtBottom]);
 
+  useLayoutEffect(() => {
+    const pendingScrollState = pendingHistoryPrependScrollRef.current;
+    if (!pendingScrollState) {
+      return;
+    }
+
+    pendingHistoryPrependScrollRef.current = null;
+
+    const scrollContainer = messagesRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const scrollHeightDelta = scrollContainer.scrollHeight - pendingScrollState.previousScrollHeight;
+    scrollContainer.scrollTop = pendingScrollState.previousScrollTop + scrollHeightDelta;
+    prevMessageCountRef.current = messages.length;
+    skipNextAutoScrollRef.current = true;
+  }, [messages]);
+
   // Auto-scroll on new messages or streaming content updates
   useLayoutEffect(() => {
+    if (skipNextAutoScrollRef.current) {
+      skipNextAutoScrollRef.current = false;
+      return;
+    }
+
     const newCount = messages.length;
     const isNewMessage = newCount > prevMessageCountRef.current;
     prevMessageCountRef.current = newCount;
@@ -214,13 +266,21 @@ export function ChatApp() {
             break;
 
           case 'session:loaded':
+            pendingHistoryPrependScrollRef.current = null;
+            skipNextAutoScrollRef.current = false;
             setAtBottom(true);
             prevMessageCountRef.current = 0; // reset so auto-scroll triggers
             setSession(message.data.session, message.data.messages);
             flushBufferedSessionMessages(message.data.session.id);
             break;
 
+          case 'session:historyPrepended':
+            prependSessionHistory(message.data.sessionID, message.data.messages);
+            break;
+
           case 'session:created':
+            pendingHistoryPrependScrollRef.current = null;
+            skipNextAutoScrollRef.current = false;
             setAtBottom(true);
             prevMessageCountRef.current = 0;
             setSession(message.data, []);
@@ -234,11 +294,15 @@ export function ChatApp() {
           case 'session:deleted':
             bufferedSessionMessagesRef.current.delete(message.data.id);
             if (getActiveSessionID() === message.data.id) {
+              pendingHistoryPrependScrollRef.current = null;
+              skipNextAutoScrollRef.current = false;
               clearSession();
             }
             break;
 
           case 'session:cleared':
+            pendingHistoryPrependScrollRef.current = null;
+            skipNextAutoScrollRef.current = false;
             setAtBottom(true);
             bufferedSessionMessagesRef.current.clear();
             clearSession();
@@ -302,12 +366,8 @@ export function ChatApp() {
       updateSession,
       clearSession,
       flushBufferedSessionMessages,
-      setSessionStatus,
-      updateMessage,
-      updatePart,
-      appendPartDelta,
-      removeMessage,
       applyOrBufferSessionMessage,
+      prependSessionHistory,
       setPermission,
       setQuestion,
       rollbackOptimisticMessage,

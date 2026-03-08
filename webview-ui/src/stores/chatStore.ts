@@ -61,6 +61,7 @@ export interface ChatState {
   updateSession: (session: Session) => void;
   clearSession: () => void;
   setSessionStatus: (status: ChatSessionStatusInput) => void;
+  prependMessages: (messages: MessageWithParts[]) => number;
   addMessage: (message: MessageWithParts) => void;
   updateMessage: (message: MessageWithParts) => void;
   updatePart: (messageID: string, part: Part) => void;
@@ -134,6 +135,37 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ isStreaming: true });
     }
     // 'retry' keeps isStreaming as-is (server is retrying)
+  },
+
+  prependMessages: (messages) => {
+    let prependedCount = 0;
+
+    set((state) => {
+      if (messages.length === 0) {
+        return state;
+      }
+
+      const existingIds = new Set(state.messages.map((message) => message.info.id));
+      const seenIncomingIds = new Set<string>();
+      const uniqueMessages = messages.filter((message) => {
+        const messageId = message.info.id;
+        if (existingIds.has(messageId) || seenIncomingIds.has(messageId)) {
+          return false;
+        }
+
+        seenIncomingIds.add(messageId);
+        return true;
+      });
+
+      if (uniqueMessages.length === 0) {
+        return state;
+      }
+
+      prependedCount = uniqueMessages.length;
+      return { messages: [...uniqueMessages, ...state.messages] };
+    });
+
+    return prependedCount;
   },
 
   addMessage: (message) =>
