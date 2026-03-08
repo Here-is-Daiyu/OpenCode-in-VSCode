@@ -5,12 +5,32 @@
 import { create } from 'zustand';
 import type {
   Session,
+  SessionStatus as OpenCodeSessionStatus,
   MessageWithParts,
   Part,
   PermissionRequest,
   Question,
   TextPart,
 } from '../types/opencode';
+
+export type ChatSessionStatus = OpenCodeSessionStatus['status'];
+
+type ChatSessionStatusInput = ChatSessionStatus | 'busy' | undefined;
+
+function normalizeSessionStatus(status: string | undefined): ChatSessionStatus {
+  switch (status) {
+    case 'busy':
+      return 'active';
+    case 'idle':
+    case 'active':
+    case 'error':
+    case 'compacting':
+    case 'retry':
+      return status;
+    default:
+      return 'idle';
+  }
+}
 
 export interface ChatState {
   // Connection
@@ -20,7 +40,7 @@ export interface ChatState {
   // Session
   currentSession?: Session;
   messages: MessageWithParts[];
-  sessionStatus: 'idle' | 'active' | 'error' | 'compacting' | 'retry';
+  sessionStatus: ChatSessionStatus;
 
   // UI
   inputText: string;
@@ -40,7 +60,7 @@ export interface ChatState {
   setSession: (session: Session, messages: MessageWithParts[]) => void;
   updateSession: (session: Session) => void;
   clearSession: () => void;
-  setSessionStatus: (status: 'idle' | 'active' | 'error' | 'compacting' | 'retry') => void;
+  setSessionStatus: (status: ChatSessionStatusInput) => void;
   addMessage: (message: MessageWithParts) => void;
   updateMessage: (message: MessageWithParts) => void;
   updatePart: (messageID: string, part: Part) => void;
@@ -105,10 +125,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }),
 
   setSessionStatus: (status) => {
-    set({ sessionStatus: status });
-    if (status === 'idle') {
+    const normalizedStatus = normalizeSessionStatus(status);
+
+    set({ sessionStatus: normalizedStatus });
+    if (normalizedStatus === 'idle') {
       set({ isStreaming: false });
-    } else if (status === 'active') {
+    } else if (normalizedStatus === 'active') {
       set({ isStreaming: true });
     }
     // 'retry' keeps isStreaming as-is (server is retrying)
@@ -282,6 +304,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       optimisticMessageID: undefined,
       savedInputText: undefined,
+      sessionStatus: 'active',
+      isStreaming: true,
     });
   },
 

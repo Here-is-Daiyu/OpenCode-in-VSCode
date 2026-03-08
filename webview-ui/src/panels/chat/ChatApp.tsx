@@ -20,6 +20,27 @@ import type { ExtensionToWebviewMessage } from '../../types/messages';
 /** Distance from bottom (px) within which we consider the user "at bottom" */
 const AT_BOTTOM_THRESHOLD = 150;
 
+type SessionScopedWebviewMessage = Extract<
+  ExtensionToWebviewMessage,
+  | { type: 'session:status' }
+  | { type: 'message:updated' }
+  | { type: 'message:partUpdated' }
+  | { type: 'message:partDelta' }
+  | { type: 'message:removed' }
+>;
+
+function getSessionScopedMessageSessionID(message: SessionScopedWebviewMessage): string {
+  switch (message.type) {
+    case 'message:updated':
+      return message.data.info.sessionID;
+    case 'session:status':
+    case 'message:partUpdated':
+    case 'message:partDelta':
+    case 'message:removed':
+      return message.data.sessionID;
+  }
+}
+
 export function ChatApp() {
   const [error, setError] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
@@ -28,6 +49,7 @@ export function ChatApp() {
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
+  const bufferedSessionMessagesRef = useRef<Map<string, SessionScopedWebviewMessage[]>>(new Map());
 
   // Store state
   const connected = useChatStore((s) => s.connected);
@@ -52,6 +74,83 @@ export function ChatApp() {
   const setQuestion = useChatStore((s) => s.setQuestion);
   const rollbackOptimisticMessage = useChatStore((s) => s.rollbackOptimisticMessage);
   const confirmOptimisticMessage = useChatStore((s) => s.confirmOptimisticMessage);
+
+  const applySessionScopedMessage = useCallback(
+    (message: SessionScopedWebviewMessage) => {
+      switch (message.type) {
+        case 'session:status':
+          setSessionStatus(message.data.status.status);
+          break;
+
+        case 'message:updated':
+          updateMessage(message.data);
+          break;
+
+        case 'message:partUpdated':
+          updatePart(message.data.messageID, message.data.part);
+          break;
+
+        case 'message:partDelta':
+          appendPartDelta(message.data.messageID, message.data.partID, message.data.delta);
+          break;
+
+        case 'message:removed':
+          removeMessage(message.data.messageID);
+          break;
+      }
+    },
+    [setSessionStatus, updateMessage, updatePart, appendPartDelta, removeMessage]
+  );
+
+  const bufferSessionMessage = useCallback((message: SessionScopedWebviewMessage) => {
+    const sessionID = getSessionScopedMessageSessionID(message);
+    const bufferedMessages = bufferedSessionMessagesRef.current.get(sessionID) ?? [];
+
+    bufferedMessages.push(message);
+    bufferedSessionMessagesRef.current.set(sessionID, bufferedMessages);
+  }, []);
+
+  const flushBufferedSessionMessages = useCallback(
+    (sessionID: string) => {
+      const bufferedMessages = bufferedSessionMessagesRef.current.get(sessionID);
+
+      for (const bufferedSessionID of Array.from(bufferedSessionMessagesRef.current.keys())) {
+        if (bufferedSessionID !== sessionID) {
+          bufferedSessionMessagesRef.current.delete(bufferedSessionID);
+        }
+      }
+
+      if (!bufferedMessages?.length) {
+        return;
+      }
+
+      bufferedSessionMessagesRef.current.delete(sessionID);
+
+      if (useChatStore.getState().currentSession?.id !== sessionID) {
+        return;
+      }
+
+      for (const bufferedMessage of bufferedMessages) {
+        applySessionScopedMessage(bufferedMessage);
+      }
+    },
+    [applySessionScopedMessage]
+  );
+
+  const applyOrBufferSessionMessage = useCallback(
+    (message: SessionScopedWebviewMessage) => {
+      const sessionID = getSessionScopedMessageSessionID(message);
+      const activeSessionID = useChatStore.getState().currentSession?.id;
+
+      if (activeSessionID !== sessionID) {
+        bufferSessionMessage(message);
+        return;
+      }
+
+      applySessionScopedMessage(message);
+    },
+    [applySessionScopedMessage, bufferSessionMessage]
+  );
 
   // ── Scroll helpers ────────────────────────────────────────────────────
 
@@ -118,10 +217,14 @@ export function ChatApp() {
             setAtBottom(true);
             prevMessageCountRef.current = 0; // reset so auto-scroll triggers
             setSession(message.data.session, message.data.messages);
+            flushBufferedSessionMessages(message.data.session.id);
             break;
 
           case 'session:created':
+            setAtBottom(true);
+            prevMessageCountRef.current = 0;
             setSession(message.data, []);
+            flushBufferedSessionMessages(message.data.id);
             break;
 
           case 'session:updated':
@@ -129,6 +232,7 @@ export function ChatApp() {
             break;
 
           case 'session:deleted':
+            bufferedSessionMessagesRef.current.delete(message.data.id);
             if (getActiveSessionID() === message.data.id) {
               clearSession();
             }
@@ -136,35 +240,28 @@ export function ChatApp() {
 
           case 'session:cleared':
             setAtBottom(true);
+            bufferedSessionMessagesRef.current.clear();
             clearSession();
             break;
 
           case 'session:status':
-            if (getActiveSessionID() === message.data.sessionID) {
-              setSessionStatus(message.data.status.status);
-            }
+            applyOrBufferSessionMessage(message);
             break;
 
           case 'message:updated':
-            updateMessage(message.data);
+            applyOrBufferSessionMessage(message);
             break;
 
           case 'message:partUpdated':
-            if (getActiveSessionID() === message.data.sessionID) {
-              updatePart(message.data.messageID, message.data.part);
-            }
+            applyOrBufferSessionMessage(message);
             break;
 
           case 'message:partDelta':
-            if (getActiveSessionID() === message.data.sessionID) {
-              appendPartDelta(message.data.messageID, message.data.partID, message.data.delta);
-            }
+            applyOrBufferSessionMessage(message);
             break;
 
           case 'message:removed':
-            if (getActiveSessionID() === message.data.sessionID) {
-              removeMessage(message.data.messageID);
-            }
+            applyOrBufferSessionMessage(message);
             break;
 
           case 'permission:asked':
@@ -204,11 +301,13 @@ export function ChatApp() {
       setSession,
       updateSession,
       clearSession,
+      flushBufferedSessionMessages,
       setSessionStatus,
       updateMessage,
       updatePart,
       appendPartDelta,
       removeMessage,
+      applyOrBufferSessionMessage,
       setPermission,
       setQuestion,
       rollbackOptimisticMessage,
