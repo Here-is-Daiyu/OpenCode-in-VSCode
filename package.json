@@ -2,7 +2,7 @@
   "name": "opencode-vscode",
   "displayName": "OpenCode for VSCode",
   "description": "Full-featured OpenCode AI coding assistant integration for Visual Studio Code",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "opencode-community",
   "license": "MIT",
   "repository": {

@@ -1,4 +1,4 @@
-name: Build and release VSIX
+name: Build and package VSIX
 
 on:
   push:
@@ -9,10 +9,10 @@ on:
       - "V*"
 
 jobs:
-  build-and-release:
+  build-and-package:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -94,12 +94,3 @@ jobs:
           name: opencode-vscode-${{ steps.version.outputs.version }}-vsix
           path: ${{ steps.package.outputs.vsix_path }}
           if-no-files-found: error
-
-      - name: Upload VSIX to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.ref_name }}
-          files: ${{ steps.package.outputs.vsix_path }}
-          generate_release_notes: true
-          prerelease: ${{ contains(steps.version.outputs.version, '-') }}

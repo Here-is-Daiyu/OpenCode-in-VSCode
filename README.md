@@ -1,175 +1,116 @@
-# OpenCode for VSCode
+# opencode-vscode
 
-A powerful VSCode extension that brings the full OpenCode AI coding assistant experience directly into Visual Studio Code, rivaling and extending the OpenCode Desktop application.
+`opencode-vscode` is a Visual Studio Code extension that brings OpenCode into VS Code as native chat, session, status, and settings experiences. It manages or connects to `opencode serve`, syncs against the global event stream, and keeps the extension host and webview UI aligned through typed messages.
 
-## ✨ Features
+## Project overview
 
-### 🤖 AI Chat Interface
-- Full-featured chat panel in the auxiliary sidebar
-- Streaming message display with real-time token usage tracking
-- Rich markdown rendering with syntax highlighting (Shiki, matching VSCode themes)
-- LaTeX/KaTeX math formula rendering
-- Image attachment support (paste, drag-drop, file picker)
-- Tool call visualization with expandable details
-- Permission request cards (inline allow/deny/always allow)
-- Question cards (multiple choice, text input)
-- Slash commands (/compact, /new, /fork, /diff, etc.)
-- File references (@filename) with intelligent autocomplete
+This repository packages a VS Code extension for working with OpenCode without leaving the editor. The current implementation focuses on:
 
-### 📋 Session Management
-- Session list with parent/child hierarchy (TreeView)
-- Create, switch, delete, fork sessions
-- Undo/redo message exchanges
-- Session sharing
-- Todo list tracking
-- Context usage and compression indicators
+- an activity bar chat experience inside VS Code
+- real-time session and message sync
+- local server lifecycle management for `opencode serve`
+- native VS Code integration for diffs, terminals, commands, and tree views
 
-### ⚙️ Built-in Settings
-- Comprehensive settings editor (Webview-based)
-- All OpenCode configuration editable in-place
-- Model/Agent/Provider selection and management
-- MCP server configuration
-- Permission rules configuration
-- Custom command definition
-- Extension-specific settings
+## Current feature summary
 
-### 🔗 Deep VSCode Integration
-- Native diff editor for file changes (superior to desktop)
-- Native terminal for shell commands
-- Native file explorer integration
-- Editor decorations for AI suggestions
-- CodeLens for quick AI actions
-- Status bar with connection status, model info, token usage
-- Command palette integration (24+ commands)
-- Keyboard shortcuts for common operations
+- Chat UI in the OpenCode activity bar, updated to more closely match the official OpenCode experience
+- Real-time session/message updates driven by the global SSE event stream
+- Image attachments via picker, drag and drop, and paste
+- Session tree with create, switch, delete, fork, share, and refresh flows
+- Faster session switching with recent-first loading and batched older-history hydration
+- Settings webview for VS Code settings plus OpenCode configuration data
+- Status tree and status bar for connection state, model info, providers, MCP, LSP, and token usage
+- Native VS Code helpers for showing diffs, opening a terminal, and adding files or selections to prompts
 
-### 🔌 Extensibility
-- Event-driven architecture with typed message bus
-- Modular provider system
-- Plugin-ready MCP server management
-- Custom command system
-- Themeable webview UI (follows VSCode theme)
+## Requirements / prerequisites
 
-## 📦 Requirements
+- VS Code `^1.94.0`
+- Node.js `20+`
+- `npm`
+- OpenCode CLI installed and available as `opencode`, or configured through `opencode.server.executablePath`
 
-- Visual Studio Code >= 1.94.0
-- OpenCode CLI installed (`npm install -g opencode-ai` or download from https://opencode.ai)
-- Node.js >= 20.0.0 (for OpenCode CLI)
+If your OpenCode server uses auth, launch VS Code with the appropriate environment variables available to the extension host.
 
-## 🚀 Quick Start
+## Installation
 
-1. Install the extension from VSCode Marketplace
-2. Ensure `opencode` CLI is installed and accessible in PATH
-3. Open a project folder in VSCode
-4. The extension will auto-start the OpenCode server
-5. Open the chat panel from the auxiliary sidebar (or press `Ctrl+Shift+O`)
+### Install from a local VSIX
 
-## 🏗️ Architecture
-
-```
-Extension Host (Node.js)
-├── ServerManager        → Manages opencode serve lifecycle
-├── OpenCodeClient       → API client wrapping @opencode-ai/sdk
-├── EventBus             → Typed event distribution (SSE → components)
-├── SessionManager       → Session CRUD + state tracking
-├── ConfigManager        → Configuration sync (VSCode ↔ OpenCode)
-└── CommandRegistry      → Command handlers
-
-Webview (Browser/Chromium)
-├── ChatPanel            → Main chat interface (React)
-├── SettingsPanel        → Settings editor (React)
-└── Shared Components    → Message bubbles, tool cards, etc.
-
-VSCode Integration
-├── TreeViewProviders    → Session list, status display
-├── StatusBarManager     → Connection, model, tokens
-├── EditorIntegration    → Decorations, CodeLens, diff
-└── TerminalIntegration  → Shell command execution
-```
-
-## 🛠️ Development
-
-### Prerequisites
-- Node.js >= 20
-- pnpm (recommended) or npm
-
-### Setup
 ```bash
-git clone <repo-url>
-cd opencode-vscode
-pnpm install
-pnpm run build
+npm ci
+npm ci --prefix webview-ui
+npm run build
+npm run package
 ```
 
-### Development
+Then install the generated `.vsix` file with **Extensions: Install from VSIX...** in VS Code.
+
+## Local development
+
 ```bash
-# Watch mode (extension + webview)
-pnpm run dev
-
-# Build for production
-pnpm run build
-
-# Package extension
-pnpm run package
+npm ci
+npm ci --prefix webview-ui
 ```
 
-### Project Structure
-```
-opencode-vscode/
-├── src/                          # Extension source (TypeScript)
-│   ├── extension.ts              # Entry point
-│   ├── commands/                 # Command handlers
-│   ├── providers/                # WebviewView & TreeView providers
-│   ├── services/                 # Core services (server, client, events)
-│   ├── managers/                 # State managers (session, config)
-│   └── types/                    # TypeScript type definitions
-├── webview-ui/                   # Webview frontend (React + TypeScript)
-│   ├── src/
-│   │   ├── App.tsx               # Root component
-│   │   ├── panels/               # Panel components (chat, settings)
-│   │   ├── components/           # Shared UI components
-│   │   ├── hooks/                # React hooks
-│   │   ├── stores/               # State management (Zustand)
-│   │   └── utils/                # Utilities
-│   ├── index.html
-│   └── vite.config.ts
-├── media/                        # Static assets (icons, images)
-├── docs/                         # Documentation
-│   └── research/                 # Research documents
-├── scripts/                      # Build & utility scripts
-├── package.json                  # Extension manifest
-├── tsconfig.json                 # TypeScript config (extension)
-├── esbuild.mjs                   # Extension build script
-└── .vscodeignore                 # Package exclusions
+Useful commands:
+
+```bash
+npm run dev
+npm run typecheck
 ```
 
-## 📝 Configuration
+To run the extension locally:
 
-### Extension Settings
+1. Open this repository in VS Code
+2. Start the provided `Run Extension` launch configuration (or press `F5`)
+3. Use the Extension Development Host to test the extension
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `opencode.server.hostname` | string | "127.0.0.1" | Server hostname |
-| `opencode.server.port` | number | 0 (auto) | Server port (0 = auto-detect) |
-| `opencode.server.autoStart` | boolean | true | Auto-start server on activation |
-| `opencode.server.executablePath` | string | "opencode" | Path to opencode CLI |
-| `opencode.chat.fontSize` | number | 14 | Chat font size |
-| `opencode.chat.showTimestamps` | boolean | true | Show message timestamps |
-| `opencode.chat.wordWrap` | boolean | true | Wrap long lines |
-| `opencode.chat.maxImageSize` | number | 10 | Max image size in MB |
+## Build / package commands
 
-### OpenCode Configuration
-The built-in settings page provides access to all OpenCode configuration options including:
-- Model and provider selection
-- Agent configuration
-- Permission rules
-- MCP server management
-- Custom commands
+| Command | Purpose |
+| --- | --- |
+| `npm run build` | Build the extension bundle and the webview UI |
+| `npm run typecheck` | Type-check both the extension and webview code |
+| `npm run dev` | Watch the extension and webview builds during development |
+| `npm run package` | Package the extension into a `.vsix` file |
 
-## 🤝 Contributing
+## Basic usage in VS Code
 
-Contributions are welcome! Please read the AGENTS.md for development guidelines.
+1. Open a folder or workspace in VS Code
+2. Make sure the `opencode` CLI is available
+3. Let the extension auto-start the server, or run `OpenCode: Start Server`
+4. Open the **OpenCode** activity bar container and use the **Chat**, **Sessions**, and **Status** views
+5. Run `OpenCode: Open Settings` to open the settings webview
+6. Use editor/context commands to add the active file or selection to the prompt, and `OpenCode: Show Session Diff` to inspect session changes
 
-## 📄 License
+## Release / tag packaging
+
+The workflow in `.github/workflows/release-vsix-on-tag.yml` behaves as follows:
+
+- Pushes to `main` run install, build, and typecheck steps only
+- Pushes of tags matching `v*` or `V*` (for example `v1.0.0` or `V1.0.0`) also package the extension into a VSIX
+- Tagged builds upload the VSIX as a GitHub Actions workflow artifact
+- Regular non-tag pushes do **not** upload packaging artifacts
+- The workflow does **not** create a GitHub Release or upload release assets
+
+## Architecture summary
+
+- `src/` — VS Code extension host code: activation, commands, providers, managers, services
+- `src/services/serverManager.ts` — starts/stops and monitors `opencode serve`
+- `src/services/openCodeClient.ts` — REST + SSE client for OpenCode
+- `src/managers/sessionManager.ts` — coordinates session switching and batched history loading
+- `webview-ui/` — React-based chat/settings UI built with Vite and Zustand
+- `src/types/` plus webview message types — typed contracts between extension host and webview
+
+## Docs / research notes
+
+The `docs/research/` directory contains useful reference material:
+
+- `docs/research/opencode-api-reference.md`
+- `docs/research/desktop-features-comparison.md`
+- `docs/research/vscode-extension-api.md`
+
+Some research notes reference local machine paths used during investigation of the official OpenCode sources. Treat those as reference notes only, not as required build dependencies.
+
+## License
 
 MIT
