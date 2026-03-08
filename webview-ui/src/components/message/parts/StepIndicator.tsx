@@ -2,7 +2,7 @@
  * StepIndicator - Renders step-start / step-finish boundaries.
  *
  * step-start: thin divider line
- * step-finish: token usage summary (subtle)
+ * step-finish: intentionally hidden to avoid noisy inline token stats
  */
 
 import React from 'react';
@@ -27,31 +27,7 @@ interface StepFinishIndicatorProps {
 }
 
 export const StepFinishIndicator = React.memo(function StepFinishIndicator({
-  part,
+  part: _part,
 }: StepFinishIndicatorProps) {
-  const { tokens, cost } = part;
-  if (!tokens) return null;
-
-  return (
-    <div className="msg-step-finish">
-      <span className="msg-step-finish__tokens">
-        {formatTokens(tokens.input)} in / {formatTokens(tokens.output)} out
-      </span>
-      {(tokens?.reasoning ?? 0) > 0 && (
-        <span className="msg-step-finish__reasoning">
-          {formatTokens(tokens.reasoning)} reasoning
-        </span>
-      )}
-      {(cost ?? 0) > 0 && (
-        <span className="msg-step-finish__cost">${cost!.toFixed(4)}</span>
-      )}
-    </div>
-  );
+  return null;
 });
-
-function formatTokens(count: number): string {
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}k`;
-  }
-  return String(count);
-}

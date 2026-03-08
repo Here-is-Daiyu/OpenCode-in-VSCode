@@ -4,7 +4,7 @@
  * Simplified orchestrator that delegates to:
  *  - MessageHeader (role, model, timestamp)
  *  - MessageContent (part dispatcher)
- *  - MessageFooter (tokens, cost, copy)
+ *  - MessageFooter (minimal copy affordance)
  *
  * Modeled on OpenCode Desktop's SessionTurn approach.
  */
@@ -86,7 +86,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
       {/* Footer for completed assistant messages */}
       {!isUser && !showStreamingEffects && (
-        <MessageFooter info={info as AssistantMessage} parts={parts} />
+        <MessageFooter parts={parts} />
       )}
 
       {/* Hover copy button for user messages */}

@@ -1,52 +1,41 @@
 /**
- * MessageFooter - Token usage, cost, and copy action for assistant messages.
+ * MessageFooter - Minimal copy action for assistant messages.
  */
 
-import React, { useCallback, useState } from 'react';
-import type { StepFinishPart, Part, AssistantMessage } from '../../types/opencode';
+import React, { useCallback, useMemo, useState } from 'react';
+import type { Part } from '../../types/opencode';
 
 interface MessageFooterProps {
-  info: AssistantMessage;
   parts: Part[];
 }
 
 export const MessageFooter = React.memo(function MessageFooter({
-  info,
   parts,
 }: MessageFooterProps) {
   const [copied, setCopied] = useState(false);
-
-  // Aggregate token counts from the message's own info (preferred) or step-finish parts
-  const tokens = info.tokens;
-  const cost = info.cost ?? 0;
-  const hasTokens = tokens && typeof tokens.input === 'number' && typeof tokens.output === 'number' && (tokens.input > 0 || tokens.output > 0);
+  const textContent = useMemo(
+    () => parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .join('\n\n')
+      .trim(),
+    [parts],
+  );
 
   // Copy handler: copies all text content from parts
   const handleCopy = useCallback(() => {
-    const textContent = parts
-      .filter((p) => p.type === 'text')
-      .map((p) => (p.type === 'text' ? p.text : ''))
-      .join('\n\n');
-
     if (textContent) {
       navigator.clipboard.writeText(textContent).then(() => {
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
       });
     }
-  }, [parts]);
+  }, [textContent]);
 
-  if (!hasTokens && cost <= 0) return null;
+  if (!textContent) return null;
 
   return (
     <div className="msg-footer">
-      {hasTokens && (
-        <span className="msg-footer__tokens">
-          {formatTokens(tokens.input)} in / {formatTokens(tokens.output)} out
-          {(tokens?.reasoning ?? 0) > 0 && ` / ${formatTokens(tokens.reasoning)} reasoning`}
-        </span>
-      )}
-      {cost > 0 && <span className="msg-footer__cost">${cost.toFixed(4)}</span>}
       <button
         className="msg-footer__copy"
         onClick={handleCopy}
@@ -72,11 +61,3 @@ export const MessageFooter = React.memo(function MessageFooter({
     </div>
   );
 });
-
-function formatTokens(count: number | undefined): string {
-  if (count == null) return '0';
-  if (count >= 1000) {
-    return `${(count / 1000).toFixed(1)}k`;
-  }
-  return String(count);
-}

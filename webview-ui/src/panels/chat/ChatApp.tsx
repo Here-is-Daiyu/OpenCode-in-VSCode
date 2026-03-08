@@ -515,30 +515,32 @@ export function ChatApp() {
       {/* Messages area */}
       {!hasMessages ? (
         <div className="chat-messages chat-messages--empty">
-          <div className="chat-welcome">
-            <div className="chat-welcome__icon">
-              {/* Stylized bot icon */}
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
-                <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
-                <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
-                <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
-                <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
-                <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
-              </svg>
-            </div>
-            <div className="chat-welcome__title">Start a conversation</div>
-            <div className="chat-welcome__subtitle">
-              Ask questions, write code, or get help with your project.
-            </div>
-            <div className="chat-welcome__hints">
-              <span className="chat-welcome__hint">
-                <kbd>@</kbd> reference files
-              </span>
-              <span className="chat-welcome__hint-sep">·</span>
-              <span className="chat-welcome__hint">
-                <kbd>/</kbd> commands
-              </span>
+          <div className="chat-messages__inner chat-messages__inner--empty">
+            <div className="chat-welcome">
+              <div className="chat-welcome__icon">
+                {/* Stylized bot icon */}
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                  <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                  <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                  <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                  <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
+                  <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                  <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
+                </svg>
+              </div>
+              <div className="chat-welcome__title">Start a conversation</div>
+              <div className="chat-welcome__subtitle">
+                Ask questions, write code, or get help with your project.
+              </div>
+              <div className="chat-welcome__hints">
+                <span className="chat-welcome__hint">
+                  <kbd>@</kbd> reference files
+                </span>
+                <span className="chat-welcome__hint-sep">·</span>
+                <span className="chat-welcome__hint">
+                  <kbd>/</kbd> commands
+                </span>
+              </div>
             </div>
           </div>
         </div>
@@ -549,36 +551,38 @@ export function ChatApp() {
           onScroll={handleScroll}
           key={currentSession?.id ?? 'no-session'}
         >
-          {messages.map((msg) => (
-            <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
-              <MessageBubble message={msg} />
-            </MessageErrorBoundary>
-          ))}
+          <div className="chat-messages__inner">
+            {messages.map((msg) => (
+              <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
+                <MessageBubble message={msg} />
+              </MessageErrorBoundary>
+            ))}
 
-          {/* Permission request card */}
-          {pendingPermission && (
-            <PermissionCard permission={pendingPermission} />
-          )}
+            {/* Permission request card */}
+            {pendingPermission && (
+              <PermissionCard permission={pendingPermission} />
+            )}
 
-          {/* Question card */}
-          {pendingQuestion && (
-            <QuestionCard question={pendingQuestion} />
-          )}
+            {/* Question card */}
+            {pendingQuestion && (
+              <QuestionCard question={pendingQuestion} />
+            )}
 
-          {/* Streaming indicator */}
-          {isStreaming && (
-            <div className="chat-streaming-indicator">
-              <div className="chat-streaming-indicator__dots">
-                <span className="chat-streaming-indicator__dot" />
-                <span className="chat-streaming-indicator__dot" />
-                <span className="chat-streaming-indicator__dot" />
+            {/* Streaming indicator */}
+            {isStreaming && (
+              <div className="chat-streaming-indicator">
+                <div className="chat-streaming-indicator__dots">
+                  <span className="chat-streaming-indicator__dot" />
+                  <span className="chat-streaming-indicator__dot" />
+                  <span className="chat-streaming-indicator__dot" />
+                </div>
+                <span>Generating...</span>
               </div>
-              <span>Generating...</span>
-            </div>
-          )}
+            )}
 
-          {/* Scroll anchor */}
-          <div ref={bottomRef} className="chat-scroll-anchor" />
+            {/* Scroll anchor */}
+            <div ref={bottomRef} className="chat-scroll-anchor" />
+          </div>
         </div>
       )}
 
