@@ -9,3 +9,6 @@ Thumbs.db
 nul
 *.png
 *.txt
+!LICENSE
+docs/cleanup-backups/
+vendor/opencode-official/

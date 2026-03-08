@@ -29,13 +29,17 @@ interface MessageContentProps {
 
 /** Represents a renderable chunk after grouping. */
 type RenderChunk =
-  | { kind: 'text'; id: string; text: string }
+  | { kind: 'text'; id: string; text: string; isStreaming?: boolean }
   | { kind: 'reasoning'; id: string; text: string; isStreaming?: boolean }
   | { kind: 'tool'; id: string; part: ToolPart }
   | { kind: 'context-group'; id: string; tools: ToolPart[] }
   | { kind: 'step-start'; id: string; part: StepStartPart }
   | { kind: 'step-finish'; id: string; part: StepFinishPart }
   | { kind: 'file'; id: string; part: FilePartType };
+
+function getPartText(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
 
 /**
  * Groups consecutive context-tool parts into ContextToolGroup chunks,
@@ -51,15 +55,15 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
   let reasoningId = '';
 
   const flushText = () => {
-    if (textBuffer) {
-      chunks.push({ kind: 'text', id: textId || 'text', text: textBuffer });
+    if (textBuffer.trim()) {
+      chunks.push({ kind: 'text', id: textId || 'text', text: textBuffer, isStreaming });
       textBuffer = '';
       textId = '';
     }
   };
 
   const flushReasoning = () => {
-    if (reasoningBuffer) {
+    if (reasoningBuffer.trim()) {
       chunks.push({
         kind: 'reasoning',
         id: reasoningId || 'reasoning',
@@ -90,17 +94,23 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
   for (const part of parts) {
     switch (part.type) {
       case 'text':
+        if (!getPartText(part.text).trim()) {
+          break;
+        }
         flushReasoning();
         flushContext();
         if (!textId) textId = part.id;
-        textBuffer += (textBuffer ? '\n\n' : '') + part.text;
+        textBuffer += (textBuffer ? '\n\n' : '') + getPartText(part.text);
         break;
 
       case 'reasoning':
+        if (!getPartText(part.text).trim()) {
+          break;
+        }
         flushText();
         flushContext();
         if (!reasoningId) reasoningId = part.id;
-        reasoningBuffer += part.text;
+        reasoningBuffer += getPartText(part.text);
         break;
 
       case 'tool': {
@@ -164,13 +174,21 @@ export const MessageContent = React.memo(function MessageContent({
       {chunks.map((chunk) => {
         switch (chunk.kind) {
           case 'text':
-            return <TextPart key={chunk.id} text={chunk.text} />;
+            return (
+              <TextPart
+                key={chunk.id}
+                text={chunk.text}
+                cacheKey={chunk.id}
+                isStreaming={chunk.isStreaming}
+              />
+            );
           case 'reasoning':
             return (
               <ReasoningPart
                 key={chunk.id}
                 text={chunk.text}
                 isStreaming={chunk.isStreaming}
+                cacheKey={chunk.id}
               />
             );
           case 'tool':

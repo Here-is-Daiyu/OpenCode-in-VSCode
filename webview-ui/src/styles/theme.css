@@ -1,0 +1,163 @@
+/**
+ * Semantic theme tokens adapted from OpenCode's web UI and mapped to VS Code webview variables.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --font-family-sans: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  --font-family-mono: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  --font-size-small: 12px;
+  --font-size-base: 14px;
+  --font-size-large: 16px;
+  --font-size-x-large: 20px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --line-height-normal: 1.3;
+  --line-height-large: 1.45;
+  --line-height-x-large: 1.7;
+  --letter-spacing-normal: 0;
+  --letter-spacing-tight: -0.16px;
+  --letter-spacing-tightest: -0.32px;
+
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --background-base: var(--vscode-editor-background, #1e1e1e);
+  --background-weak: var(--vscode-sideBar-background, var(--background-base));
+  --background-strong: var(--vscode-sideBar-background, var(--background-base));
+  --background-stronger: var(--vscode-editorWidget-background, var(--background-base));
+
+  --surface-base: var(--vscode-input-background, rgba(128, 128, 128, 0.08));
+  --surface-base-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  --surface-base-active: var(--vscode-list-activeSelectionBackground, rgba(128, 128, 128, 0.12));
+  --surface-inset-base: var(--vscode-textCodeBlock-background, rgba(128, 128, 128, 0.12));
+  --surface-inset-base-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  --surface-raised-base: var(--vscode-sideBar-background, var(--background-base));
+  --surface-raised-base-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  --surface-raised-strong: var(--vscode-editorWidget-background, var(--background-base));
+  --surface-raised-stronger: var(--vscode-editorWidget-background, var(--background-base));
+  --surface-raised-stronger-non-alpha: var(--vscode-editorWidget-background, var(--background-base));
+  --surface-interactive-base: var(--vscode-button-background, #0e639c);
+  --surface-interactive-hover: var(--vscode-button-hoverBackground, #1177bb);
+  --surface-interactive-weak: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.12));
+  --surface-interactive-weak-hover: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.2));
+  --surface-success-weak: color-mix(in srgb, var(--vscode-testing-iconPassed, #89d185) 16%, transparent);
+  --surface-warning-weak: var(--vscode-inputValidation-warningBackground, rgba(255, 199, 0, 0.1));
+  --surface-critical-weak: var(--vscode-inputValidation-errorBackground, rgba(244, 67, 54, 0.1));
+  --surface-info-weak: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 16%, transparent);
+
+  --input-base: var(--vscode-input-background, rgba(128, 128, 128, 0.08));
+  --input-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
+  --input-focus: var(--vscode-input-background, rgba(128, 128, 128, 0.08));
+
+  --text-base: var(--vscode-editor-foreground, #d4d4d4);
+  --text-weak: var(--vscode-descriptionForeground, #9da0a6);
+  --text-weaker: var(--vscode-disabledForeground, #7f848e);
+  --text-strong: var(--vscode-editor-foreground, #ffffff);
+  --text-interactive-base: var(--vscode-textLink-foreground, #3794ff);
+  --text-on-interactive-base: var(--vscode-button-foreground, #ffffff);
+  --text-on-critical-base: var(--vscode-errorForeground, #f14c4c);
+  --text-on-critical-weak: color-mix(in srgb, var(--vscode-errorForeground, #f14c4c) 72%, var(--text-weak));
+  --text-on-warning-base: var(--vscode-editorWarning-foreground, #cca700);
+  --text-on-success-base: var(--vscode-testing-iconPassed, #89d185);
+
+  --button-primary-base: var(--vscode-button-background, #0e639c);
+  --button-primary-hover: var(--vscode-button-hoverBackground, #1177bb);
+  --button-secondary-base: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.12));
+  --button-secondary-hover: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.2));
+  --button-ghost-hover: var(--surface-base-hover);
+
+  --border-base: var(--vscode-contrastBorder, var(--vscode-panel-border, rgba(128, 128, 128, 0.28)));
+  --border-hover: var(--vscode-focusBorder, #3794ff);
+  --border-selected: var(--vscode-focusBorder, #3794ff);
+  --border-focus: var(--vscode-focusBorder, #3794ff);
+  --border-weak-base: var(--vscode-contrastBorder, var(--vscode-panel-border, rgba(128, 128, 128, 0.24)));
+  --border-weaker-base: color-mix(in srgb, var(--vscode-panel-border, rgba(128, 128, 128, 0.24)) 60%, transparent);
+  --border-strong-base: color-mix(in srgb, var(--vscode-panel-border, rgba(128, 128, 128, 0.24)) 140%, transparent);
+  --border-weak-selected: color-mix(in srgb, var(--vscode-focusBorder, #3794ff) 28%, transparent);
+  --border-interactive-base: var(--vscode-focusBorder, #3794ff);
+  --border-warning-base: var(--vscode-inputValidation-warningBorder, var(--vscode-editorWarning-foreground, #cca700));
+  --border-critical-base: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, #f14c4c));
+  --border-critical-selected: var(--vscode-errorForeground, #f14c4c);
+  --border-success-base: color-mix(in srgb, var(--vscode-testing-iconPassed, #89d185) 56%, transparent);
+
+  --icon-base: var(--vscode-icon-foreground, var(--text-weak));
+  --icon-weak-base: var(--text-weak);
+  --icon-weaker: var(--text-weaker);
+  --icon-strong-base: var(--text-strong);
+  --icon-interactive-base: var(--vscode-focusBorder, #3794ff);
+  --icon-critical-base: var(--vscode-errorForeground, #f14c4c);
+  --icon-warning-base: var(--vscode-editorWarning-foreground, #cca700);
+  --icon-success-base: var(--vscode-testing-iconPassed, #89d185);
+  --icon-invert-base: var(--vscode-button-foreground, #ffffff);
+
+  --shadow-xs-border: 0 0 0 1px var(--border-weak-base), 0 10px 32px rgba(0, 0, 0, 0.12);
+  --shadow-xs-border-base: 0 0 0 1px var(--border-weak-base), 0 4px 12px rgba(0, 0, 0, 0.12);
+  --shadow-xs-border-hover: 0 0 0 1px var(--border-hover), 0 10px 32px rgba(0, 0, 0, 0.14);
+  --shadow-xs-border-focus:
+    0 0 0 1px var(--border-selected),
+    0 0 0 3px var(--border-weak-selected),
+    0 10px 32px rgba(0, 0, 0, 0.14);
+  --shadow-md: 0 16px 48px rgba(0, 0, 0, 0.2);
+
+  --syntax-comment: var(--text-weak);
+  --syntax-regexp: var(--text-base);
+  --syntax-string: #00ceb9;
+  --syntax-keyword: var(--text-weak);
+  --syntax-primitive: #ffba92;
+  --syntax-operator: var(--text-weak);
+  --syntax-variable: var(--text-strong);
+  --syntax-property: #ff9ae2;
+  --syntax-type: #ecf58c;
+  --syntax-constant: #93e9f6;
+  --syntax-punctuation: var(--text-weak);
+  --syntax-object: var(--text-strong);
+  --syntax-success: var(--icon-success-base);
+  --syntax-warning: var(--icon-warning-base);
+  --syntax-critical: var(--icon-critical-base);
+  --syntax-info: var(--icon-interactive-base);
+  --syntax-diff-add: var(--icon-success-base);
+  --syntax-diff-delete: var(--icon-critical-base);
+
+  --chat-column-max-width: 42rem;
+  --chat-column-padding: 16px;
+
+  --shiki-color-text: var(--text-base);
+  --shiki-color-background: transparent;
+  --shiki-token-constant: var(--syntax-constant);
+  --shiki-token-string: var(--syntax-string);
+  --shiki-token-comment: var(--syntax-comment);
+  --shiki-token-keyword: var(--syntax-keyword);
+  --shiki-token-parameter: var(--syntax-variable);
+  --shiki-token-function: var(--syntax-type);
+  --shiki-token-string-expression: var(--syntax-string);
+  --shiki-token-punctuation: var(--syntax-punctuation);
+  --shiki-token-link: var(--text-interactive-base);
+}
+
+body[data-vscode-theme-kind='vscode-light'],
+body[data-vscode-theme-kind='vscode-high-contrast-light'] {
+  --shadow-xs-border: 0 0 0 1px var(--border-weak-base), 0 10px 28px rgba(16, 24, 40, 0.08);
+  --shadow-xs-border-base: 0 0 0 1px var(--border-weak-base), 0 3px 10px rgba(16, 24, 40, 0.08);
+  --shadow-xs-border-hover: 0 0 0 1px var(--border-hover), 0 12px 30px rgba(16, 24, 40, 0.1);
+  --shadow-xs-border-focus:
+    0 0 0 1px var(--border-selected),
+    0 0 0 3px var(--border-weak-selected),
+    0 10px 24px rgba(16, 24, 40, 0.1);
+
+  --syntax-string: #006656;
+  --syntax-primitive: #fb4804;
+  --syntax-property: #ed6dc8;
+  --syntax-type: #596600;
+  --syntax-constant: #007b80;
+}
+
+@media (min-width: 768px) {
+  :root {
+    --chat-column-padding: 20px;
+  }
+}

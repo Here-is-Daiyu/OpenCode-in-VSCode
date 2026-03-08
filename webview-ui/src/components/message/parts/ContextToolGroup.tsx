@@ -11,21 +11,26 @@ interface ContextToolGroupProps {
   tools: ToolPart[];
 }
 
+function getToolName(value: unknown): string {
+  return typeof value === 'string' && value ? value : 'tool';
+}
+
 /** Checks whether a tool part belongs to the "context gathering" category. */
 export function isContextTool(part: ToolPart): boolean {
-  return CONTEXT_TOOLS.has(part.tool.toLowerCase());
+  return CONTEXT_TOOLS.has(getToolName(part.tool).toLowerCase());
 }
 
 function buildGroupSummary(tools: ToolPart[]): string {
   const counts: Record<string, number> = {};
   for (const t of tools) {
-    const name = t.tool.toLowerCase();
+    const tool = getToolName(t.tool);
+    const name = tool.toLowerCase();
     if (name === 'read' || name === 'list') {
       counts['reads'] = (counts['reads'] ?? 0) + 1;
     } else if (name === 'glob' || name === 'grep') {
       counts['searches'] = (counts['searches'] ?? 0) + 1;
     } else {
-      counts[t.tool] = (counts[t.tool] ?? 0) + 1;
+      counts[tool] = (counts[tool] ?? 0) + 1;
     }
   }
 

@@ -11,8 +11,28 @@ interface PermissionCardProps {
   permission: PermissionRequest;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function formatJson(value: unknown): string {
+  try {
+    if (value == null) {
+      return '{}';
+    }
+
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value ?? '{}');
+  }
+}
+
 export function PermissionCard({ permission }: PermissionCardProps) {
   const setPermission = useChatStore((s) => s.setPermission);
+  const input = isRecord(permission.input) ? permission.input : {};
+  const hasInput = Object.keys(input).length > 0;
+  const description = typeof permission.description === 'string' ? permission.description : '';
+  const tool = typeof permission.tool === 'string' && permission.tool ? permission.tool : 'unknown';
 
   const handleRespond = (response: string, remember?: boolean) => {
     postMessage({
@@ -35,17 +55,15 @@ export function PermissionCard({ permission }: PermissionCardProps) {
 
       <div className="permission-card__body">
         <div className="permission-card__tool">
-          Tool: <strong>{permission.tool}</strong>
+          Tool: <strong>{tool}</strong>
         </div>
-        <div className="permission-card__description">
-          {permission.description}
-        </div>
+        <div className="permission-card__description">{description}</div>
 
-        {Object.keys(permission.input).length > 0 && (
+        {hasInput && (
           <details className="permission-card__details">
             <summary>Input details</summary>
             <pre className="permission-card__input">
-              <code>{JSON.stringify(permission.input, null, 2)}</code>
+              <code>{formatJson(permission.input)}</code>
             </pre>
           </details>
         )}
@@ -55,18 +73,21 @@ export function PermissionCard({ permission }: PermissionCardProps) {
         <button
           className="permission-card__btn permission-card__btn--deny"
           onClick={() => handleRespond('deny')}
+          type="button"
         >
           Deny
         </button>
         <button
           className="permission-card__btn permission-card__btn--allow"
           onClick={() => handleRespond('allow')}
+          type="button"
         >
           Allow
         </button>
         <button
           className="permission-card__btn permission-card__btn--always"
           onClick={() => handleRespond('allow', true)}
+          type="button"
         >
           Always Allow
         </button>

@@ -19,6 +19,36 @@ import { MarkdownRenderer } from '../../MarkdownRenderer';
 
 const CONTEXT_TOOLS = new Set(['read', 'list', 'glob', 'grep']);
 
+const EMPTY_RECORD: Record<string, unknown> = {};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : EMPTY_RECORD;
+}
+
+function stringifyValue(value: unknown): string {
+  if (typeof value === 'string') {
+    return value;
+  }
+
+  if (value == null) {
+    return '';
+  }
+
+  try {
+    return JSON.stringify(value, null, 2) ?? String(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function getToolName(value: unknown): string {
+  return typeof value === 'string' && value ? value : 'tool';
+}
+
 function getToolIcon(toolName: string): React.ReactNode {
   const name = toolName.toLowerCase();
 
@@ -120,54 +150,54 @@ function getStatusIcon(status: string | undefined): React.ReactNode {
 // Arg summary
 // ---------------------------------------------------------------------------
 
-function getArgsSummary(tool: string, input: Record<string, unknown>): string {
+function getArgsSummary(tool: string, input: unknown): string {
   const name = tool.toLowerCase();
+  const value = toRecord(input);
 
-  if (name === 'read' && input.filePath) {
-    const fp = String(input.filePath);
+  if (name === 'read' && value.filePath) {
+    const fp = String(value.filePath);
     const short = fp.length > 50 ? '...' + fp.slice(-47) : fp;
     const range =
-      input.offset || input.limit
-        ? ` lines ${input.offset ?? 1}-${(Number(input.offset ?? 1)) + (Number(input.limit ?? 2000)) - 1}`
+      value.offset || value.limit
+        ? ` lines ${value.offset ?? 1}-${(Number(value.offset ?? 1)) + (Number(value.limit ?? 2000)) - 1}`
         : '';
     return `${short}${range}`;
   }
 
-  if (name === 'glob' && input.pattern) {
-    return String(input.pattern);
+  if (name === 'glob' && value.pattern) {
+    return String(value.pattern);
   }
 
-  if (name === 'grep' && input.pattern) {
-    const pat = String(input.pattern);
-    const inc = input.include ? ` in ${input.include}` : '';
+  if (name === 'grep' && value.pattern) {
+    const pat = String(value.pattern);
+    const inc = value.include ? ` in ${value.include}` : '';
     return `/${pat}/${inc}`;
   }
 
-  if (name === 'edit' && input.filePath) {
-    return String(input.filePath).length > 60
-      ? '...' + String(input.filePath).slice(-57)
-      : String(input.filePath);
+  if (name === 'edit' && value.filePath) {
+    return String(value.filePath).length > 60
+      ? '...' + String(value.filePath).slice(-57)
+      : String(value.filePath);
   }
 
-  if (name === 'write' && input.filePath) {
-    return String(input.filePath).length > 60
-      ? '...' + String(input.filePath).slice(-57)
-      : String(input.filePath);
+  if (name === 'write' && value.filePath) {
+    return String(value.filePath).length > 60
+      ? '...' + String(value.filePath).slice(-57)
+      : String(value.filePath);
   }
 
-  if (name === 'bash' && input.command) {
-    const cmd = String(input.command);
+  if (name === 'bash' && value.command) {
+    const cmd = String(value.command);
     return cmd.length > 60 ? cmd.slice(0, 57) + '...' : cmd;
   }
 
-  if (name === 'webfetch' && input.url) {
-    return String(input.url).length > 60
-      ? String(input.url).slice(0, 57) + '...'
-      : String(input.url);
+  if (name === 'webfetch' && value.url) {
+    return String(value.url).length > 60
+      ? String(value.url).slice(0, 57) + '...'
+      : String(value.url);
   }
 
-  // Generic: show first string value
-  const firstVal = Object.values(input).find((v) => typeof v === 'string');
+  const firstVal = Object.values(value).find((item) => typeof item === 'string');
   if (firstVal) {
     const s = String(firstVal);
     return s.length > 50 ? s.slice(0, 47) + '...' : s;
@@ -185,17 +215,17 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function formatInputForDisplay(input: Record<string, unknown>): string {
-  try {
-    return JSON.stringify(input, null, 2);
-  } catch {
-    return String(input);
+function formatInputForDisplay(input: unknown): string {
+  if (input == null) {
+    return '{}';
   }
+
+  return stringifyValue(input);
 }
 
-function formatOutputAsMarkdown(output: string): string {
-  // Try to detect JSON output and wrap it
-  const trimmed = output.trim();
+function formatOutputAsMarkdown(output: unknown): string {
+  const value = stringifyValue(output);
+  const trimmed = value.trim();
   if (
     (trimmed.startsWith('{') && trimmed.endsWith('}')) ||
     (trimmed.startsWith('[') && trimmed.endsWith(']'))
@@ -204,10 +234,11 @@ function formatOutputAsMarkdown(output: string): string {
       JSON.parse(trimmed);
       return '```json\n' + trimmed + '\n```';
     } catch {
-      // Not valid JSON, fall through
+      return value;
     }
   }
-  return output;
+
+  return value;
 }
 
 // ---------------------------------------------------------------------------
@@ -227,23 +258,30 @@ export const ToolCallPart = React.memo(function ToolCallPart({
   const [expanded, setExpanded] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
+  const tool = getToolName(part.tool);
+  const input = part.state?.input;
+  const output = stringifyValue(part.state?.output);
+  const error = stringifyValue(part.state?.error);
+  const status = part.state?.status ?? 'pending';
+  const start = part.state?.time?.start;
+  const end = part.state?.time?.end;
 
-  const duration = part.state?.time?.end && part.state?.time?.start
-    ? part.state.time.end - part.state.time.start
+  const duration = typeof start === 'number' && typeof end === 'number'
+    ? end - start
     : undefined;
 
   useEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }
-  }, [expanded, part.state?.output, part.state?.error]);
+  }, [error, expanded, output]);
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
-  const argsSummary = getArgsSummary(part.tool, part.state?.input ?? {});
+  const argsSummary = getArgsSummary(tool, input);
 
   return (
     <div
-      className={`msg-tool ${grouped ? 'msg-tool--grouped' : ''} msg-tool--${part.state?.status ?? 'pending'}`}
+      className={`msg-tool ${grouped ? 'msg-tool--grouped' : ''} msg-tool--${status}`}
     >
       <button
         className="msg-tool__header"
@@ -251,15 +289,15 @@ export const ToolCallPart = React.memo(function ToolCallPart({
         aria-expanded={expanded}
         type="button"
       >
-        <span className="msg-tool__tool-icon">{getToolIcon(part.tool)}</span>
-        {getStatusIcon(part.state?.status)}
-        <span className="msg-tool__name">{part.tool}</span>
+        <span className="msg-tool__tool-icon">{getToolIcon(tool)}</span>
+        {getStatusIcon(status)}
+        <span className="msg-tool__name">{tool}</span>
         {argsSummary && (
           <span className="msg-tool__args" title={argsSummary}>
             {argsSummary}
           </span>
         )}
-        {duration !== undefined && part.state?.status === 'completed' && (
+        {duration !== undefined && status === 'completed' && (
           <span className="msg-tool__duration">{formatDuration(duration)}</span>
         )}
         <span
@@ -283,26 +321,30 @@ export const ToolCallPart = React.memo(function ToolCallPart({
             <div className="msg-tool__section-label">Input</div>
             <div className="msg-tool__code">
               <MarkdownRenderer
-                content={'```json\n' + formatInputForDisplay(part.state?.input ?? {}) + '\n```'}
+                content={'```json\n' + formatInputForDisplay(input) + '\n```'}
+                cacheKey={`${part.id}:input`}
               />
             </div>
           </div>
 
           {/* Output section */}
-          {part.state?.output && (
+          {output.trim() && (
             <div className="msg-tool__section">
               <div className="msg-tool__section-label">Output</div>
               <div className="msg-tool__code">
-                <MarkdownRenderer content={formatOutputAsMarkdown(part.state.output)} />
+                <MarkdownRenderer
+                  content={formatOutputAsMarkdown(output)}
+                  cacheKey={`${part.id}:output`}
+                />
               </div>
             </div>
           )}
 
           {/* Error section */}
-          {part.state?.error && (
+          {error.trim() && (
             <div className="msg-tool__section msg-tool__section--error">
               <div className="msg-tool__section-label">Error</div>
-              <pre className="msg-tool__error-text">{part.state.error}</pre>
+              <pre className="msg-tool__error-text">{error}</pre>
             </div>
           )}
         </div>

@@ -1,316 +1,274 @@
-/**
- * Markdown rendering engine with Shiki syntax highlighting and KaTeX math support.
- *
- * Uses the CSS Variables theme so code blocks automatically adapt to any
- * VS Code color theme without reloading the highlighter.
- */
+import DOMPurify from 'dompurify';
+import { Marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
+import markedShiki from 'marked-shiki';
 
-import MarkdownIt from 'markdown-it';
-import katex from 'katex';
-
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-/** Languages we want Shiki to load (common set). */
-const SHIKI_LANGS = [
-  'javascript',
-  'typescript',
-  'python',
-  'bash',
-  'shell',
-  'json',
-  'yaml',
-  'html',
-  'css',
-  'jsx',
-  'tsx',
-  'markdown',
-  'sql',
-  'go',
-  'rust',
-  'java',
-  'c',
-  'cpp',
-  'csharp',
-  'ruby',
-  'php',
-  'swift',
-  'kotlin',
-  'diff',
-  'toml',
-  'xml',
-  'dockerfile',
-  'graphql',
-  'prisma',
-  'vue',
-  'svelte',
-] as const;
-
-// ---------------------------------------------------------------------------
-// Singleton state
-// ---------------------------------------------------------------------------
-
-let md: MarkdownIt | null = null;
-let ready = false;
-let initPromise: Promise<void> | null = null;
-
-// ---------------------------------------------------------------------------
-// KaTeX plugin for markdown-it
-// ---------------------------------------------------------------------------
-
-/**
- * Minimal KaTeX plugin that handles:
- *  - Inline math : `$...$`
- *  - Block  math : `$$...$$`
- *
- * Renders via `katex.renderToString` with `throwOnError: false` so broken
- * LaTeX never crashes the page.
- */
-function katexPlugin(mdInstance: MarkdownIt): void {
-  // ---- inline rule: $...$ ------------------------------------------------
-  mdInstance.inline.ruler.after('escape', 'math_inline', (state, silent) => {
-    if (state.src.charAt(state.pos) !== '$') return false;
-    // Ensure not $$
-    if (state.src.charAt(state.pos + 1) === '$') return false;
-
-    const start = state.pos + 1;
-    let end = start;
-    while (end < state.posMax) {
-      if (state.src.charAt(end) === '$' && state.src.charAt(end - 1) !== '\\') break;
-      end++;
-    }
-    if (end >= state.posMax) return false;
-
-    if (!silent) {
-      const token = state.push('math_inline', 'math', 0);
-      token.markup = '$';
-      token.content = state.src.slice(start, end);
-    }
-
-    state.pos = end + 1;
-    return true;
-  });
-
-  mdInstance.renderer.rules.math_inline = (tokens, idx) => {
-    try {
-      return katex.renderToString(tokens[idx].content, {
-        throwOnError: false,
-        displayMode: false,
-        trust: false,
-      });
-    } catch {
-      return `<code class="katex-error">${mdInstance.utils.escapeHtml(tokens[idx].content)}</code>`;
-    }
-  };
-
-  // ---- block rule: $$...$$ -----------------------------------------------
-  mdInstance.block.ruler.after('blockquote', 'math_block', (state, startLine, endLine, silent) => {
-    const startPos = state.bMarks[startLine] + state.tShift[startLine];
-    const maxPos = state.eMarks[startLine];
-
-    if (startPos + 2 > maxPos) return false;
-    if (state.src.charAt(startPos) !== '$' || state.src.charAt(startPos + 1) !== '$') return false;
-
-    // Look for closing $$
-    let nextLine = startLine;
-    let found = false;
-
-    // If $$ is on the same line as content check for closing on same line
-    const firstLineContent = state.src.slice(startPos + 2, maxPos).trim();
-    if (firstLineContent && firstLineContent.endsWith('$$')) {
-      // single-line block math: $$ ... $$
-      if (silent) return true;
-      const token = state.push('math_block', 'math', 0);
-      token.block = true;
-      token.content = firstLineContent.slice(0, -2).trim();
-      token.map = [startLine, startLine + 1];
-      token.markup = '$$';
-      state.line = startLine + 1;
-      return true;
-    }
-
-    for (nextLine = startLine + 1; nextLine < endLine; nextLine++) {
-      const lineStart = state.bMarks[nextLine] + state.tShift[nextLine];
-      const lineMax = state.eMarks[nextLine];
-      const lineText = state.src.slice(lineStart, lineMax).trim();
-      if (lineText === '$$') {
-        found = true;
-        break;
-      }
-    }
-
-    if (!found) return false;
-    if (silent) return true;
-
-    const token = state.push('math_block', 'math', 0);
-    token.block = true;
-    token.markup = '$$';
-    token.map = [startLine, nextLine + 1];
-
-    // Collect content lines
-    const lines: string[] = [];
-    if (firstLineContent) lines.push(firstLineContent);
-    for (let i = startLine + 1; i < nextLine; i++) {
-      lines.push(state.src.slice(state.bMarks[i] + state.tShift[i], state.eMarks[i]));
-    }
-    token.content = lines.join('\n');
-
-    state.line = nextLine + 1;
-    return true;
-  });
-
-  mdInstance.renderer.rules.math_block = (tokens, idx) => {
-    try {
-      return `<div class="katex-block">${katex.renderToString(tokens[idx].content, {
-        throwOnError: false,
-        displayMode: true,
-        trust: false,
-      })}</div>\n`;
-    } catch {
-      return `<pre class="katex-error"><code>${mdInstance.utils.escapeHtml(tokens[idx].content)}</code></pre>\n`;
-    }
-  };
+function getShikiLangs() {
+  return [
+    import('@shikijs/langs/javascript'),
+    import('@shikijs/langs/typescript'),
+    import('@shikijs/langs/python'),
+    import('@shikijs/langs/shellscript'),
+    import('@shikijs/langs/shellsession'),
+    import('@shikijs/langs/json'),
+    import('@shikijs/langs/yaml'),
+    import('@shikijs/langs/html'),
+    import('@shikijs/langs/css'),
+    import('@shikijs/langs/jsx'),
+    import('@shikijs/langs/tsx'),
+    import('@shikijs/langs/markdown'),
+    import('@shikijs/langs/diff'),
+    import('@shikijs/langs/go'),
+    import('@shikijs/langs/rust'),
+    import('@shikijs/langs/java'),
+    import('@shikijs/langs/c'),
+    import('@shikijs/langs/cpp'),
+    import('@shikijs/langs/csharp'),
+    import('@shikijs/langs/ruby'),
+    import('@shikijs/langs/php'),
+    import('@shikijs/langs/swift'),
+    import('@shikijs/langs/kotlin'),
+    import('@shikijs/langs/sql'),
+    import('@shikijs/langs/toml'),
+    import('@shikijs/langs/xml'),
+    import('@shikijs/langs/dockerfile'),
+    import('@shikijs/langs/graphql'),
+    import('@shikijs/langs/prisma'),
+    import('@shikijs/langs/vue'),
+    import('@shikijs/langs/svelte'),
+  ];
 }
 
-// ---------------------------------------------------------------------------
-// Initialization (lazy, singleton)
-// ---------------------------------------------------------------------------
+type Entry = {
+  source: string;
+  html: string;
+};
 
-/**
- * Initialize the markdown renderer. Safe to call multiple times; subsequent
- * calls return the same promise.
- */
-export async function initMarkdownRenderer(): Promise<void> {
-  if (ready) return;
-  if (initPromise) return initPromise;
+const CACHE_MAX = 200;
+const CACHE = new Map<string, Entry>();
+const TEXT_LANG = 'text';
+const SHIKI_THEME = 'css-variables';
+const SANITIZE_CONFIG = {
+  USE_PROFILES: { html: true, mathMl: true },
+  SANITIZE_NAMED_PROPS: true,
+  FORBID_TAGS: ['style'],
+  FORBID_CONTENTS: ['style', 'script'],
+};
 
-  initPromise = (async () => {
-    // Create base markdown-it instance
-    md = new MarkdownIt({
-      html: false, // Security: no raw HTML pass-through
-      linkify: true,
-      breaks: true,
-      typographer: false,
-    });
+let md: Marked | null = null;
+let ready = false;
+let initPromise: Promise<void> | null = null;
+let sanitizeHooked = false;
 
-    // Register KaTeX plugin
-    katexPlugin(md);
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
-    // Try to load Shiki for syntax highlighting
-    try {
-      const [
-        { createHighlighterCore, createCssVariablesTheme },
-        { createJavaScriptRegexEngine },
-        { fromHighlighter },
-      ] = await Promise.all([
-        import('shiki/core'),
-        import('shiki/engine/javascript'),
-        import('@shikijs/markdown-it/core'),
-      ]);
+function escapeAttribute(text: string): string {
+  return escapeHtml(text);
+}
 
-      const cssVarTheme = createCssVariablesTheme({
-        name: 'css-variables',
-        variablePrefix: '--shiki-',
-        variableDefaults: {},
-      });
+function fallback(markdown: string): string {
+  return `<pre data-markdown-fallback="true" style="white-space:pre-wrap;margin:0">${escapeHtml(markdown)}</pre>`;
+}
 
-      const highlighter = await createHighlighterCore({
-        themes: [cssVarTheme],
-        langs: [
-          import('@shikijs/langs/javascript'),
-          import('@shikijs/langs/typescript'),
-          import('@shikijs/langs/python'),
-          import('@shikijs/langs/shellscript'),    // bash, sh
-          import('@shikijs/langs/shellsession'),   // shell
-          import('@shikijs/langs/json'),
-          import('@shikijs/langs/yaml'),
-          import('@shikijs/langs/html'),
-          import('@shikijs/langs/css'),
-          import('@shikijs/langs/jsx'),
-          import('@shikijs/langs/tsx'),
-          import('@shikijs/langs/markdown'),
-          import('@shikijs/langs/diff'),
-          import('@shikijs/langs/go'),
-          import('@shikijs/langs/rust'),
-          import('@shikijs/langs/java'),
-          import('@shikijs/langs/c'),
-          import('@shikijs/langs/cpp'),
-          import('@shikijs/langs/csharp'),
-          import('@shikijs/langs/ruby'),
-          import('@shikijs/langs/php'),
-          import('@shikijs/langs/swift'),
-          import('@shikijs/langs/kotlin'),
-          import('@shikijs/langs/sql'),
-          import('@shikijs/langs/toml'),
-          import('@shikijs/langs/xml'),
-          import('@shikijs/langs/dockerfile'),
-          import('@shikijs/langs/graphql'),
-          import('@shikijs/langs/prisma'),
-          import('@shikijs/langs/vue'),
-          import('@shikijs/langs/svelte'),
-        ],
-        engine: createJavaScriptRegexEngine(),
-      });
+function touch(key: string, entry: Entry): void {
+  CACHE.delete(key);
+  CACHE.set(key, entry);
 
-      // 'text' is a Shiki special language (always available, never needs
-      // loading) but it is not part of the BuiltinLanguage type union.
-      const TEXT_LANG = 'text' as const;
+  if (CACHE.size <= CACHE_MAX) {
+    return;
+  }
 
-      // Cast needed: createHighlighterCore returns HighlighterCore (= HighlighterGeneric<never, never>)
-      // but fromHighlighter expects HighlighterGeneric<any, any>. This is a known shiki type mismatch.
-      md.use(
-        fromHighlighter(highlighter as Parameters<typeof fromHighlighter>[0], {
-          theme: 'css-variables',
-          defaultLanguage: TEXT_LANG as unknown as typeof SHIKI_LANGS[number],
-          fallbackLanguage: TEXT_LANG as unknown as typeof SHIKI_LANGS[number],
-        }),
-      );
-    } catch (err) {
-      // Shiki failed – fall through with markdown-it's default fence renderer
-      // which produces plain <pre><code> blocks.
-      console.warn('[markdown] Shiki initialization failed, using plain code blocks:', err);
+  const first = CACHE.keys().next().value;
+  if (!first) {
+    return;
+  }
+
+  CACHE.delete(first);
+}
+
+function sanitize(html: string): string {
+  if (!DOMPurify.isSupported) {
+    return '';
+  }
+
+  return DOMPurify.sanitize(html, SANITIZE_CONFIG);
+}
+
+function ensureSanitizeHooks(): void {
+  if (sanitizeHooked || typeof window === 'undefined' || !DOMPurify.isSupported) {
+    return;
+  }
+
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (!(node instanceof HTMLAnchorElement)) {
+      return;
     }
 
+    if (node.target !== '_blank') {
+      return;
+    }
+
+    const rel = node.getAttribute('rel') ?? '';
+    const set = new Set(rel.split(/\s+/).filter(Boolean));
+    set.add('noopener');
+    set.add('noreferrer');
+    node.setAttribute('rel', Array.from(set).join(' '));
+  });
+
+  sanitizeHooked = true;
+}
+
+function isExternalHref(href: string): boolean {
+  return /^https?:\/\//i.test(href);
+}
+
+function getLanguageLabel(lang: string): string {
+  return lang.trim();
+}
+
+function injectLanguage(html: string, lang: string): string {
+  if (!lang) {
+    return html;
+  }
+
+  return html.replace(/<pre(?![^>]*\bdata-language=)([^>]*)>/, `<pre data-language="${escapeAttribute(lang)}"$1>`);
+}
+
+function fallbackCodeBlock(code: string, lang: string): string {
+  const cls = lang ? ` class="language-${escapeAttribute(lang)}"` : '';
+  const pre = lang ? `<pre data-language="${escapeAttribute(lang)}">` : '<pre>';
+  return `${pre}<code${cls}>${escapeHtml(code)}</code></pre>`;
+}
+
+export async function initMarkdownRenderer(): Promise<void> {
+  if (ready) {
+    return;
+  }
+
+  if (initPromise) {
+    return initPromise;
+  }
+
+  initPromise = (async () => {
+    ensureSanitizeHooks();
+
+    const [
+      { createHighlighterCore, createCssVariablesTheme },
+      { createJavaScriptRegexEngine },
+    ] = await Promise.all([import('shiki/core'), import('shiki/engine/javascript')]);
+
+    const theme = createCssVariablesTheme({
+      name: SHIKI_THEME,
+      variablePrefix: '--shiki-',
+      variableDefaults: {},
+    });
+
+    const highlighter = await createHighlighterCore({
+      themes: [theme],
+      langs: getShikiLangs(),
+      engine: createJavaScriptRegexEngine(),
+    });
+
+    const next = new Marked({
+      async: true,
+      breaks: true,
+      gfm: true,
+    });
+
+    next.use(
+      {
+        renderer: {
+          link({ href, title, tokens }) {
+            const text = this.parser.parseInline(tokens);
+            if (!href) {
+              return text;
+            }
+
+            const attrs = [`href="${escapeAttribute(href)}"`];
+            if (title) {
+              attrs.push(`title="${escapeAttribute(title)}"`);
+            }
+            if (isExternalHref(href)) {
+              attrs.push('class="external-link"', 'target="_blank"', 'rel="noopener noreferrer"');
+            }
+
+            return `<a ${attrs.join(' ')}>${text}</a>`;
+          },
+        },
+      },
+      markedKatex({
+        throwOnError: false,
+        nonStandard: true,
+      }),
+      markedShiki({
+        async highlight(code, lang) {
+          const label = getLanguageLabel(lang);
+          const name = label || TEXT_LANG;
+
+          try {
+            return injectLanguage(
+              highlighter.codeToHtml(code, {
+                lang: name,
+                theme: SHIKI_THEME,
+              }),
+              label,
+            );
+          } catch (error) {
+            console.warn('[markdown] Shiki highlight failed, using plain code block:', error);
+            return fallbackCodeBlock(code, label);
+          }
+        },
+      }),
+    );
+
+    md = next;
     ready = true;
-  })();
+  })().catch((error) => {
+    initPromise = null;
+    md = null;
+    ready = false;
+    throw error;
+  });
 
   return initPromise;
 }
 
-// ---------------------------------------------------------------------------
-// Public API
-// ---------------------------------------------------------------------------
-
-/**
- * Whether the markdown renderer has been fully initialized (Shiki loaded).
- */
 export function isReady(): boolean {
   return ready;
 }
 
-/**
- * Render a markdown string to HTML.
- *
- * **Must** call `initMarkdownRenderer()` first (or check `isReady()`).
- * If called before init, returns a basic `<pre>` fallback.
- */
-export function renderMarkdown(text: string): string {
-  if (!md) {
-    // Not initialised yet – return escaped plaintext as fallback
-    return `<pre style="white-space:pre-wrap;margin:0">${escapeHtml(text)}</pre>`;
+export async function renderMarkdown(content: string, cacheKey?: string): Promise<string> {
+  const source = typeof content === 'string' ? content : '';
+  if (!source) {
+    return '';
   }
-  return md.render(text);
-}
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+  await initMarkdownRenderer();
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  const key = cacheKey?.trim() || source;
+  const cached = CACHE.get(key);
+  if (cached && cached.source === source) {
+    touch(key, cached);
+    return cached.html;
+  }
+
+  if (!md) {
+    return fallback(source);
+  }
+
+  try {
+    const html = sanitize(await md.parse(source)) || fallback(source);
+    touch(key, { source, html });
+    return html;
+  } catch (error) {
+    console.warn('[markdown] Render failed, using fallback:', error);
+    return fallback(source);
+  }
 }

@@ -1,5 +1,7 @@
 # OpenCode API Reference
 
+> Note: This document is compiled from corresponding official public documentation and publicly available project materials. Copyright in the original source materials belongs to the respective official owners.
+
 Complete API reference for OpenCode's server, SDK, configuration, and event system.
 
 ---

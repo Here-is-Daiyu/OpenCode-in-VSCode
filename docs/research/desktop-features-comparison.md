@@ -1,5 +1,7 @@
 # Desktop vs Extension Feature Comparison
 
+> Note: This document is compiled from corresponding official public documentation and publicly available project materials. Copyright in the original source materials belongs to the respective official owners.
+
 Comparison between OpenCode Desktop application features and our planned VS Code extension implementation.
 
 ---
@@ -195,7 +197,7 @@ Scroll behavior uses **CSS `overflow-anchor`** for stable scrolling:
 | morphdom incremental DOM | React's virtual DOM diffing (similar outcome) |
 | LRU markdown cache | Implement similar cache in our Markdown component |
 | 100ms text throttle | Use `requestAnimationFrame` or similar throttle for streaming |
-| Intersection Observer lazy render | Use `react-virtuoso` or `@tanstack/react-virtual` (already planned) |
+| Intersection Observer lazy render | Consider a virtualization library such as `@tanstack/react-virtual` if the simple list stops scaling well |
 | Tool grouping | Implement context tool grouping in our ToolCard component |
 | CSS custom properties tokens | Map to `--vscode-*` CSS variables for theme integration |
 | overflow-anchor scrolling | Implement same pattern in our chat scroll container |

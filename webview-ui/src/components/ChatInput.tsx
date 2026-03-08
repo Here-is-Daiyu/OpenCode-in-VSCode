@@ -170,90 +170,103 @@ export function ChatInput() {
   return (
     <div className="chat-input" onDrop={handleDrop} onDragOver={handleDragOver}>
       <div className="chat-input__inner">
-        {/* Image attachment preview */}
-        {attachedImages.length > 0 && (
-          <div className="chat-input__images">
-            {attachedImages.map((img, index) => (
-              <div key={index} className="chat-input__image-preview">
-                <img src={img} alt={`Attachment ${index + 1}`} />
-                <button
-                  className="chat-input__image-remove"
-                  onClick={() => removeImage(index)}
-                  title="Remove image"
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        <div className="chat-input__row">
-          {/* Image attach button */}
-          <button
-            className="chat-input__attach-btn"
-            onClick={() => fileInputRef.current?.click()}
-            title="Attach image"
-            disabled={isStreaming}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M11.5 1a3.5 3.5 0 0 1 .19 6.995l-.19.005H5a2 2 0 0 1-.15-3.995L5 4h5.5a.5.5 0 0 1 .09.992L10.5 5H5a1 1 0 0 0-.117 1.993L5 7h6.5a2.5 2.5 0 0 0 .164-4.995L11.5 2H5a3.5 3.5 0 0 0-.192 6.995L5 9h6.5a.5.5 0 0 1 .09.992L11.5 10H5a4.5 4.5 0 0 1-.212-8.995L5 1h6.5z" />
-            </svg>
-          </button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            multiple
-            style={{ display: 'none' }}
-            onChange={handleImageSelect}
-          />
-
-          <textarea
-            ref={textareaRef}
-            className="chat-input__textarea"
-            value={inputText}
-            onChange={handleChange}
-            onKeyDown={handleKeyDown}
-            onPaste={handlePaste}
-            placeholder={
-              connected
-                ? 'Type your message... (@ for files, / for commands)'
-                : 'Connecting to OpenCode...'
-            }
-            disabled={!connected}
-            rows={1}
-          />
-
-          {/* Action buttons */}
-          <div className="chat-input__actions">
-            {isStreaming && (
+        <div className="chat-input__dock">
+          <div className="chat-input__shell">
+            <div className="chat-input__row">
               <button
-                className="chat-input__stop-btn"
-                onClick={handleStop}
-                title="Stop generation"
+                className="chat-input__attach-btn"
+                onClick={() => fileInputRef.current?.click()}
+                title="Attach image"
+                aria-label="Attach image"
+                disabled={isStreaming}
+                type="button"
               >
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <rect x="3" y="3" width="10" height="10" rx="1" />
+                  <path d="M11.5 1a3.5 3.5 0 0 1 .19 6.995l-.19.005H5a2 2 0 0 1-.15-3.995L5 4h5.5a.5.5 0 0 1 .09.992L10.5 5H5a1 1 0 0 0-.117 1.993L5 7h6.5a2.5 2.5 0 0 0 .164-4.995L11.5 2H5a3.5 3.5 0 0 0-.192 6.995L5 9h6.5a.5.5 0 0 1 .09.992L11.5 10H5a4.5 4.5 0 0 1-.212-8.995L5 1h6.5z" />
                 </svg>
               </button>
-            )}
-            <button
-              className="chat-input__send-btn"
-              onClick={handleSend}
-              disabled={!canSend}
-              title="Send message (Enter)"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M1 1.5l14 6.5-14 6.5V9l8-1-8-1V1.5z" />
-              </svg>
-            </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleImageSelect}
+              />
+
+              <div className="chat-input__field">
+                <textarea
+                  ref={textareaRef}
+                  className="chat-input__textarea"
+                  value={inputText}
+                  onChange={handleChange}
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  placeholder={
+                    connected
+                      ? 'Type your message... (@ for files, / for commands)'
+                      : 'Connecting to OpenCode...'
+                  }
+                  disabled={!connected}
+                  rows={1}
+                />
+              </div>
+
+              <div className="chat-input__actions">
+                {isStreaming && (
+                  <button
+                    className="chat-input__stop-btn"
+                    onClick={handleStop}
+                    title="Stop generation"
+                    aria-label="Stop generation"
+                    type="button"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                      <rect x="3" y="3" width="10" height="10" rx="1" />
+                    </svg>
+                  </button>
+                )}
+                <button
+                  className="chat-input__send-btn"
+                  onClick={handleSend}
+                  disabled={!canSend}
+                  title="Send message (Enter)"
+                  aria-label="Send message"
+                  type="button"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+                    <path d="M1 1.5l14 6.5-14 6.5V9l8-1-8-1V1.5z" />
+                  </svg>
+                </button>
+              </div>
+            </div>
           </div>
+
+          {attachedImages.length > 0 && (
+            <div className="chat-input__tray">
+              <div className="chat-input__images">
+                {attachedImages.map((img, index) => (
+                  <div key={index} className="chat-input__image-preview">
+                    <img src={img} alt={`Attachment ${index + 1}`} />
+                    <button
+                      className="chat-input__image-remove"
+                      onClick={() => removeImage(index)}
+                      title="Remove image"
+                      aria-label={`Remove attachment ${index + 1}`}
+                      type="button"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="chat-input__hint">
-          <span>Enter to send, Shift+Enter for new line</span>
+          <span>Enter to send · Shift+Enter for new line</span>
         </div>
       </div>
     </div>

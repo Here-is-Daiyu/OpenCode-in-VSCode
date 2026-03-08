@@ -45,6 +45,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
                 key={index}
                 className="question-card__option-btn"
                 onClick={() => handleSubmit(option)}
+                type="button"
               >
                 {option}
               </button>
@@ -70,6 +71,7 @@ export function QuestionCard({ question }: QuestionCardProps) {
               className="question-card__submit-btn"
               onClick={() => handleSubmit(answer)}
               disabled={!answer.trim()}
+              type="button"
             >
               Submit
             </button>

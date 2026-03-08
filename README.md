@@ -2,6 +2,8 @@
 
 `opencode-vscode` is a Visual Studio Code extension that brings OpenCode into VS Code as native chat, session, status, and settings experiences. It manages or connects to `opencode serve`, syncs against the global event stream, and keeps the extension host and webview UI aligned through typed messages.
 
+>This is not built by the OpenCode team and is not affiliated with OpenCode team in any way.
+
 ## Project overview
 
 This repository packages a VS Code extension for working with OpenCode without leaving the editor. The current implementation focuses on:
@@ -111,6 +113,3 @@ The `docs/research/` directory contains useful reference material:
 
 Some research notes reference local machine paths used during investigation of the official OpenCode sources. Treat those as reference notes only, not as required build dependencies.
 
-## License
-
-MIT
