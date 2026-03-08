@@ -110,6 +110,21 @@ export interface ProvidersResponse {
 export interface ServerEvent {
   type: string;
   properties: Record<string, unknown>;
+  directory?: string;
+}
+
+interface RawServerEvent {
+  type: string;
+  properties?: Record<string, unknown>;
+}
+
+interface GlobalServerEvent {
+  directory?: string;
+  payload: RawServerEvent;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +250,8 @@ export class OpenCodeClient {
   }
 
   /**
-   * Subscribe to server-sent events (SSE) from the `/event` endpoint.
+   * Subscribe to server-sent events (SSE) from the `/global/event` endpoint.
+   * Falls back to `/event` for older servers.
    *
    * Returns an `AbortController` that the caller can use to cancel the
    * subscription.
@@ -246,10 +262,10 @@ export class OpenCodeClient {
     callback: (event: ServerEvent) => void,
   ): AbortController {
     const controller = new AbortController();
-    const url = `${this.baseUrl}/event`;
+    const urls = [`${this.baseUrl}/global/event`, `${this.baseUrl}/event`];
 
     // Run asynchronously — intentionally not awaited
-    void this.consumeSSE(url, controller.signal, callback);
+    void this.consumeSSE(urls, controller.signal, callback);
 
     return controller;
   }
@@ -650,11 +666,15 @@ export class OpenCodeClient {
    * Consume a Server-Sent Events stream.
    */
   private async consumeSSE(
-    url: string,
+    urls: readonly string[],
     signal: AbortSignal,
     callback: (event: ServerEvent) => void,
   ): Promise<void> {
+    let urlIndex = 0;
+
     while (!signal.aborted) {
+      const url = urls[urlIndex] ?? urls[0];
+
       try {
         const response = await fetch(url, {
           method: 'GET',
@@ -666,6 +686,13 @@ export class OpenCodeClient {
         });
 
         if (!response.ok) {
+          if ((response.status === 404 || response.status === 405) && urlIndex < urls.length - 1) {
+            const nextUrl = urls[urlIndex + 1];
+            this.logger?.warn(`SSE endpoint unavailable (${response.status}) — falling back to ${nextUrl}`);
+            urlIndex += 1;
+            continue;
+          }
+
           this.logger?.warn(`SSE connection failed: ${response.status} ${response.statusText}`);
           // Wait before reconnecting
           await this.sleep(SSE_RECONNECT_DELAY_MS, signal);
@@ -702,17 +729,17 @@ export class OpenCodeClient {
               if (line.startsWith('event:')) {
                 currentEventType = line.slice(6).trim();
               } else if (line.startsWith('data:')) {
-                currentData += line.slice(5).trim();
+                currentData += `${line.slice(5).trim()}\n`;
               } else if (line === '') {
                 // Empty line = end of event
                 if (currentData) {
                   try {
-                    const parsed = JSON.parse(currentData) as Record<string, unknown>;
-                    const event: ServerEvent = {
-                      type: currentEventType || 'message',
-                      properties: parsed,
-                    };
-                    callback(event);
+                    const event = this.parseServerEvent(currentData.trim(), currentEventType);
+                    if (event) {
+                      callback(event);
+                    } else {
+                      this.logger?.warn('Ignoring SSE payload with unrecognized event shape');
+                    }
                   } catch (parseErr) {
                     this.logger?.warn('Failed to parse SSE data:', String(parseErr));
                   }
@@ -739,6 +766,41 @@ export class OpenCodeClient {
     }
 
     this.logger?.debug('SSE subscription cancelled');
+  }
+
+  private parseServerEvent(data: string, fallbackType?: string): ServerEvent | undefined {
+    const parsed = JSON.parse(data) as unknown;
+    if (!isRecord(parsed)) {
+      return undefined;
+    }
+
+    const globalEvent = parsed as Partial<GlobalServerEvent>;
+    if (isRecord(globalEvent.payload) && typeof globalEvent.payload.type === 'string') {
+      return {
+        type: globalEvent.payload.type,
+        properties: isRecord(globalEvent.payload.properties) ? globalEvent.payload.properties : {},
+        directory: typeof globalEvent.directory === 'string' ? globalEvent.directory : undefined,
+      };
+    }
+
+    const directEvent = parsed as Partial<RawServerEvent> & { directory?: unknown };
+    if (typeof directEvent.type === 'string') {
+      return {
+        type: directEvent.type,
+        properties: isRecord(directEvent.properties) ? directEvent.properties : {},
+        directory: typeof directEvent.directory === 'string' ? directEvent.directory : undefined,
+      };
+    }
+
+    if (!fallbackType) {
+      return undefined;
+    }
+
+    return {
+      type: fallbackType,
+      properties: parsed,
+      directory: typeof directEvent.directory === 'string' ? directEvent.directory : undefined,
+    };
   }
 
   // ---------------------------------------------------------------------------

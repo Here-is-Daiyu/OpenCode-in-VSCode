@@ -69,10 +69,6 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
         this.sessionStatuses[payload.sessionID] = payload.status;
         this._onDidChangeTreeData.fire(undefined);
       }),
-      eventBus.on('session:idle', (payload) => {
-        this.sessionStatuses[payload.sessionID] = { status: 'idle' };
-        this._onDidChangeTreeData.fire(undefined);
-      }),
     );
   }
 

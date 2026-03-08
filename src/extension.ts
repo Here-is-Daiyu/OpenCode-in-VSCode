@@ -326,6 +326,66 @@ function normalizeMessagePartUpdatedPayload(
   };
 }
 
+function normalizeSessionStatusPayload(
+  properties: Record<string, unknown>
+): { sessionID: string; status: SessionStatus } | undefined {
+  const payload = properties as {
+    sessionID?: string;
+    status?: SessionStatus | Record<string, unknown>;
+  };
+
+  if (!payload.sessionID || !payload.status || typeof payload.status !== 'object') {
+    return undefined;
+  }
+
+  const status = payload.status as Record<string, unknown>;
+  if (typeof status.status === 'string') {
+    return {
+      sessionID: payload.sessionID,
+      status: payload.status as SessionStatus,
+    };
+  }
+
+  const message =
+    typeof status.message === 'string'
+      ? status.message
+      : typeof status.error === 'string'
+        ? status.error
+        : undefined;
+  const type = typeof status.type === 'string' ? status.type : undefined;
+
+  switch (type) {
+    case 'busy':
+      return {
+        sessionID: payload.sessionID,
+        status: { status: 'active' },
+      };
+
+    case 'idle':
+      return {
+        sessionID: payload.sessionID,
+        status: { status: 'idle' },
+      };
+
+    case 'retry':
+      return {
+        sessionID: payload.sessionID,
+        status: { status: 'retry', error: message },
+      };
+
+    case 'active':
+    case 'error':
+    case 'compacting':
+      return {
+        sessionID: payload.sessionID,
+        status: { status: type, error: message },
+      };
+
+    default:
+      return undefined;
+  }
+}
+
 /**
  * Route an incoming SSE event to the correct EventBus event and webview messages.
  */
@@ -366,7 +426,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
     }
 
     case 'session.status': {
-      const status = properties as unknown as { sessionID: string; status: SessionStatus };
+      const status = normalizeSessionStatusPayload(properties);
       if (!status?.sessionID || !status?.status) { break; }
       ctx.eventBus.emit('session:status', status);
       ctx.chatProvider.postMessageToWebview({ type: 'session:status', data: status });
@@ -375,10 +435,6 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', busy);
       ctx.statusBarManager.setBusy(busy);
 
-      // When session becomes idle, emit idle event for token tracking
-      if (status.status.status === 'idle') {
-        ctx.eventBus.emit('session:idle', { sessionID: status.sessionID });
-      }
       break;
     }
 
@@ -408,6 +464,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
         sessionID: string;
         messageID: string;
         partID: string;
+        field?: string;
         delta: string;
       };
       if (!delta?.sessionID || !delta?.messageID || !delta?.partID || typeof delta.delta !== 'string') {
@@ -507,25 +564,6 @@ function subscribeToEvents(ctx: CommandContext): void {
         type: 'server:status',
         data: { connected: false },
       });
-    })
-  );
-
-  // When a session becomes idle, update token usage from last assistant message
-  eventUnsubscribers.push(
-    ctx.eventBus.on('session:idle', async ({ sessionID }) => {
-      try {
-        const messages = await ctx.client.listMessages(sessionID);
-        // Find the last assistant message to get token usage
-        for (let i = messages.length - 1; i >= 0; i--) {
-          const msg = messages[i].info;
-          if (msg.role === 'assistant' && 'tokens' in msg) {
-            ctx.statusBarManager.setTokenUsage(msg.tokens);
-            break;
-          }
-        }
-      } catch {
-        // Silently ignore — token display is best-effort
-      }
     })
   );
 

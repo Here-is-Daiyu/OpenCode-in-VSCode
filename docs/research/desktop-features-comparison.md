@@ -119,6 +119,8 @@ OpenGUI also supports prompt queuing. This feature would allow users to queue mu
 
 Detailed analysis of the OpenCode Desktop application's chat architecture, based on source code research of the official monorepo.
 
+> Reference source checkout: `D:\dai宇の文件\其他\其他东西\coding\OpenCode-in-VScode\opencode-github-dev` is the local checkout of the official `anomalyco/opencode` source tree used for desktop/reference-source investigation.
+
 ### Tech Stack
 
 - **Framework:** SolidJS + Tauri (Rust backend)

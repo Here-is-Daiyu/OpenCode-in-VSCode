@@ -12,7 +12,6 @@ export type EventType =
   | 'session:updated'
   | 'session:deleted'
   | 'session:status'
-  | 'session:idle'
   | 'session:diff'
   | 'message:updated'
   | 'message:partUpdated'
@@ -35,11 +34,10 @@ export interface EventPayloads {
   'session:updated': Session;
   'session:deleted': { id: string };
   'session:status': { sessionID: string; status: SessionStatus };
-  'session:idle': { sessionID: string };
   'session:diff': { sessionID: string; diffs: import('./opencode').FileDiff[] };
   'message:updated': MessageWithParts;
   'message:partUpdated': { sessionID: string; messageID: string; part: Part };
-  'message:partDelta': { sessionID: string; messageID: string; partID: string; delta: string };
+  'message:partDelta': { sessionID: string; messageID: string; partID: string; field?: string; delta: string };
   'message:removed': { sessionID: string; messageID: string };
   'permission:asked': PermissionRequest;
   'permission:replied': { id: string; response: string };

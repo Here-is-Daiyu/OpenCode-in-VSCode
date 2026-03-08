@@ -29,7 +29,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'session:status'; data: { sessionID: string; status: SessionStatus } }
   | { type: 'message:updated'; data: MessageWithParts }
   | { type: 'message:partUpdated'; data: { sessionID: string; messageID: string; part: Part } }
-  | { type: 'message:partDelta'; data: { sessionID: string; messageID: string; partID: string; delta: string } }
+  | { type: 'message:partDelta'; data: { sessionID: string; messageID: string; partID: string; field?: string; delta: string } }
   | { type: 'message:removed'; data: { sessionID: string; messageID: string } }
   | { type: 'permission:asked'; data: PermissionRequest }
   | { type: 'question:asked'; data: Question }

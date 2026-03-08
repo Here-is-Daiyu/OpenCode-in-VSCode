@@ -29,6 +29,50 @@ type SessionScopedWebviewMessage = Extract<
   | { type: 'message:removed' }
 >;
 
+function getBufferedPartKey(sessionID: string, messageID: string, partID: string): string {
+  return `${sessionID}:${messageID}:${partID}`;
+}
+
+function coalesceBufferedSessionMessages(
+  messages: SessionScopedWebviewMessage[]
+): SessionScopedWebviewMessage[] {
+  const queued: SessionScopedWebviewMessage[] = [];
+  const updatedParts = new Map<string, number>();
+  const staleDeltas = new Set<string>();
+
+  for (const message of messages) {
+    if (message.type === 'message:partUpdated') {
+      const key = getBufferedPartKey(
+        message.data.sessionID,
+        message.data.messageID,
+        message.data.part.id,
+      );
+      const index = updatedParts.get(key);
+
+      if (index !== undefined) {
+        queued[index] = message;
+        staleDeltas.add(key);
+        continue;
+      }
+
+      updatedParts.set(key, queued.length);
+    }
+
+    queued.push(message);
+  }
+
+  if (staleDeltas.size === 0) {
+    return queued;
+  }
+
+  return queued.filter((message) =>
+    message.type !== 'message:partDelta'
+      || !staleDeltas.has(
+        getBufferedPartKey(message.data.sessionID, message.data.messageID, message.data.partID)
+      )
+  );
+}
+
 function getSessionScopedMessageSessionID(message: SessionScopedWebviewMessage): string {
   switch (message.type) {
     case 'message:updated':
@@ -97,7 +141,13 @@ export function ChatApp() {
           break;
 
         case 'message:partDelta':
-          appendPartDelta(message.data.messageID, message.data.partID, message.data.delta);
+          appendPartDelta(
+            message.data.messageID,
+            message.data.partID,
+            message.data.delta,
+            message.data.field,
+            message.data.sessionID
+          );
           break;
 
         case 'message:removed':
@@ -136,7 +186,7 @@ export function ChatApp() {
         return;
       }
 
-      for (const bufferedMessage of bufferedMessages) {
+      for (const bufferedMessage of coalesceBufferedSessionMessages(bufferedMessages)) {
         applySessionScopedMessage(bufferedMessage);
       }
     },

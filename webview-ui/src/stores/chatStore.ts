@@ -8,6 +8,7 @@ import type {
   SessionStatus as OpenCodeSessionStatus,
   MessageWithParts,
   Part,
+  FilePart,
   PermissionRequest,
   Question,
   TextPart,
@@ -16,6 +17,257 @@ import type {
 export type ChatSessionStatus = OpenCodeSessionStatus['status'];
 
 type ChatSessionStatusInput = ChatSessionStatus | 'busy' | undefined;
+
+type BufferedRealtimeParts = Record<string, Part[]>;
+
+const DEFAULT_OPTIMISTIC_IMAGE_MIME = 'image/png';
+const DATA_URL_MIME_PATTERN = /^data:([^;,]+)(?:;[^,]*)?,/i;
+
+function stripWrappingQuotes(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length < 2) {
+    return trimmed;
+  }
+
+  const first = trimmed[0];
+  const last = trimmed[trimmed.length - 1];
+  if ((first === '"' || first === '\'') && last === first) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+}
+
+function extractMimeFromDataUrl(value: string): string | undefined {
+  const mime = DATA_URL_MIME_PATTERN.exec(value)?.[1]?.trim().toLowerCase();
+  return mime || undefined;
+}
+
+function extensionForMime(mime: string): string {
+  switch (mime.toLowerCase()) {
+    case 'image/jpeg':
+      return 'jpg';
+    case 'image/svg+xml':
+      return 'svg';
+    case 'image/x-icon':
+    case 'image/vnd.microsoft.icon':
+      return 'ico';
+    default: {
+      const subtype = mime.split('/')[1];
+      return subtype ? subtype.split('+')[0].toLowerCase() : 'bin';
+    }
+  }
+}
+
+function createOptimisticImagePart(
+  messageID: string,
+  image: string,
+  index: number,
+): FilePart | undefined {
+  const normalizedImage = stripWrappingQuotes(image);
+  if (!normalizedImage) {
+    return undefined;
+  }
+
+  const mime = extractMimeFromDataUrl(normalizedImage) ?? DEFAULT_OPTIMISTIC_IMAGE_MIME;
+  const url = normalizedImage.startsWith('data:')
+    ? normalizedImage
+    : `data:${mime};base64,${normalizedImage.replace(/\s+/g, '')}`;
+
+  return {
+    type: 'file',
+    id: `${messageID}_file_${index + 1}`,
+    mime,
+    filename: `image-${index + 1}.${extensionForMime(mime)}`,
+    url,
+  } satisfies FilePart;
+}
+
+function createOptimisticMessageParts(
+  messageID: string,
+  text: string,
+  images?: string[],
+): Part[] {
+  const parts: Part[] = [];
+  const normalizedText = text.trim();
+
+  if (normalizedText) {
+    parts.push({
+      type: 'text',
+      id: `${messageID}_text`,
+      text: normalizedText,
+    } satisfies TextPart);
+  }
+
+  if (images?.length) {
+    for (const [index, image] of images.entries()) {
+      const imagePart = createOptimisticImagePart(messageID, image, index);
+      if (imagePart) {
+        parts.push(imagePart);
+      }
+    }
+  }
+
+  return parts;
+}
+
+function appendStringField(existing: unknown, delta: string): string {
+  return `${typeof existing === 'string' ? existing : ''}${delta}`;
+}
+
+function applyDeltaToExistingPart(part: Part, field: string | undefined, delta: string): Part {
+  if (!delta) {
+    return part;
+  }
+
+  if (!field || field === 'text' || field === 'reasoning_content' || field === 'reasoning_details') {
+    if (part.type === 'text' || part.type === 'reasoning') {
+      return {
+        ...part,
+        text: `${part.text}${delta}`,
+      };
+    }
+
+    return part;
+  }
+
+  if (part.type === 'tool') {
+    switch (field) {
+      case 'output':
+      case 'state.output':
+        return {
+          ...part,
+          state: {
+            ...part.state,
+            output: appendStringField(part.state.output, delta),
+          },
+        };
+      case 'error':
+      case 'state.error':
+        return {
+          ...part,
+          state: {
+            ...part.state,
+            error: appendStringField(part.state.error, delta),
+          },
+        };
+      case 'title':
+      case 'state.title':
+        return {
+          ...part,
+          state: {
+            ...part.state,
+            title: appendStringField(part.state.title, delta),
+          },
+        };
+      default:
+        return part;
+    }
+  }
+
+  return part;
+}
+
+function createBufferedPartFromDelta(
+  messageID: string,
+  partID: string,
+  delta: string,
+  field?: string,
+  sessionID?: string,
+): Part | undefined {
+  if (!delta) {
+    return undefined;
+  }
+
+  if (!field || field === 'text') {
+    return {
+      type: 'text',
+      id: partID,
+      text: delta,
+      sessionID,
+      messageID,
+    } satisfies TextPart;
+  }
+
+  if (field === 'reasoning_content' || field === 'reasoning_details') {
+    return {
+      type: 'reasoning',
+      id: partID,
+      text: delta,
+    };
+  }
+
+  return undefined;
+}
+
+function upsertPart(parts: Part[], part: Part): Part[] {
+  const partIndex = parts.findIndex((existingPart) => existingPart.id === part.id);
+  if (partIndex === -1) {
+    return [...parts, part];
+  }
+
+  const updatedParts = [...parts];
+  updatedParts[partIndex] = part;
+  return updatedParts;
+}
+
+function mergeBufferedPartsIntoMessage(
+  message: MessageWithParts,
+  bufferedParts?: Part[],
+): MessageWithParts {
+  if (!bufferedParts?.length) {
+    return message;
+  }
+
+  let mergedParts = getMessageParts(message);
+  for (const bufferedPart of bufferedParts) {
+    mergedParts = upsertPart(mergedParts, bufferedPart);
+  }
+
+  return {
+    ...message,
+    parts: mergedParts,
+  };
+}
+
+function applyPartDelta(
+  parts: Part[],
+  messageID: string,
+  partID: string,
+  delta: string,
+  field?: string,
+  sessionID?: string,
+): Part[] {
+  if (!delta) {
+    return parts;
+  }
+
+  const partIndex = parts.findIndex((part) => part.id === partID);
+  if (partIndex !== -1) {
+    const updatedParts = [...parts];
+    updatedParts[partIndex] = applyDeltaToExistingPart(updatedParts[partIndex], field, delta);
+    return updatedParts;
+  }
+
+  const bufferedPart = createBufferedPartFromDelta(messageID, partID, delta, field, sessionID);
+  if (!bufferedPart) {
+    return parts;
+  }
+
+  return [...parts, bufferedPart];
+}
+
+function omitBufferedParts(
+  bufferedParts: BufferedRealtimeParts,
+  messageID: string,
+): BufferedRealtimeParts {
+  if (!(messageID in bufferedParts)) {
+    return bufferedParts;
+  }
+
+  const { [messageID]: _removed, ...remaining } = bufferedParts;
+  return remaining;
+}
 
 function normalizeSessionStatus(status: string | undefined): ChatSessionStatus {
   switch (status) {
@@ -70,6 +322,7 @@ export interface ChatState {
   // Optimistic message tracking for rollback
   optimisticMessageID?: string;
   savedInputText?: string;
+  bufferedRealtimeParts: BufferedRealtimeParts;
 
   // Prompts
   pendingPermission?: PermissionRequest;
@@ -85,7 +338,13 @@ export interface ChatState {
   addMessage: (message: MessageWithParts) => void;
   updateMessage: (message: MessageWithParts) => void;
   updatePart: (messageID: string, part: Part) => void;
-  appendPartDelta: (messageID: string, partID: string, delta: string) => void;
+  appendPartDelta: (
+    messageID: string,
+    partID: string,
+    delta: string,
+    field?: string,
+    sessionID?: string,
+  ) => void;
   removeMessage: (messageID: string) => void;
   setInputText: (text: string) => void;
   setStreaming: (streaming: boolean) => void;
@@ -112,6 +371,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   attachedImages: [],
   optimisticMessageID: undefined,
   savedInputText: undefined,
+  bufferedRealtimeParts: {},
   pendingPermission: undefined,
   pendingQuestion: undefined,
 
@@ -121,9 +381,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setSession: (session, messages) =>
     set({
       currentSession: session,
-      messages: messages.map((message) => normalizeMessageParts(message)),
+      messages: messages.map((message) => {
+        const normalizedMessage = normalizeMessageParts(message);
+        return mergeBufferedPartsIntoMessage(
+          normalizedMessage,
+          get().bufferedRealtimeParts[normalizedMessage.info.id],
+        );
+      }),
       sessionStatus: 'idle',
       isStreaming: false,
+      bufferedRealtimeParts: {},
       pendingPermission: undefined,
       pendingQuestion: undefined,
     }),
@@ -139,6 +406,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       messages: [],
       sessionStatus: 'idle',
       isStreaming: false,
+      bufferedRealtimeParts: {},
       pendingPermission: undefined,
       pendingQuestion: undefined,
       optimisticMessageID: undefined,
@@ -159,12 +427,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   prependMessages: (messages) => {
     let prependedCount = 0;
-    const normalizedMessages = messages.map((message) => normalizeMessageParts(message));
 
     set((state) => {
-      if (normalizedMessages.length === 0) {
+      if (messages.length === 0) {
         return state;
       }
+
+      const incomingMessageIDs = new Set(messages.map((message) => message.info.id));
+      const nextBufferedRealtimeParts = { ...state.bufferedRealtimeParts };
+      const normalizedMessages = messages.map((message) => {
+        const normalizedMessage = normalizeMessageParts(message);
+        const mergedMessage = mergeBufferedPartsIntoMessage(
+          normalizedMessage,
+          nextBufferedRealtimeParts[normalizedMessage.info.id],
+        );
+        delete nextBufferedRealtimeParts[normalizedMessage.info.id];
+        return mergedMessage;
+      });
 
       const existingIds = new Set(state.messages.map((message) => message.info.id));
       const seenIncomingIds = new Set<string>();
@@ -183,7 +462,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       prependedCount = uniqueMessages.length;
-      return { messages: [...uniqueMessages, ...state.messages] };
+      return {
+        messages: [...uniqueMessages, ...state.messages],
+        bufferedRealtimeParts:
+          incomingMessageIDs.size > 0 ? nextBufferedRealtimeParts : state.bufferedRealtimeParts,
+      };
     });
 
     return prependedCount;
@@ -191,64 +474,79 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addMessage: (message) =>
     set((state) => {
-      const normalizedMessage = normalizeMessageParts(message);
+      const mergedMessage = mergeBufferedPartsIntoMessage(
+        normalizeMessageParts(message),
+        state.bufferedRealtimeParts[message.info.id],
+      );
+      const nextBufferedRealtimeParts = omitBufferedParts(state.bufferedRealtimeParts, message.info.id);
 
       // Don't add duplicate messages
-      const existingMessage = state.messages.find((m) => m.info.id === normalizedMessage.info.id);
+      const existingMessage = state.messages.find((m) => m.info.id === mergedMessage.info.id);
       const exists = Boolean(existingMessage);
       if (exists) {
         // Update instead
         return {
           messages: state.messages.map((m) =>
-            m.info.id === normalizedMessage.info.id
-              ? normalizeMessageParts(normalizedMessage, existingMessage?.parts)
+            m.info.id === mergedMessage.info.id
+              ? normalizeMessageParts(mergedMessage, existingMessage?.parts)
               : m
           ),
+          bufferedRealtimeParts: nextBufferedRealtimeParts,
         };
       }
-      return { messages: [...state.messages, normalizedMessage] };
+      return {
+        messages: [...state.messages, mergedMessage],
+        bufferedRealtimeParts: nextBufferedRealtimeParts,
+      };
     }),
 
   updateMessage: (message) =>
     set((state) => {
       const index = state.messages.findIndex((m) => m.info.id === message.info.id);
       const existingMessage = index === -1 ? undefined : state.messages[index];
-      const normalizedMessage = normalizeMessageParts(message, existingMessage?.parts);
+      const normalizedMessage = mergeBufferedPartsIntoMessage(
+        normalizeMessageParts(message, existingMessage?.parts),
+        state.bufferedRealtimeParts[message.info.id],
+      );
+      const nextBufferedRealtimeParts = omitBufferedParts(state.bufferedRealtimeParts, message.info.id);
 
       if (index === -1) {
         // Message not found, add it
-        return { messages: [...state.messages, normalizedMessage] };
+        return {
+          messages: [...state.messages, normalizedMessage],
+          bufferedRealtimeParts: nextBufferedRealtimeParts,
+        };
       }
       const updated = [...state.messages];
       updated[index] = normalizedMessage;
-      return { messages: updated };
+      return {
+        messages: updated,
+        bufferedRealtimeParts: nextBufferedRealtimeParts,
+      };
     }),
 
-  updatePart: (messageID, part) =>
+  updatePart: (messageID, part) => {
     set((state) => {
       const msgIndex = state.messages.findIndex((m) => m.info.id === messageID);
-      if (msgIndex === -1) return state;
+      if (msgIndex === -1) {
+        return {
+          bufferedRealtimeParts: {
+            ...state.bufferedRealtimeParts,
+            [messageID]: upsertPart(state.bufferedRealtimeParts[messageID] ?? [], part),
+          },
+        };
+      }
 
       const msg = state.messages[msgIndex];
-      const currentParts = getMessageParts(msg);
-      const partIndex = currentParts.findIndex((p) => p.id === part.id);
-
-      let newParts: Part[];
-      if (partIndex === -1) {
-        // New part, append
-        newParts = [...currentParts, part];
-      } else {
-        // Update existing part
-        newParts = [...currentParts];
-        newParts[partIndex] = part;
-      }
+      const newParts = upsertPart(getMessageParts(msg), part);
 
       const updated = [...state.messages];
       updated[msgIndex] = { ...msg, parts: newParts };
       return { messages: updated };
-    }),
+    });
+  },
 
-  appendPartDelta: (messageID, partID, delta) =>
+  appendPartDelta: (messageID, partID, delta, field, sessionID) =>
     set((state) => {
       if (!delta) {
         return state;
@@ -256,35 +554,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const msgIndex = state.messages.findIndex((m) => m.info.id === messageID);
       if (msgIndex === -1) {
-        return state;
+        return {
+          bufferedRealtimeParts: {
+            ...state.bufferedRealtimeParts,
+            [messageID]: applyPartDelta(
+              state.bufferedRealtimeParts[messageID] ?? [],
+              messageID,
+              partID,
+              delta,
+              field,
+              sessionID,
+            ),
+          },
+        };
       }
 
       const msg = state.messages[msgIndex];
-      const currentParts = getMessageParts(msg);
-      const partIndex = currentParts.findIndex((p) => p.id === partID);
-
-      let newParts: Part[];
-      if (partIndex === -1) {
-        const streamedTextPart: TextPart = {
-          type: 'text',
-          id: partID,
-          text: delta,
-          sessionID: msg.info.sessionID,
-          messageID,
-        };
-        newParts = [...currentParts, streamedTextPart];
-      } else {
-        const existingPart = currentParts[partIndex];
-        if (existingPart.type !== 'text' && existingPart.type !== 'reasoning') {
-          return state;
-        }
-
-        newParts = [...currentParts];
-        newParts[partIndex] = {
-          ...existingPart,
-          text: existingPart.text + delta,
-        };
-      }
+      const newParts = applyPartDelta(
+        getMessageParts(msg),
+        messageID,
+        partID,
+        delta,
+        field,
+        sessionID ?? msg.info.sessionID,
+      );
 
       const updated = [...state.messages];
       updated[msgIndex] = { ...msg, parts: newParts };
@@ -294,6 +587,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   removeMessage: (messageID) =>
     set((state) => ({
       messages: state.messages.filter((m) => m.info.id !== messageID),
+      bufferedRealtimeParts: omitBufferedParts(state.bufferedRealtimeParts, messageID),
     })),
 
   setInputText: (text) => set({ inputText: text }),
@@ -331,13 +625,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         agent: '',
         model: { providerID: '', modelID: '' },
       },
-      parts: [
-        {
-          type: 'text' as const,
-          id: `${messageID}_text`,
-          text,
-        },
-      ],
+      parts: createOptimisticMessageParts(messageID, text, images),
     };
 
     set({
@@ -382,6 +670,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       attachedImages: [],
       optimisticMessageID: undefined,
       savedInputText: undefined,
+      bufferedRealtimeParts: {},
       pendingPermission: undefined,
       pendingQuestion: undefined,
     }),
