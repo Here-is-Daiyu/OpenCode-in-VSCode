@@ -1,48 +1,50 @@
 /**
- * Text input with label, description, and optional validation.
+ * Textarea control styled for the settings surface.
  */
 
 import React, { useCallback } from 'react';
 import { Field } from './Field';
 
-interface TextInputProps {
+interface TextareaProps {
   label: string;
   description?: string;
   value: string;
   placeholder?: string;
+  rows?: number;
   mono?: boolean;
-  error?: string;
   disabled?: boolean;
   onChange: (value: string) => void;
 }
 
-export function TextInput({
+export function Textarea({
   label,
   description,
   value,
   placeholder,
+  rows = 5,
   mono,
-  error,
   disabled,
   onChange,
-}: TextInputProps) {
+}: TextareaProps) {
   const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      onChange(e.target.value);
+    (event: React.ChangeEvent<HTMLTextAreaElement>) => {
+      onChange(event.target.value);
     },
     [onChange],
   );
 
   return (
-    <Field label={label} description={description} error={error}>
-        <input
-          type="text"
-          className={`setting-text-input${mono ? ' setting-text-input--mono' : ''}${error ? ' setting-text-input--error' : ''}`}
+    <Field label={label} description={description}>
+      <div className="setting-textarea-shell">
+        <textarea
+          className={`setting-textarea${mono ? ' setting-textarea--mono' : ''}`}
           value={value}
           placeholder={placeholder}
+          rows={rows}
           disabled={disabled}
           onChange={handleChange}
         />
+      </div>
     </Field>
   );
 }

@@ -6,8 +6,13 @@
  */
 
 import React, { useCallback, useState } from 'react';
+import { Field } from '../../../components/settings/Field';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
 import { KeyValueEditor } from '../../../components/settings/KeyValueEditor';
+import { NumberInput } from '../../../components/settings/NumberInput';
+import { SegmentedControl } from '../../../components/settings/SegmentedControl';
+import { TextInput } from '../../../components/settings/TextInput';
+import { Toggle } from '../../../components/settings/Toggle';
 import type { OpenCodeConfig, MCPServerConfig, MCPStatus } from '../../../types/opencode';
 
 interface MCPTabProps {
@@ -68,7 +73,7 @@ export function MCPTab({
             onCancel={() => setShowForm(false)}
           />
         ) : (
-          <button className="btn btn--primary" onClick={() => setShowForm(true)}>
+          <button className="btn btn--primary" type="button" onClick={() => setShowForm(true)}>
             + Add MCP Server
           </button>
         )}
@@ -102,8 +107,15 @@ function MCPServerCard({
     <div className="mcp-card">
       <div className="mcp-card__header">
         <div className={`mcp-card__status-dot mcp-card__status-dot--${statusStr}`} />
-        <span className="mcp-card__name">{name}</span>
-        <span className="mcp-card__type">{config.type}</span>
+        <div className="mcp-card__title">
+          <span className="mcp-card__name">{name}</span>
+          <div className="mcp-card__pills">
+            <span className="mcp-card__type">{config.type}</span>
+            <span className={`mcp-card__type ${isEnabled ? '' : 'mcp-card__type--muted'}`}>
+              {isEnabled ? 'Enabled' : 'Paused'}
+            </span>
+          </div>
+        </div>
         {status?.tools !== undefined && (
           <span className="mcp-card__tools">
             {status.tools} tool{status.tools !== 1 ? 's' : ''}
@@ -112,15 +124,17 @@ function MCPServerCard({
         <div className="mcp-card__actions">
           <button
             className="mcp-card__action-btn"
+            type="button"
             onClick={() => onToggle(!isEnabled)}
             title={isEnabled ? 'Disable' : 'Enable'}
           >
-            {isEnabled ? '⏸' : '▶'}
+            {isEnabled ? 'Pause' : 'Enable'}
           </button>
           {confirmDelete ? (
             <>
               <button
                 className="mcp-card__action-btn mcp-card__action-btn--danger"
+                type="button"
                 onClick={onRemove}
                 title="Confirm delete"
               >
@@ -128,6 +142,7 @@ function MCPServerCard({
               </button>
               <button
                 className="mcp-card__action-btn"
+                type="button"
                 onClick={() => setConfirmDelete(false)}
               >
                 Cancel
@@ -136,10 +151,11 @@ function MCPServerCard({
           ) : (
             <button
               className="mcp-card__action-btn mcp-card__action-btn--danger"
+              type="button"
               onClick={() => setConfirmDelete(true)}
               title="Delete"
             >
-              ✕
+              Delete
             </button>
           )}
         </div>
@@ -241,52 +257,38 @@ function AddMCPForm({
     <div className="mcp-form">
       <div className="mcp-form__title">Add MCP Server</div>
       <div className="mcp-form__fields">
-        {/* Name */}
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Server name</label>
-          <input
-            className="setting-text-input"
-            placeholder="my-server"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+        <TextInput
+          label="Server name"
+          description="Unique ID used by the OpenCode config file."
+          placeholder="my-server"
+          value={name}
+          onChange={setName}
+        />
+
+        <Field
+          label="Connection type"
+          description="Choose whether this server is launched locally or reached over HTTP."
+        >
+          <SegmentedControl
+            value={type}
+            options={[
+              { value: 'local', label: 'Local command' },
+              { value: 'remote', label: 'Remote URL' },
+            ]}
+            onChange={setType}
           />
-        </div>
+        </Field>
 
-        {/* Type */}
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Type</label>
-          <div className="mcp-form__radio-group">
-            <label className="mcp-form__radio">
-              <input
-                type="radio"
-                checked={type === 'local'}
-                onChange={() => setType('local')}
-              />
-              Local (command)
-            </label>
-            <label className="mcp-form__radio">
-              <input
-                type="radio"
-                checked={type === 'remote'}
-                onChange={() => setType('remote')}
-              />
-              Remote (URL)
-            </label>
-          </div>
-        </div>
-
-        {/* Local fields */}
         {type === 'local' && (
           <>
-            <div className="mcp-form__row">
-              <label className="mcp-form__label">Command</label>
-              <input
-                className="setting-text-input setting-text-input--mono"
-                placeholder="npx -y @modelcontextprotocol/server-filesystem ."
-                value={command}
-                onChange={(e) => setCommand(e.target.value)}
-              />
-            </div>
+            <TextInput
+              label="Command"
+              description="Command line used to start the MCP process."
+              placeholder="npx -y @modelcontextprotocol/server-filesystem ."
+              value={command}
+              onChange={setCommand}
+              mono
+            />
             <KeyValueEditor
               label="Environment variables"
               pairs={envPairs}
@@ -297,18 +299,16 @@ function AddMCPForm({
           </>
         )}
 
-        {/* Remote fields */}
         {type === 'remote' && (
           <>
-            <div className="mcp-form__row">
-              <label className="mcp-form__label">URL</label>
-              <input
-                className="setting-text-input setting-text-input--mono"
-                placeholder="https://example.com/mcp"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-            </div>
+            <TextInput
+              label="URL"
+              description="Remote MCP endpoint exposed by your server."
+              placeholder="https://example.com/mcp"
+              value={url}
+              onChange={setUrl}
+              mono
+            />
             <KeyValueEditor
               label="Headers"
               pairs={headerPairs}
@@ -319,29 +319,33 @@ function AddMCPForm({
           </>
         )}
 
-        {/* Timeout */}
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Timeout (ms)</label>
-          <input
-            className="setting-number-input__field"
-            type="number"
-            value={timeout}
-            min={1000}
-            max={300000}
-            onChange={(e) => setTimeout_(Number(e.target.value))}
-          />
-        </div>
+        <NumberInput
+          label="Timeout (ms)"
+          description="How long OpenCode waits before considering the MCP request failed."
+          value={timeout}
+          min={1000}
+          max={300000}
+          step={1000}
+          onChange={setTimeout_}
+        />
 
-        {/* Actions */}
+        <Toggle
+          label="Enabled on create"
+          description="Keep the server active immediately after it is added."
+          checked={enabled}
+          onChange={setEnabled}
+        />
+
         <div className="mcp-form__actions">
           <button
             className="btn btn--primary"
+            type="button"
             onClick={handleSubmit}
             disabled={!isValid}
           >
             Add Server
           </button>
-          <button className="btn btn--secondary" onClick={onCancel}>
+          <button className="btn btn--secondary" type="button" onClick={onCancel}>
             Cancel
           </button>
         </div>

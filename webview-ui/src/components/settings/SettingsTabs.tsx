@@ -5,19 +5,55 @@
 import React from 'react';
 import type { SettingsTab } from '../../stores/settingsStore';
 
-interface TabDef {
+export interface SettingsTabDef {
   id: SettingsTab;
   label: string;
+  description: string;
+  icon: string;
 }
 
-const TABS: TabDef[] = [
-  { id: 'general', label: 'General' },
-  { id: 'model', label: 'Model & Agent' },
-  { id: 'permissions', label: 'Permissions' },
-  { id: 'mcp', label: 'MCP Servers' },
-  { id: 'commands', label: 'Commands' },
-  { id: 'advanced', label: 'Advanced' },
+export const SETTINGS_TABS: SettingsTabDef[] = [
+  {
+    id: 'general',
+    label: 'General',
+    description: 'Server, chat, and workspace basics',
+    icon: '◎',
+  },
+  {
+    id: 'model',
+    label: 'Model & Agent',
+    description: 'Choose providers, models, and defaults',
+    icon: '✦',
+  },
+  {
+    id: 'permissions',
+    label: 'Permissions',
+    description: 'Control what the agent may access',
+    icon: '⛨',
+  },
+  {
+    id: 'mcp',
+    label: 'MCP Servers',
+    description: 'Connect remote or local tool surfaces',
+    icon: '⎇',
+  },
+  {
+    id: 'commands',
+    label: 'Commands',
+    description: 'Shape reusable slash command workflows',
+    icon: '⌘',
+  },
+  {
+    id: 'advanced',
+    label: 'Advanced',
+    description: 'Editor integration and reset controls',
+    icon: '⚙',
+  },
 ];
+
+export function getSettingsTabDef(activeTab: SettingsTab): SettingsTabDef {
+  return SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
+}
 
 interface SettingsTabProps {
   activeTab: SettingsTab;
@@ -26,16 +62,22 @@ interface SettingsTabProps {
 
 export function SettingsTabs({ activeTab, onTabChange }: SettingsTabProps) {
   return (
-    <div className="settings-tabs">
-      {TABS.map((tab) => (
+    <nav className="settings-tabs" aria-label="Settings sections">
+      {SETTINGS_TABS.map((tab) => (
         <button
           key={tab.id}
+          type="button"
           className={`settings-tabs__tab ${activeTab === tab.id ? 'settings-tabs__tab--active' : ''}`}
           onClick={() => onTabChange(tab.id)}
         >
-          {tab.label}
+          <span className="settings-tabs__icon">{tab.icon}</span>
+          <span className="settings-tabs__text">
+            <span className="settings-tabs__label">{tab.label}</span>
+            <span className="settings-tabs__description">{tab.description}</span>
+          </span>
+          <span className="settings-tabs__chevron">›</span>
         </button>
       ))}
-    </div>
+    </nav>
   );
 }

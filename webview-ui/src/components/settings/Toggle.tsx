@@ -17,16 +17,30 @@ export function Toggle({ label, description, checked, onChange }: ToggleProps) {
   }, [checked, onChange]);
 
   return (
-    <div className="setting-toggle" onClick={handleClick} role="switch" aria-checked={checked} tabIndex={0}>
-      <div className={`setting-toggle__track ${checked ? 'setting-toggle__track--on' : ''}`}>
-        <div className="setting-toggle__thumb" />
-      </div>
-      <div className="setting-toggle__text">
-        <span className="setting-toggle__label">{label}</span>
+    <button
+      type="button"
+      className={`setting-toggle ${checked ? 'setting-toggle--on' : ''}`}
+      onClick={handleClick}
+      role="switch"
+      aria-checked={checked}
+    >
+      <span className={`setting-toggle__track ${checked ? 'setting-toggle__track--on' : ''}`}>
+        <span className="setting-toggle__thumb" />
+      </span>
+
+      <span className="setting-toggle__text">
+        <span className="setting-toggle__topline">
+          <span className="setting-toggle__label">{label}</span>
+          <span
+            className={`setting-toggle__state ${checked ? 'setting-toggle__state--on' : 'setting-toggle__state--off'}`}
+          >
+            {checked ? 'On' : 'Off'}
+          </span>
+        </span>
         {description && (
           <span className="setting-toggle__description">{description}</span>
         )}
-      </div>
-    </div>
+      </span>
+    </button>
   );
 }

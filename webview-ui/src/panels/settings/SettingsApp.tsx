@@ -8,7 +8,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
 import { getVsCodeApi } from '../../utils/vscodeApi';
-import { SettingsTabs } from '../../components/settings/SettingsTabs';
+import { SettingsTabs, getSettingsTabDef } from '../../components/settings/SettingsTabs';
 import { GeneralTab } from './tabs/GeneralTab';
 import { ModelTab } from './tabs/ModelTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
@@ -28,6 +28,7 @@ function postMessage(message: unknown): void {
 export function SettingsApp() {
   const store = useSettingsStore();
   const initialised = useRef(false);
+  const activeTab = getSettingsTabDef(store.activeTab);
 
   // ------------------------------------------------------------------
   //  Listen for messages from extension host
@@ -188,46 +189,83 @@ export function SettingsApp() {
   // ------------------------------------------------------------------
   return (
     <div className="settings-app">
-      {/* Header */}
-      <div className="settings-header">
-        <h1 className="settings-header__title">OpenCode Settings</h1>
-        {store.saveIndicator && (
-          <span className="settings-header__indicator settings-header__indicator--saved">
-            Saved
-          </span>
-        )}
-        {store.isDirty && !store.saveIndicator && (
-          <span className="settings-header__indicator settings-header__indicator--dirty">
-            Unsaved
-          </span>
-        )}
-      </div>
+      <div className="settings-shell">
+        <header className="settings-header">
+          <div className="settings-header__main">
+            <span className="settings-header__eyebrow">OpenCode control center</span>
+            <div className="settings-header__title-row">
+              <div>
+                <h1 className="settings-header__title">Settings</h1>
+                <p className="settings-header__description">
+                  Unified workspace preferences for the VS Code extension and the
+                  OpenCode runtime.
+                </p>
+              </div>
 
-      {/* Error banner */}
-      {store.error && (
-        <div className="settings-error">
-          <span>{store.error}</span>
-          <button
-            className="settings-error__dismiss"
-            onClick={() => store.setError(null)}
-          >
-            ×
-          </button>
-        </div>
-      )}
+              <div className="settings-header__meta">
+                {store.saveIndicator && (
+                  <span className="settings-header__indicator settings-header__indicator--saved">
+                    Saved
+                  </span>
+                )}
+                {store.isDirty && !store.saveIndicator && (
+                  <span className="settings-header__indicator settings-header__indicator--dirty">
+                    Unsaved
+                  </span>
+                )}
+                {!store.isDirty && !store.saveIndicator && store.loaded && (
+                  <span className="settings-header__indicator settings-header__indicator--idle">
+                    Auto-save on
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
 
-      {/* Tabs */}
-      <SettingsTabs activeTab={store.activeTab} onTabChange={handleTabChange} />
-
-      {/* Content */}
-      <div className="settings-content">
-        {store.loaded ? (
-          renderTab()
-        ) : (
-          <div className="empty-state">
-            <div className="empty-state__text">Loading settings...</div>
+        {store.error && (
+          <div className="settings-error">
+            <span>{store.error}</span>
+            <button
+              type="button"
+              className="settings-error__dismiss"
+              onClick={() => store.setError(null)}
+            >
+              ×
+            </button>
           </div>
         )}
+
+        <div className="settings-layout">
+          <aside className="settings-sidebar">
+            <SettingsTabs activeTab={store.activeTab} onTabChange={handleTabChange} />
+          </aside>
+
+          <div className="settings-content">
+            <section className="settings-panel">
+              <div className="settings-panel__header">
+                <div>
+                  <span className="settings-panel__eyebrow">{activeTab.label}</span>
+                  <h2 className="settings-panel__title">{activeTab.label}</h2>
+                  <p className="settings-panel__description">{activeTab.description}</p>
+                </div>
+
+                <div className="settings-panel__status">
+                  Changes sync back to the extension automatically.
+                </div>
+              </div>
+
+              {store.loaded ? (
+                renderTab()
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-state__icon">✦</div>
+                  <div className="empty-state__text">Loading settings…</div>
+                </div>
+              )}
+            </section>
+          </div>
+        </div>
       </div>
     </div>
   );

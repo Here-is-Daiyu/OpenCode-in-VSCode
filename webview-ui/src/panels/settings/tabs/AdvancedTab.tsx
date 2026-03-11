@@ -74,11 +74,12 @@ export function AdvancedTab({ settings, onUpdate }: AdvancedTabProps) {
               <div className="confirm-dialog__actions">
                 <button
                   className="btn btn--secondary"
+                  type="button"
                   onClick={() => setShowResetConfirm(false)}
                 >
                   Cancel
                 </button>
-                <button className="btn btn--danger" onClick={handleReset}>
+                <button className="btn btn--danger" type="button" onClick={handleReset}>
                   Reset All Settings
                 </button>
               </div>
@@ -87,6 +88,7 @@ export function AdvancedTab({ settings, onUpdate }: AdvancedTabProps) {
         ) : null}
         <button
           className="btn btn--danger"
+          type="button"
           onClick={() => setShowResetConfirm(true)}
         >
           Reset All Settings to Defaults

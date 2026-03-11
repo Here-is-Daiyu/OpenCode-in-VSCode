@@ -12,12 +12,12 @@ interface SettingGroupProps {
 
 export function SettingGroup({ title, description, children }: SettingGroupProps) {
   return (
-    <div className="setting-group">
+    <section className="setting-group">
       <div className="setting-group__header">{title}</div>
       {description && (
         <div className="setting-group__description">{description}</div>
       )}
       <div className="setting-group__items">{children}</div>
-    </div>
+    </section>
   );
 }

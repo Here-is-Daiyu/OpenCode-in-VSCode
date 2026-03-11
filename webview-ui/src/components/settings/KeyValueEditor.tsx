@@ -3,6 +3,7 @@
  */
 
 import React, { useCallback } from 'react';
+import { Field } from './Field';
 
 interface KeyValueEditorProps {
   label: string;
@@ -51,12 +52,7 @@ export function KeyValueEditor({
   }, [pairs, onChange]);
 
   return (
-    <div className="setting-row">
-      <label className="setting-row__label">{label}</label>
-      {description && (
-        <span className="setting-row__description">{description}</span>
-      )}
-      <div className="setting-row__control">
+    <Field label={label} description={description}>
         <div className="kv-editor">
           {pairs.map((pair, i) => (
             <div key={i} className="kv-editor__row">
@@ -74,6 +70,7 @@ export function KeyValueEditor({
               />
               <button
                 className="kv-editor__remove-btn"
+                type="button"
                 onClick={() => handleRemove(i)}
                 title="Remove"
               >
@@ -81,11 +78,10 @@ export function KeyValueEditor({
               </button>
             </div>
           ))}
-          <button className="kv-editor__add-btn" onClick={handleAdd}>
+          <button className="kv-editor__add-btn" type="button" onClick={handleAdd}>
             + Add entry
           </button>
         </div>
-      </div>
-    </div>
+    </Field>
   );
 }

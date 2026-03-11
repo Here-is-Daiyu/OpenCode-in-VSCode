@@ -3,6 +3,7 @@
  */
 
 import React, { useCallback } from 'react';
+import { Field } from './Field';
 
 interface NumberInputProps {
   label: string;
@@ -43,13 +44,9 @@ export function NumberInput({
   );
 
   return (
-    <div className="setting-row">
-      <label className="setting-row__label">{label}</label>
-      {description && (
-        <span className="setting-row__description">{description}</span>
-      )}
-      <div className="setting-row__control">
-        <div className="setting-number-input">
+    <Field label={label} description={description}>
+      <div className="setting-number-input">
+        <div className="setting-number-input__field-row">
           <input
             type="number"
             className="setting-number-input__field"
@@ -59,9 +56,14 @@ export function NumberInput({
             step={step}
             onChange={handleFieldChange}
           />
-          {showSlider && min !== undefined && max !== undefined && (
-            <>
-              <span className="setting-number-input__range-label">{min}</span>
+          {showSlider && (
+            <span className="setting-number-input__value">{value}</span>
+          )}
+        </div>
+
+        {showSlider && min !== undefined && max !== undefined && (
+          <div className="setting-number-input__slider-shell">
+            <span className="setting-number-input__range-label">{min}</span>
               <input
                 type="range"
                 className="setting-number-input__slider"
@@ -71,11 +73,10 @@ export function NumberInput({
                 value={value}
                 onChange={handleSliderChange}
               />
-              <span className="setting-number-input__range-label">{max}</span>
-            </>
-          )}
-        </div>
+            <span className="setting-number-input__range-label">{max}</span>
+          </div>
+        )}
       </div>
-    </div>
+    </Field>
   );
 }

@@ -6,8 +6,8 @@
 import React, { useCallback, useMemo } from 'react';
 import type { OpenCodeConfig, Provider } from '../../../types/opencode';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
-import { Dropdown, type DropdownOption } from '../../../components/settings/Dropdown';
-import { NumberInput } from '../../../components/settings/NumberInput';
+import { Field } from '../../../components/settings/Field';
+import { SegmentedControl } from '../../../components/settings/SegmentedControl';
 
 interface ModelTabProps {
   config: OpenCodeConfig;
@@ -80,23 +80,6 @@ export function ModelTab({
       }),
     [providers, connectedProviders],
   );
-
-  // Build dropdown options for a flat model selector (alternative to the card view)
-  const modelDropdownOptions: DropdownOption[] = useMemo(() => {
-    const opts: DropdownOption[] = [];
-    for (const provider of sortedProviders) {
-      const isConnected = connectedProviders.includes(provider.id);
-      for (const model of Object.values(provider.models)) {
-        opts.push({
-          value: `${provider.id}/${model.id}`,
-          label: `${model.name || model.id}`,
-          group: `${provider.name}${isConnected ? '' : ' (disconnected)'}`,
-          disabled: !isConnected,
-        });
-      }
-    }
-    return opts;
-  }, [sortedProviders, connectedProviders]);
 
   return (
     <div className="model-tab">
@@ -242,17 +225,20 @@ export function ModelTab({
         title="Agent"
         description="Choose the agent mode. Leave empty for the default agent."
       >
-        <Dropdown
-          label="Agent"
+        <Field
+          label="Agent mode"
           description="The agent determines which tools and system prompt are used."
-          value={config.agent ?? ''}
-          options={[
-            { value: '', label: '(Default)' },
-            { value: 'code', label: 'Code' },
-            { value: 'task', label: 'Task' },
-          ]}
-          onChange={handleAgentChange}
-        />
+        >
+          <SegmentedControl
+            value={(config.agent ?? '') as '' | 'code' | 'task'}
+            options={[
+              { value: '', label: 'Default' },
+              { value: 'code', label: 'Code' },
+              { value: 'task', label: 'Task' },
+            ]}
+            onChange={handleAgentChange}
+          />
+        </Field>
       </SettingGroup>
 
       {/* ---- Reasoning Effort (conditional) ---- */}

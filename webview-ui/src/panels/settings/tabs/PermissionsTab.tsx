@@ -5,10 +5,10 @@
  * with allow/ask/deny dropdowns.
  */
 
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
-import { ListEditor } from '../../../components/settings/ListEditor';
-import type { OpenCodeConfig, PermissionRuleset, PermissionValue } from '../../../types/opencode';
+import { SegmentedControl } from '../../../components/settings/SegmentedControl';
+import type { OpenCodeConfig, PermissionValue } from '../../../types/opencode';
 
 /** Well-known permission keys. */
 const KNOWN_PERMISSIONS = [
@@ -20,6 +20,12 @@ const KNOWN_PERMISSIONS = [
   { key: 'fetch', label: 'Fetch URLs', description: 'Make HTTP requests' },
   { key: 'mcp', label: 'MCP tools', description: 'Use MCP server tools' },
 ];
+
+const PERMISSION_OPTIONS = [
+  { value: 'allow', label: 'Allow' },
+  { value: 'ask', label: 'Ask' },
+  { value: 'deny', label: 'Deny' },
+] as const;
 
 interface PermissionsTabProps {
   config: OpenCodeConfig;
@@ -53,6 +59,15 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
         value: value as PermissionValue,
       })),
   );
+
+  useEffect(() => {
+    setBashPatterns(
+      Object.entries(bashPerms).map(([pattern, value]) => ({
+        pattern,
+        value: value as PermissionValue,
+      })),
+    );
+  }, [bashPerms]);
 
   const handleBashPatternChange = useCallback(
     (index: number, field: 'pattern' | 'value', newValue: string) => {
@@ -105,46 +120,37 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
         title="Permission Rules"
         description="Control what actions the AI agent can perform. 'Allow' grants permission automatically, 'Ask' prompts you each time, and 'Deny' blocks the action."
       >
-        <table className="permission-table">
-          <thead>
-            <tr>
-              <th>Permission</th>
-              <th>Level</th>
-            </tr>
-          </thead>
-          <tbody>
-            {KNOWN_PERMISSIONS.map(({ key, label, description }) => {
-              const value = permission[key];
-              const currentValue =
-                typeof value === 'string'
-                  ? (value as PermissionValue)
-                  : 'ask';
+        <div className="permission-grid">
+          {KNOWN_PERMISSIONS.map(({ key, label, description }) => {
+            const value = permission[key];
+            const currentValue =
+              typeof value === 'string'
+                ? (value as PermissionValue)
+                : 'ask';
 
-              // Skip bash if it has sub-patterns (handled below)
-              if (key === 'bash' && typeof permission['bash'] === 'object') {
-                return null;
-              }
+            if (key === 'bash' && typeof permission['bash'] === 'object') {
+              return null;
+            }
 
-              return (
-                <tr key={key}>
-                  <td title={description}>{label}</td>
-                  <td>
-                    <select
-                      value={currentValue}
-                      onChange={(e) =>
-                        handlePermissionChange(key, e.target.value as PermissionValue)
-                      }
-                    >
-                      <option value="allow">Allow</option>
-                      <option value="ask">Ask</option>
-                      <option value="deny">Deny</option>
-                    </select>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+            return (
+              <div key={key} className="permission-rule">
+                <div className="permission-rule__content">
+                  <div className="permission-rule__label">{label}</div>
+                  <div className="permission-rule__description">{description}</div>
+                </div>
+
+                <div className="permission-rule__control">
+                  <SegmentedControl
+                    size="compact"
+                    value={currentValue}
+                    options={PERMISSION_OPTIONS}
+                    onChange={(nextValue) => handlePermissionChange(key, nextValue)}
+                  />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </SettingGroup>
 
       {/* Bash Pattern Permissions */}
@@ -152,34 +158,33 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
         title="Bash Command Patterns"
         description="Fine-grained permissions for shell commands. Use glob patterns to match specific commands (e.g. 'git *' to allow all git commands)."
       >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 500 }}>
+        <div className="permission-patterns">
+          {bashPatterns.length === 0 && (
+            <div className="empty-state empty-state--compact">
+              <div className="empty-state__text">
+                No command-specific overrides yet. Add patterns for trusted or blocked
+                shell commands.
+              </div>
+            </div>
+          )}
+
           {bashPatterns.map((bp, i) => (
-            <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div key={i} className="permission-pattern">
               <input
-                className="setting-text-input setting-text-input--mono"
-                style={{ flex: 1, maxWidth: 'none' }}
+                className="setting-text-input setting-text-input--mono permission-pattern__input"
                 placeholder="Pattern (e.g. git *)"
                 value={bp.pattern}
                 onChange={(e) => handleBashPatternChange(i, 'pattern', e.target.value)}
               />
-              <select
-                style={{
-                  padding: '4px 6px',
-                  background: 'var(--vscode-input-background)',
-                  color: 'var(--vscode-input-foreground)',
-                  border: '1px solid var(--vscode-input-border)',
-                  borderRadius: 3,
-                  fontSize: 11,
-                }}
+              <SegmentedControl
+                size="compact"
                 value={bp.value}
-                onChange={(e) => handleBashPatternChange(i, 'value', e.target.value)}
-              >
-                <option value="allow">Allow</option>
-                <option value="ask">Ask</option>
-                <option value="deny">Deny</option>
-              </select>
+                options={PERMISSION_OPTIONS}
+                onChange={(nextValue) => handleBashPatternChange(i, 'value', nextValue)}
+              />
               <button
                 className="kv-editor__remove-btn"
+                type="button"
                 onClick={() => removeBashPattern(i)}
                 title="Remove"
               >
@@ -187,7 +192,8 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
               </button>
             </div>
           ))}
-          <button className="kv-editor__add-btn" onClick={addBashPattern}>
+
+          <button className="btn btn--secondary" type="button" onClick={addBashPattern}>
             + Add bash pattern
           </button>
         </div>

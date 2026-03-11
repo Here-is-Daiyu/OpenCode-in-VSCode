@@ -4,8 +4,14 @@
  * Shows configured custom commands with add/edit/delete UI.
  */
 
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { Dropdown, type DropdownOption } from '../../../components/settings/Dropdown';
+import { Field } from '../../../components/settings/Field';
+import { SegmentedControl } from '../../../components/settings/SegmentedControl';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
+import { TextInput } from '../../../components/settings/TextInput';
+import { Textarea } from '../../../components/settings/Textarea';
+import { Toggle } from '../../../components/settings/Toggle';
 import type { OpenCodeConfig, CustomCommand, Provider } from '../../../types/opencode';
 
 interface CommandsTabProps {
@@ -87,6 +93,7 @@ export function CommandsTab({ config, providers, onUpdateConfig }: CommandsTabPr
         ) : (
           <button
             className="btn btn--primary"
+            type="button"
             onClick={() => {
               setEditingName(null);
               setShowForm(true);
@@ -120,27 +127,41 @@ function CommandCard({
   return (
     <div className="command-card">
       <div className="command-card__header">
-        <span className="command-card__name">/{name}</span>
-        {command.agent && (
-          <span className="command-card__badge">{command.agent}</span>
-        )}
-        {command.subtask && (
-          <span className="command-card__badge">subtask</span>
-        )}
+        <div className="command-card__title-wrap">
+          <span className="command-card__name">/{name}</span>
+          <div className="command-card__badges">
+            {command.agent && (
+              <span className="command-card__badge">{command.agent}</span>
+            )}
+            {command.subtask && (
+              <span className="command-card__badge">subtask</span>
+            )}
+            {command.model && (
+              <span className="command-card__badge">model override</span>
+            )}
+          </div>
+        </div>
         <div className="command-card__actions">
-          <button className="mcp-card__action-btn" onClick={onEdit} title="Edit">
-            &#9998;
+          <button
+            className="mcp-card__action-btn"
+            type="button"
+            onClick={onEdit}
+            title="Edit"
+          >
+            Edit
           </button>
           {confirmDelete ? (
             <>
               <button
                 className="mcp-card__action-btn mcp-card__action-btn--danger"
+                type="button"
                 onClick={onDelete}
               >
                 Confirm
               </button>
               <button
                 className="mcp-card__action-btn"
+                type="button"
                 onClick={() => setConfirmDelete(false)}
               >
                 Cancel
@@ -149,10 +170,11 @@ function CommandCard({
           ) : (
             <button
               className="mcp-card__action-btn mcp-card__action-btn--danger"
+              type="button"
               onClick={() => setConfirmDelete(true)}
               title="Delete"
             >
-              ✕
+              Delete
             </button>
           )}
         </div>
@@ -185,9 +207,25 @@ function CommandForm({
   const [name, setName] = useState(initialName);
   const [template, setTemplate] = useState(initialCommand?.template ?? '');
   const [description, setDescription] = useState(initialCommand?.description ?? '');
-  const [agent, setAgent] = useState(initialCommand?.agent ?? '');
+  const [agent, setAgent] = useState<'' | 'code' | 'task'>(
+    (initialCommand?.agent as '' | 'code' | 'task') ?? '',
+  );
   const [model, setModel] = useState(initialCommand?.model ?? '');
   const [subtask, setSubtask] = useState(initialCommand?.subtask ?? false);
+
+  const modelOptions = useMemo<DropdownOption[]>(
+    () => [
+      { value: '', label: 'Use workspace default' },
+      ...providers.flatMap((provider) =>
+        Object.values(provider.models).map((modelOption) => ({
+          value: `${provider.id}/${modelOption.id}`,
+          label: modelOption.name || modelOption.id,
+          group: provider.name,
+        })),
+      ),
+    ],
+    [providers],
+  );
 
   const handleSubmit = useCallback(() => {
     if (!name.trim() || !template.trim()) return;
@@ -207,95 +245,74 @@ function CommandForm({
         {initialCommand ? 'Edit Command' : 'Add Command'}
       </div>
       <div className="command-form__fields">
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Name</label>
-          <input
-            className="setting-text-input setting-text-input--mono"
-            placeholder="my-command"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={!!initialName}
+        <TextInput
+          label="Name"
+          description="Slash command identifier without the leading '/'."
+          placeholder="my-command"
+          value={name}
+          onChange={setName}
+          mono
+          disabled={!!initialName}
+        />
+
+        <Textarea
+          label="Template"
+          description="Prompt template text. Use {{input}} when you want to inject the user's arguments."
+          placeholder="Write the prompt template here. Use {{input}} for user input."
+          value={template}
+          onChange={setTemplate}
+          mono
+          rows={6}
+        />
+
+        <TextInput
+          label="Description"
+          description="Optional helper text shown in the settings list."
+          placeholder="Optional description"
+          value={description}
+          onChange={setDescription}
+        />
+
+        <Field
+          label="Agent"
+          description="Choose which agent profile runs the command by default."
+        >
+          <SegmentedControl
+            value={agent}
+            options={[
+              { value: '', label: 'Default' },
+              { value: 'code', label: 'Code' },
+              { value: 'task', label: 'Task' },
+            ]}
+            onChange={setAgent}
           />
-        </div>
+        </Field>
 
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Template</label>
-          <textarea
-            className="command-form__textarea"
-            placeholder="Write the prompt template here. Use {{input}} for user input."
-            value={template}
-            onChange={(e) => setTemplate(e.target.value)}
-          />
-        </div>
+        <Dropdown
+          label="Model override"
+          description="Optional. Keep the workspace default, or pin this command to a specific model."
+          value={model}
+          options={modelOptions}
+          onChange={setModel}
+        />
 
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Description</label>
-          <input
-            className="setting-text-input"
-            placeholder="Optional description"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-          />
-        </div>
-
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Agent</label>
-          <div className="setting-dropdown" style={{ maxWidth: 300 }}>
-            <select
-              className="setting-dropdown__select"
-              value={agent}
-              onChange={(e) => setAgent(e.target.value)}
-            >
-              <option value="">Default</option>
-              <option value="code">Code</option>
-              <option value="task">Task</option>
-            </select>
-            <span className="setting-dropdown__arrow">&#9662;</span>
-          </div>
-        </div>
-
-        <div className="mcp-form__row">
-          <label className="mcp-form__label">Model</label>
-          <div className="setting-dropdown" style={{ maxWidth: 400 }}>
-            <select
-              className="setting-dropdown__select"
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-            >
-              <option value="">Default</option>
-              {providers.map((p) =>
-                Object.values(p.models).map((m) => (
-                  <option key={`${p.id}/${m.id}`} value={`${p.id}/${m.id}`}>
-                    {p.name} / {m.name}
-                  </option>
-                )),
-              )}
-            </select>
-            <span className="setting-dropdown__arrow">&#9662;</span>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 12 }}>
-            <input
-              type="checkbox"
-              checked={subtask}
-              onChange={(e) => setSubtask(e.target.checked)}
-              style={{ accentColor: 'var(--vscode-focusBorder)' }}
-            />
-            Run as subtask
-          </label>
-        </div>
+        <Toggle
+          label="Run as subtask"
+          description="Delegate the command into a subtask session instead of the active conversation."
+          checked={subtask}
+          onChange={setSubtask}
+        />
 
         <div className="command-form__actions">
           <button
             className="btn btn--primary"
+            type="button"
             onClick={handleSubmit}
             disabled={!isValid}
           >
             {initialCommand ? 'Save Changes' : 'Add Command'}
           </button>
-          <button className="btn btn--secondary" onClick={onCancel}>
+          <button className="btn btn--secondary" type="button" onClick={onCancel}>
             Cancel
           </button>
         </div>

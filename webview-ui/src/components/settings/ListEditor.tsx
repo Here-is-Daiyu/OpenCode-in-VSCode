@@ -3,6 +3,7 @@
  */
 
 import React, { useCallback } from 'react';
+import { Field } from './Field';
 
 interface ListEditorProps {
   label: string;
@@ -40,12 +41,7 @@ export function ListEditor({
   }, [items, onChange]);
 
   return (
-    <div className="setting-row">
-      <label className="setting-row__label">{label}</label>
-      {description && (
-        <span className="setting-row__description">{description}</span>
-      )}
-      <div className="setting-row__control">
+    <Field label={label} description={description}>
         <div className="list-editor">
           {items.map((item, i) => (
             <div key={i} className="list-editor__row">
@@ -57,6 +53,7 @@ export function ListEditor({
               />
               <button
                 className="list-editor__remove-btn"
+                type="button"
                 onClick={() => handleRemove(i)}
                 title="Remove"
               >
@@ -64,11 +61,10 @@ export function ListEditor({
               </button>
             </div>
           ))}
-          <button className="list-editor__add-btn" onClick={handleAdd}>
+          <button className="list-editor__add-btn" type="button" onClick={handleAdd}>
             + Add item
           </button>
         </div>
-      </div>
-    </div>
+    </Field>
   );
 }

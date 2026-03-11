@@ -2,7 +2,8 @@
  * Dropdown select with options.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Field } from './Field';
 
 export interface DropdownOption {
   value: string;
@@ -16,6 +17,8 @@ interface DropdownProps {
   description?: string;
   value: string;
   options: DropdownOption[];
+  placeholder?: string;
+  disabled?: boolean;
   onChange: (value: string) => void;
 }
 
@@ -24,60 +27,167 @@ export function Dropdown({
   description,
   value,
   options,
+  placeholder,
+  disabled,
   onChange,
 }: DropdownProps) {
-  const handleChange = useCallback(
-    (e: React.ChangeEvent<HTMLSelectElement>) => {
-      onChange(e.target.value);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleSelect = useCallback(
+    (nextValue: string) => {
+      onChange(nextValue);
+      setOpen(false);
     },
     [onChange],
   );
 
   // Group options if any have a group property
-  const groups = new Map<string, DropdownOption[]>();
-  const ungrouped: DropdownOption[] = [];
+  const { groups, ungrouped } = useMemo(() => {
+    const grouped = new Map<string, DropdownOption[]>();
+    const standalone: DropdownOption[] = [];
 
-  for (const opt of options) {
-    if (opt.group) {
-      const list = groups.get(opt.group) ?? [];
-      list.push(opt);
-      groups.set(opt.group, list);
-    } else {
-      ungrouped.push(opt);
+    for (const option of options) {
+      if (option.group) {
+        const list = grouped.get(option.group) ?? [];
+        list.push(option);
+        grouped.set(option.group, list);
+      } else {
+        standalone.push(option);
+      }
     }
-  }
+
+    return { groups: grouped, ungrouped: standalone };
+  }, [options]);
+
+  const selectedOption = useMemo(
+    () => options.find((option) => option.value === value),
+    [options, value],
+  );
+
+  useEffect(() => {
+    if (!open) {
+      return undefined;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
+
+  const handleTriggerKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (disabled) {
+        return;
+      }
+
+      if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown') {
+        event.preventDefault();
+        setOpen(true);
+      }
+
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    },
+    [disabled],
+  );
 
   return (
-    <div className="setting-row">
-      <label className="setting-row__label">{label}</label>
-      {description && (
-        <span className="setting-row__description">{description}</span>
-      )}
-      <div className="setting-row__control">
-        <div className="setting-dropdown">
-          <select
-            className="setting-dropdown__select"
-            value={value}
-            onChange={handleChange}
-          >
-            {ungrouped.map((opt) => (
-              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                {opt.label}
-              </option>
-            ))}
+    <Field label={label} description={description}>
+      <div className="setting-select" ref={containerRef}>
+        <button
+          type="button"
+          className={`setting-select__trigger${open ? ' setting-select__trigger--open' : ''}`}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          disabled={disabled}
+          onClick={() => setOpen((current) => !current)}
+          onKeyDown={handleTriggerKeyDown}
+        >
+          <span className="setting-select__value">
+            <span className="setting-select__text">
+              {selectedOption?.label ?? placeholder ?? 'Select an option'}
+            </span>
+          </span>
+          <span className="setting-select__chevron">⌄</span>
+        </button>
+
+        {open && (
+          <div className="setting-select__menu" role="listbox">
+            {ungrouped.map((option) => {
+              const selected = option.value === value;
+
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  disabled={option.disabled}
+                  className={[
+                    'setting-select__option',
+                    selected && 'setting-select__option--selected',
+                  ]
+                    .filter(Boolean)
+                    .join(' ')}
+                  onClick={() => handleSelect(option.value)}
+                >
+                  <span className="setting-select__option-label">{option.label}</span>
+                  {selected && <span className="setting-select__option-check">✓</span>}
+                </button>
+              );
+            })}
+
             {Array.from(groups.entries()).map(([group, opts]) => (
-              <optgroup key={group} label={group}>
-                {opts.map((opt) => (
-                  <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                    {opt.label}
-                  </option>
-                ))}
-              </optgroup>
+              <div key={group} className="setting-select__group">
+                <div className="setting-select__group-label">{group}</div>
+                {opts.map((option) => {
+                  const selected = option.value === value;
+
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      disabled={option.disabled}
+                      className={[
+                        'setting-select__option',
+                        selected && 'setting-select__option--selected',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                      onClick={() => handleSelect(option.value)}
+                    >
+                      <span className="setting-select__option-label">{option.label}</span>
+                      {selected && (
+                        <span className="setting-select__option-check">✓</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             ))}
-          </select>
-          <span className="setting-dropdown__arrow">&#9662;</span>
-        </div>
+          </div>
+        )}
       </div>
-    </div>
+    </Field>
   );
 }
