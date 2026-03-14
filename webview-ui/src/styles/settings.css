@@ -1464,4 +1464,241 @@ textarea {
   .setting-number-input__field {
     max-width: none;
   }
+
+  .provider-card__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .provider-card__actions {
+    margin-left: 0;
+  }
+
+  .provider-form__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* =====================================================================
+   Provider Card & Form
+   Mirrors the MCP card / form pattern
+   ===================================================================== */
+
+.provider-card,
+.provider-form {
+  border-radius: 22px;
+  border: 1px solid var(--border-weaker-base);
+  background: color-mix(in srgb, var(--surface-base) 78%, var(--surface-raised-stronger-non-alpha));
+  box-shadow: var(--shadow-xs-border-base);
+  padding: 16px;
+}
+
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.provider-card__header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.provider-card__title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.provider-card__name {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.provider-card__pills {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.provider-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  color: var(--text-weak);
+  background: color-mix(in srgb, var(--surface-base) 72%, transparent);
+  border-color: var(--border-weak-base);
+}
+
+.provider-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.provider-card__action-btn {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-weak-base);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-base) 78%, transparent);
+  color: var(--text-strong);
+  cursor: pointer;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease,
+    transform 0.18s ease;
+}
+
+.provider-card__action-btn:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-hover);
+  background: var(--surface-base-hover);
+}
+
+.provider-card__action-btn--danger {
+  border-color: color-mix(in srgb, var(--border-critical-base) 65%, transparent);
+  background: color-mix(in srgb, var(--surface-critical-weak) 80%, transparent);
+  color: var(--text-on-critical-base);
+}
+
+.provider-card__action-btn--danger:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-critical-base);
+  background: color-mix(in srgb, var(--surface-critical-weak) 96%, transparent);
+}
+
+.provider-card__body {
+  padding: 14px;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-inset-base) 72%, transparent);
+  color: var(--text-weak);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.provider-card__detail {
+  display: flex;
+  gap: 8px;
+}
+
+.provider-card__detail + .provider-card__detail {
+  margin-top: 6px;
+}
+
+.provider-card__detail-label {
+  min-width: 68px;
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.provider-card__detail-value--mono {
+  font-family: var(--font-family-mono);
+}
+
+/* Provider Form */
+
+.provider-form__title {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.provider-form__title-id {
+  font-family: var(--font-family-mono);
+  color: var(--text-base);
+  font-weight: 500;
+}
+
+.provider-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.provider-form__hint {
+  color: var(--text-weaker);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 10px 14px;
+  border: 1px dashed var(--border-weaker-base);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-base) 60%, transparent);
+}
+
+.provider-form__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Provider Availability */
+
+.provider-availability {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-availability__row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--surface-base) 78%, transparent);
+}
+
+.provider-availability__info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.provider-availability__name {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.provider-availability__status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.provider-availability__status--connected {
+  color: var(--text-on-success-base);
+  background: var(--surface-success-weak);
+}
+
+.provider-availability__status--disconnected {
+  color: var(--text-weak);
+  background: color-mix(in srgb, var(--surface-base) 76%, transparent);
 }

@@ -26,6 +26,12 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     icon: '✦',
   },
   {
+    id: 'providers',
+    label: 'Providers',
+    description: 'Add, edit, or disable AI providers',
+    icon: '⚡',
+  },
+  {
     id: 'permissions',
     label: 'Permissions',
     description: 'Control what the agent may access',

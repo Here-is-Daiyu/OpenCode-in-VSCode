@@ -12,6 +12,7 @@ import { SettingsTabs, getSettingsTabDef } from '../../components/settings/Setti
 import { GeneralTab } from './tabs/GeneralTab';
 import { ModelTab } from './tabs/ModelTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
+import { ProvidersTab } from './tabs/ProvidersTab';
 import { MCPTab } from './tabs/MCPTab';
 import { CommandsTab } from './tabs/CommandsTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
@@ -141,6 +142,15 @@ export function SettingsApp() {
       case 'model':
         return (
           <ModelTab
+            config={store.opencodeConfig}
+            providers={store.providers}
+            connectedProviders={store.connectedProviders}
+            onUpdateConfig={updateOpenCodeConfig}
+          />
+        );
+      case 'providers':
+        return (
+          <ProvidersTab
             config={store.opencodeConfig}
             providers={store.providers}
             connectedProviders={store.connectedProviders}

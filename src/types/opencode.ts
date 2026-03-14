@@ -257,6 +257,26 @@ export interface ModelCapabilities {
 }
 
 // Config types
+
+/** Model definition within a provider config (as stored in opencode.json). */
+export interface ProviderModelConfig {
+  name: string;
+  attachment?: boolean;
+  reasoning?: boolean;
+  tool_call?: boolean;
+  limit?: { context: number; output: number };
+  interleaved?: boolean | { field: string };
+  modalities?: { input: string[]; output: string[] };
+}
+
+/** Provider configuration as stored in the opencode.json `provider` map. */
+export interface ProviderConfig {
+  name: string;
+  npm: string;
+  models: Record<string, ProviderModelConfig>;
+  options?: Record<string, unknown>;
+}
+
 export interface OpenCodeConfig {
   model?: string;
   agent?: string;
@@ -264,6 +284,10 @@ export interface OpenCodeConfig {
   permission?: PermissionRuleset;
   mcp?: Record<string, MCPServerConfig>;
   command?: Record<string, CustomCommand>;
+  /** Custom provider configurations (provider ID → config). */
+  provider?: Record<string, ProviderConfig>;
+  /** List of provider IDs to disable. */
+  disabled_providers?: string[];
 }
 
 export type PermissionRuleset = Record<string, PermissionValue | Record<string, PermissionValue>>;

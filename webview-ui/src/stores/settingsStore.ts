@@ -22,6 +22,7 @@ import type {
 export type SettingsTab =
   | 'general'
   | 'model'
+  | 'providers'
   | 'permissions'
   | 'mcp'
   | 'commands'
