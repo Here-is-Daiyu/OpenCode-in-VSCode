@@ -22,9 +22,17 @@ export interface ModelState {
   connectedProviders: string[];
   selectedVariant: string | undefined;
 
+  /** Model preferences (recent, favorite, variant) from file */
+  modelPrefs: {
+    recent: Array<{ providerID: string; modelID: string }>;
+    favorite: Array<{ providerID: string; modelID: string }>;
+    variant: Record<string, string | undefined>;
+  };
+
   setConfig: (config: OpenCodeConfig) => void;
   setProviders: (providers: Provider[], connected: string[]) => void;
   setSelectedVariant: (variant: string | undefined) => void;
+  setModelPrefs: (prefs: ModelState['modelPrefs']) => void;
 
   /** Resolve the current model from config + providers */
   getCurrentModel: () => ResolvedModel | null;
@@ -38,6 +46,7 @@ export const useModelStore = create<ModelState>((set, get) => ({
   providers: [],
   connectedProviders: [],
   selectedVariant: undefined,
+  modelPrefs: { recent: [], favorite: [], variant: {} },
 
   setConfig: (config) => set({ config }),
 
@@ -45,6 +54,8 @@ export const useModelStore = create<ModelState>((set, get) => ({
     set({ providers, connectedProviders: connected }),
 
   setSelectedVariant: (variant) => set({ selectedVariant: variant }),
+
+  setModelPrefs: (prefs) => set({ modelPrefs: prefs }),
 
   getCurrentModel: () => {
     const { config, providers } = get();

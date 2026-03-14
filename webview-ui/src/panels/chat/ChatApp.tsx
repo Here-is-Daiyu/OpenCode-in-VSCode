@@ -412,6 +412,10 @@ export function ChatApp() {
           case 'providers:updated':
             useModelStore.getState().setProviders(message.data.providers, message.data.connected);
             break;
+
+          case 'model-prefs:loaded':
+            useModelStore.getState().setModelPrefs(message.data);
+            break;
         }
       } catch (err) {
         console.error('[ChatApp] Error handling extension message:', message.type, err);

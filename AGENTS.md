@@ -6,6 +6,10 @@ OpenCode for VSCode is a VSCode extension that provides a full-featured OpenCode
 
 本地已拉取官方 `opencode` 源码副本到 `vendor/opencode-official/`，仅用于对照实现与排查问题；该目录已加入 `.gitignore`，不要提交到当前仓库。
 
+## ⚠️ License 兼容性
+
+`vendor/OpenCodeUI/`（OpenCode Desktop）采用 **GPL-3.0**，具有传染性：任何包含 GPL 代码的项目必须整体以 GPL-3.0 发布。本项目是 **MIT**，因此**禁止**直接复制/粘贴 OpenCodeUI 的任何源码。只能阅读理解思路后独立实现（clean-room）。
+
 ## Architecture Principles
 
 ### Separation of Concerns

@@ -1201,7 +1201,7 @@ textarea {
   right: 0;
   bottom: calc(100% + 4px);
   z-index: 50;
-  max-height: 240px;
+  max-height: 320px;
   overflow-y: auto;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-md);
@@ -1278,6 +1278,110 @@ textarea {
   color: var(--text-weak);
   font-size: var(--font-size-small);
   text-align: center;
+}
+
+/* Group headers */
+.model-selector__group-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 4px;
+  background: var(--surface-raised-stronger-non-alpha);
+}
+
+.model-selector__group-header:not(:first-child) {
+  margin-top: 4px;
+  border-top: 1px solid var(--border-weaker-base);
+  padding-top: 8px;
+}
+
+.model-selector__group-label {
+  color: var(--text-weaker);
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+/* Capability tags */
+.model-selector__cap-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--text-weaker) 12%, transparent);
+  color: var(--text-weak);
+  font-size: 9px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Context limit */
+.model-selector__ctx {
+  flex-shrink: 0;
+  color: var(--text-weaker);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Free badge */
+.model-selector__free {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #22c55e 15%, transparent);
+  color: #22c55e;
+  font-size: 9px;
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* Favorite star */
+.model-selector__fav {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-weaker);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: color 0.15s ease, background-color 0.15s ease;
+  line-height: 1;
+}
+
+.model-selector__fav:hover {
+  background: var(--surface-base-hover);
+  color: var(--text-weak);
+}
+
+.model-selector__fav--active {
+  color: #f59e0b;
+}
+
+.model-selector__fav--active:hover {
+  color: #d97706;
+}
+
+/* Option layout update - add flex-wrap for tags */
+.model-selector__option-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* ─── Slash Command Menu ──────────────────────────────────────────────── */
