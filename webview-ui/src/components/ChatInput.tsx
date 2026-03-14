@@ -5,6 +5,8 @@
 import React, { useRef, useCallback, useEffect } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
+import { ModelSelector } from './ModelSelector';
+import { TokenUsageBar } from './TokenUsageBar';
 
 /** Maximum file size for image attachments in bytes (10 MB) */
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
@@ -171,6 +173,7 @@ export function ChatInput() {
     <div className="chat-input" onDrop={handleDrop} onDragOver={handleDragOver}>
       <div className="chat-input__inner">
         <div className="chat-input__dock">
+          <ModelSelector />
           <div className="chat-input__shell">
             <div className="chat-input__row">
               <button
@@ -268,6 +271,7 @@ export function ChatInput() {
         <div className="chat-input__hint">
           <span>Enter to send · Shift+Enter for new line</span>
         </div>
+        <TokenUsageBar />
       </div>
     </div>
   );
