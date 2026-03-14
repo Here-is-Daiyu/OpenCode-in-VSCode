@@ -210,6 +210,11 @@ async function onServerStarted(ctx: CommandContext): Promise<void> {
     vscode.commands.executeCommand('setContext', 'opencode.serverConnected', true);
 
     ctx.eventBus.emit('server:connected', { version: health.version });
+    ctx.statusProvider.setServerInfo({
+      connected: true,
+      version: health.version,
+      url: ctx.serverManager.getBaseUrl(),
+    });
     ctx.logger.info(`Connected to OpenCode server v${health.version}`);
 
     // Load initial data

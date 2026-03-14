@@ -4,16 +4,18 @@ import type {
   MCPStatus,
   LSPStatus,
   OpenCodeConfig,
+  ProviderInfoResponse,
+  FormatterStatus,
 } from '../types/opencode';
 import type { EventBus } from '../services/eventBus';
-import type { OpenCodeClient, ProvidersResponse } from '../services/openCodeClient';
+import type { OpenCodeClient } from '../services/openCodeClient';
 
 // ---------------------------------------------------------------------------
 //  Section identifiers
 // ---------------------------------------------------------------------------
 
 /** Discriminated key for each root section in the status tree. */
-type SectionKey = 'server' | 'model' | 'providers' | 'mcp' | 'lsp';
+type SectionKey = 'server' | 'model' | 'providers' | 'mcp' | 'lsp' | 'formatter';
 
 // ---------------------------------------------------------------------------
 //  Tree item
@@ -58,7 +60,7 @@ export class StatusTreeItem extends vscode.TreeItem {
 
 /**
  * Hierarchical status TreeView showing server connection state, model info,
- * provider connections, MCP servers and LSP servers.
+ * provider connections, MCP servers, LSP servers, and formatters.
  *
  * Auto-refreshes on EventBus events and on a configurable timer.
  */
@@ -73,9 +75,10 @@ export class StatusTreeProvider
     connected: false,
   };
   private config?: OpenCodeConfig;
-  private providersData?: ProvidersResponse;
+  private providersData?: ProviderInfoResponse;
   private mcpStatus?: Record<string, MCPStatus>;
   private lspStatus?: LSPStatus[];
+  private formatterStatus?: FormatterStatus[];
   private refreshInterval?: ReturnType<typeof setInterval>;
 
   /** EventBus unsubscribe callbacks */
@@ -136,17 +139,19 @@ export class StatusTreeProvider
   async refresh(): Promise<void> {
     if (this.client && this.serverInfo.connected) {
       try {
-        const [config, providers, mcp, lsp] = await Promise.allSettled([
+        const [config, providerInfo, mcp, lsp, formatter] = await Promise.allSettled([
           this.client.getConfig(),
-          this.client.getProviders(),
+          this.client.getProviderInfo(),
           this.client.getMCPStatus(),
           this.client.getLSPStatus(),
+          this.client.getFormatterStatus(),
         ]);
 
         if (config.status === 'fulfilled') { this.config = config.value; }
-        if (providers.status === 'fulfilled') { this.providersData = providers.value; }
+        if (providerInfo.status === 'fulfilled') { this.providersData = providerInfo.value; }
         if (mcp.status === 'fulfilled') { this.mcpStatus = mcp.value; }
         if (lsp.status === 'fulfilled') { this.lspStatus = lsp.value; }
+        if (formatter.status === 'fulfilled') { this.formatterStatus = formatter.value; }
       } catch {
         // Swallow — keep stale data
       }
@@ -178,6 +183,8 @@ export class StatusTreeProvider
         return this.getMCPChildren();
       case 'lsp':
         return this.getLSPChildren();
+      case 'formatter':
+        return this.getFormatterChildren();
       default:
         return [];
     }
@@ -203,8 +210,10 @@ export class StatusTreeProvider
   private getRootSections(): StatusTreeItem[] {
     const items: StatusTreeItem[] = [];
 
-    // 1. Server
-    const serverDesc = this.serverInfo.connected ? 'Connected' : 'Disconnected';
+    // 1. Server — show endpoint URL in description when connected
+    const serverDesc = this.serverInfo.connected
+      ? (this.serverInfo.url ?? 'Connected')
+      : 'Disconnected';
     items.push(
       new StatusTreeItem('Server', {
         description: serverDesc,
@@ -229,12 +238,11 @@ export class StatusTreeProvider
       }),
     );
 
-    // 3. Providers
+    // 3. Providers — use `connected` count only (not N/total since `all` has 100+ entries)
     const connectedCount = this.providersData?.connected?.length ?? 0;
-    const totalCount = this.providersData?.providers?.length ?? 0;
     items.push(
       new StatusTreeItem('Providers', {
-        description: `${connectedCount}/${totalCount} connected`,
+        description: `${connectedCount} connected`,
         collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
         icon: new vscode.ThemeIcon('cloud'),
         sectionKey: 'providers',
@@ -264,6 +272,18 @@ export class StatusTreeProvider
       }),
     );
 
+    // 6. Formatter
+    const fmtCount = this.formatterStatus?.length ?? 0;
+    const fmtEnabled = this.formatterStatus?.filter(f => f.enabled).length ?? 0;
+    items.push(
+      new StatusTreeItem('Formatter', {
+        description: fmtCount > 0 ? `${fmtEnabled}/${fmtCount} enabled` : 'none',
+        collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
+        icon: new vscode.ThemeIcon('symbol-ruler'),
+        sectionKey: 'formatter',
+      }),
+    );
+
     return items;
   }
 
@@ -271,6 +291,18 @@ export class StatusTreeProvider
 
   private getServerChildren(): StatusTreeItem[] {
     const items: StatusTreeItem[] = [];
+
+    // URL (show first for prominence)
+    const url = this.serverInfo.url ?? this.client?.getBaseUrl();
+    if (url) {
+      items.push(
+        new StatusTreeItem('URL', {
+          description: url,
+          icon: new vscode.ThemeIcon('link'),
+          tooltip: url,
+        }),
+      );
+    }
 
     // Version
     items.push(
@@ -292,18 +324,6 @@ export class StatusTreeProvider
         ),
       }),
     );
-
-    // URL
-    const url = this.serverInfo.url ?? this.client?.getBaseUrl();
-    if (url) {
-      items.push(
-        new StatusTreeItem('URL', {
-          description: url,
-          icon: new vscode.ThemeIcon('link'),
-          tooltip: url,
-        }),
-      );
-    }
 
     return items;
   }
@@ -343,14 +363,28 @@ export class StatusTreeProvider
 
     const connectedSet = new Set(this.providersData.connected ?? []);
 
-    return this.providersData.providers.map((provider) => {
+    // Show connected providers first, then disconnected — but only the ones that
+    // are actually connected or have models configured.  The `all` array can
+    // contain 100+ entries; we filter to keep the tree useful.
+    const connectedProviders: Provider[] = [];
+    const otherProviders: Provider[] = [];
+
+    for (const provider of this.providersData.all) {
+      if (connectedSet.has(provider.id)) {
+        connectedProviders.push(provider);
+      } else if (provider.models && Object.keys(provider.models).length > 0) {
+        otherProviders.push(provider);
+      }
+    }
+
+    const toItem = (provider: Provider): StatusTreeItem => {
       const connected = connectedSet.has(provider.id);
       const models = Object.values(provider.models ?? {});
       const modelCount = models.length;
       return new StatusTreeItem(provider.name || provider.id, {
         description: connected
           ? `Connected · ${modelCount} model${modelCount === 1 ? '' : 's'}`
-          : 'Disconnected',
+          : `${modelCount} model${modelCount === 1 ? '' : 's'}`,
         icon: new vscode.ThemeIcon(
           'cloud',
           connected
@@ -360,7 +394,9 @@ export class StatusTreeProvider
         tooltip: buildProviderTooltip(provider, connected),
         contextValue: 'provider',
       });
-    });
+    };
+
+    return [...connectedProviders.map(toItem), ...otherProviders.map(toItem)];
   }
 
   // -- MCP children ----------------------------------------------------------
@@ -375,14 +411,13 @@ export class StatusTreeProvider
     }
 
     return Object.entries(this.mcpStatus).map(([name, status]) => {
-      const desc = buildMCPDescription(status);
       return new StatusTreeItem(name, {
-        description: desc,
+        description: status.status,
         icon: new vscode.ThemeIcon(
           'server',
           mcpStatusColor(status.status),
         ),
-        tooltip: buildMCPTooltip(name, status),
+        tooltip: `${name}: ${status.status}`,
         contextValue: 'mcpServer',
       });
     });
@@ -416,6 +451,35 @@ export class StatusTreeProvider
       });
     });
   }
+
+  // -- Formatter children ----------------------------------------------------
+
+  private getFormatterChildren(): StatusTreeItem[] {
+    if (!this.formatterStatus || this.formatterStatus.length === 0) {
+      return [
+        new StatusTreeItem('No formatters configured', {
+          icon: new vscode.ThemeIcon('info'),
+        }),
+      ];
+    }
+
+    return this.formatterStatus.map((fmt) => {
+      const exts = fmt.extensions.join(', ');
+      return new StatusTreeItem(fmt.name, {
+        description: fmt.enabled
+          ? exts || 'enabled'
+          : 'disabled',
+        icon: new vscode.ThemeIcon(
+          'symbol-ruler',
+          fmt.enabled
+            ? new vscode.ThemeColor('testing.iconPassed')
+            : undefined,
+        ),
+        tooltip: buildFormatterTooltip(fmt),
+        contextValue: 'formatter',
+      });
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -441,27 +505,13 @@ function buildProviderTooltip(provider: Provider, connected: boolean): vscode.Ma
   return md;
 }
 
-function buildMCPDescription(status: MCPStatus): string {
-  const parts: string[] = [status.status];
-  if (status.status === 'connected' && status.tools !== undefined) {
-    parts.push(`${status.tools} tool${status.tools === 1 ? '' : 's'}`);
-  }
-  if (status.error) {
-    parts.push(status.error);
-  }
-  return parts.join(' · ');
-}
-
-function buildMCPTooltip(name: string, status: MCPStatus): vscode.MarkdownString {
+function buildFormatterTooltip(fmt: FormatterStatus): vscode.MarkdownString {
   const md = new vscode.MarkdownString('', true);
   md.isTrusted = true;
-  md.appendMarkdown(`### MCP: ${name}\n\n`);
-  md.appendMarkdown(`**Status:** ${status.status}\n\n`);
-  if (status.tools !== undefined) {
-    md.appendMarkdown(`**Tools:** ${status.tools}\n\n`);
-  }
-  if (status.error) {
-    md.appendMarkdown(`**Error:** ${status.error}\n\n`);
+  md.appendMarkdown(`### Formatter: ${fmt.name}\n\n`);
+  md.appendMarkdown(`**Enabled:** ${fmt.enabled ? 'Yes' : 'No'}\n\n`);
+  if (fmt.extensions.length > 0) {
+    md.appendMarkdown(`**Extensions:** ${fmt.extensions.map(e => `\`${e}\``).join(', ')}\n\n`);
   }
   return md;
 }

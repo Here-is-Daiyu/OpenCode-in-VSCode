@@ -334,11 +334,25 @@ export interface Question {
 }
 
 // MCP Status
+// Note: The MCP endpoint (`GET /mcp`) returns `Record<string, MCPStatus>` where
+// each key is the server name and the value only contains `status`.
 export interface MCPStatus {
-  name: string;
   status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  tools?: number;
-  error?: string;
+}
+
+// Provider info response from `GET /provider`
+// (distinct from the configured-only response from `GET /config/providers`)
+export interface ProviderInfoResponse {
+  all: Provider[];
+  default: Record<string, string>;
+  connected: string[];
+}
+
+// Formatter status from `GET /formatter`
+export interface FormatterStatus {
+  name: string;
+  extensions: string[];
+  enabled: boolean;
 }
 
 // LSP Status

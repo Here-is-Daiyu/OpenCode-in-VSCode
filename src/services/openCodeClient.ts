@@ -11,6 +11,8 @@ import type {
   MCPStatus,
   MCPServerConfig,
   LSPStatus,
+  ProviderInfoResponse,
+  FormatterStatus,
 } from '../types/opencode';
 import { Logger } from './logger';
 
@@ -616,10 +618,10 @@ export class OpenCodeClient {
   /**
    * Get the status of all MCP servers.
    *
-   * `GET /mcp/status`
+   * `GET /mcp`
    */
   async getMCPStatus(): Promise<Record<string, MCPStatus>> {
-    return this.get<Record<string, MCPStatus>>('/mcp/status');
+    return this.get<Record<string, MCPStatus>>('/mcp');
   }
 
   /**
@@ -638,10 +640,36 @@ export class OpenCodeClient {
   /**
    * Get the status of LSP servers.
    *
-   * `GET /lsp/status`
+   * `GET /lsp`
    */
   async getLSPStatus(): Promise<LSPStatus[]> {
-    return this.get<LSPStatus[]>('/lsp/status');
+    return this.get<LSPStatus[]>('/lsp');
+  }
+
+  // ---------------------------------------------------------------------------
+  //  Provider info
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get full provider info including connection status.
+   *
+   * `GET /provider`
+   */
+  async getProviderInfo(): Promise<ProviderInfoResponse> {
+    return this.get<ProviderInfoResponse>('/provider');
+  }
+
+  // ---------------------------------------------------------------------------
+  //  Formatter
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Get formatter status.
+   *
+   * `GET /formatter`
+   */
+  async getFormatterStatus(): Promise<FormatterStatus[]> {
+    return this.get<FormatterStatus[]>('/formatter');
   }
 
   // ---------------------------------------------------------------------------
