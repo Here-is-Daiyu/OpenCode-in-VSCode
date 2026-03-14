@@ -2,11 +2,15 @@
  * ChatInput - Auto-resizing textarea with send/stop controls and image attachments
  */
 
-import React, { useRef, useCallback, useEffect } from 'react';
+import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
 import { ModelSelector } from './ModelSelector';
 import { TokenUsageBar } from './TokenUsageBar';
+import { SlashCommandMenu } from './SlashCommandMenu';
+import type { SlashCommandMenuHandle } from './SlashCommandMenu';
+import { FRONTEND_COMMANDS, detectSlashTrigger, filterCommands } from '../utils/slashCommands';
+import type { SlashCommand } from '../utils/slashCommands';
 
 /** Maximum file size for image attachments in bytes (10 MB) */
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
@@ -21,6 +25,7 @@ function isImageFile(file: File) {
 export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const slashMenuRef = useRef<SlashCommandMenuHandle>(null);
 
   const inputText = useChatStore((s) => s.inputText);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -30,6 +35,44 @@ export function ChatInput() {
   const removeImage = useChatStore((s) => s.removeImage);
   const addImage = useChatStore((s) => s.addImage);
   const addOptimisticMessage = useChatStore((s) => s.addOptimisticMessage);
+
+  // Slash command state
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashQuery, setSlashQuery] = useState('');
+  const [apiCommands, setApiCommands] = useState<SlashCommand[]>([]);
+
+  // Fetch API commands from extension host
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const msg = event.data;
+      if (msg?.type === 'command:listed' && Array.isArray(msg.data?.commands)) {
+        setApiCommands(
+          msg.data.commands.map((cmd: { name: string; description?: string }) => ({
+            name: cmd.name,
+            description: cmd.description,
+            source: 'api' as const,
+          }))
+        );
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    // Request commands from extension
+    postMessage({ type: 'command:list' });
+
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  // Merge frontend + API commands, then filter by current query
+  const allCommands = useMemo(
+    () => [...FRONTEND_COMMANDS, ...apiCommands],
+    [apiCommands]
+  );
+
+  const filteredCommands = useMemo(
+    () => filterCommands(allCommands, slashQuery),
+    [allCommands, slashQuery]
+  );
 
   const canSend = connected && inputText.trim().length > 0;
 
@@ -72,20 +115,91 @@ export function ChatInput() {
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      // When slash menu is open, intercept navigation keys
+      if (slashOpen && filteredCommands.length > 0) {
+        switch (e.key) {
+          case 'ArrowUp':
+            e.preventDefault();
+            slashMenuRef.current?.moveUp();
+            return;
+          case 'ArrowDown':
+            e.preventDefault();
+            slashMenuRef.current?.moveDown();
+            return;
+          case 'Tab':
+          case 'Enter':
+            e.preventDefault();
+            slashMenuRef.current?.selectCurrent();
+            return;
+          case 'Escape':
+            e.preventDefault();
+            setSlashOpen(false);
+            setSlashQuery('');
+            return;
+        }
+      }
+
       // Enter to send, Shift+Enter for newline
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [handleSend]
+    [slashOpen, filteredCommands.length, handleSend]
   );
 
   const handleChange = useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      setInputText(e.target.value);
+      const value = e.target.value;
+      const cursorPos = e.target.selectionStart ?? value.length;
+      setInputText(value);
+
+      // Detect slash trigger
+      const trigger = detectSlashTrigger(value, cursorPos);
+      if (trigger) {
+        setSlashOpen(true);
+        setSlashQuery(trigger.query);
+      } else {
+        setSlashOpen(false);
+        setSlashQuery('');
+      }
     },
     [setInputText]
+  );
+
+  const handleSlashSelect = useCallback(
+    (command: SlashCommand) => {
+      setSlashOpen(false);
+      setSlashQuery('');
+      setInputText('');
+
+      // Reset textarea height
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.focus();
+      }
+
+      if (command.source === 'frontend') {
+        // Handle frontend commands locally
+        switch (command.name) {
+          case 'new':
+            postMessage({ type: 'session:create' });
+            break;
+          case 'compact':
+            // Send /compact as a regular message to be processed by the server
+            addOptimisticMessage('/compact');
+            postMessage({ type: 'chat:send', data: { text: '/compact' } });
+            break;
+        }
+      } else {
+        // API command: send via command:execute
+        postMessage({
+          type: 'command:execute',
+          data: { command: command.name },
+        });
+      }
+    },
+    [setInputText, addOptimisticMessage]
   );
 
   const processImageFile = useCallback(
@@ -174,6 +288,12 @@ export function ChatInput() {
       <div className="chat-input__inner">
         <div className="chat-input__dock">
           <ModelSelector />
+          <SlashCommandMenu
+            ref={slashMenuRef}
+            commands={filteredCommands}
+            visible={slashOpen}
+            onSelect={handleSlashSelect}
+          />
           <div className="chat-input__shell">
             <div className="chat-input__row">
               <button

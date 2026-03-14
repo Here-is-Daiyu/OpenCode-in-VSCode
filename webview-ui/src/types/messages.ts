@@ -40,7 +40,8 @@ export type ExtensionToWebviewMessage =
   | { type: 'server:status'; data: { connected: boolean; version?: string } }
   | { type: 'error'; data: { message: string; details?: string } }
   | { type: 'chat:sendResult'; data: { success: boolean; messageID?: string; error?: string } }
-  | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } };
+  | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } }
+  | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } };
 
 // Webview -> Extension messages
 export type WebviewToExtensionMessage =
@@ -62,6 +63,7 @@ export type WebviewToExtensionMessage =
   | { type: 'file:open'; data: { path: string } }
   | { type: 'diff:show'; data: { path: string; original: string; modified: string } }
   | { type: 'command:execute'; data: { command: string; args?: string } }
+  | { type: 'command:list' }
   | { type: 'ready' };
 
 // Settings panel messages (Webview → Extension)

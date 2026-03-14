@@ -307,6 +307,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         );
         break;
 
+      case 'command:list':
+        this.handleCommandList();
+        break;
+
       case 'command:execute':
         vscode.commands.executeCommand(message.data.command, message.data.args);
         break;
@@ -497,6 +501,32 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const errMsg = err instanceof Error ? err.message : String(err);
       this.logger?.error('Failed to send message', err);
       this.postMessage({ type: 'chat:sendResult', data: { success: false, error: errMsg } });
+    }
+  }
+
+  /**
+   * Fetch available commands from the OpenCode server and send them to the webview.
+   */
+  private async handleCommandList(): Promise<void> {
+    if (!this.client) {
+      this.postMessage({ type: 'command:listed', data: { commands: [] } });
+      return;
+    }
+
+    try {
+      const commands = await this.client.listCommands();
+      this.postMessage({
+        type: 'command:listed',
+        data: {
+          commands: commands.map((cmd) => ({
+            name: cmd.name,
+            description: cmd.description,
+          })),
+        },
+      });
+    } catch (err) {
+      this.logger?.warn('Failed to fetch commands from server', err);
+      this.postMessage({ type: 'command:listed', data: { commands: [] } });
     }
   }
 
