@@ -203,6 +203,13 @@ export function SettingsApp() {
               </div>
 
               <div className="settings-header__meta">
+                <button
+                  className="settings-header-button"
+                  onClick={() => postMessage({ type: 'settings:openConfigFile' })}
+                  title="Open opencode.json in editor"
+                >
+                  Open Config File
+                </button>
                 {store.saveIndicator && (
                   <span className="settings-header__indicator settings-header__indicator--saved">
                     Saved

@@ -362,6 +362,15 @@ export interface LSPStatus {
   languages?: string[];
 }
 
+// Path info response from `GET /path`
+export interface PathInfo {
+  home: string;
+  state: string;
+  config: string;
+  worktree: string;
+  directory: string;
+}
+
 // Health
 export interface HealthResponse {
   healthy: boolean;

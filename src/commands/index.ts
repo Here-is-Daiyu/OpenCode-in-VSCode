@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import type { ServerManager } from '../services/serverManager';
 import type { OpenCodeClient } from '../services/openCodeClient';
 import type { EventBus } from '../services/eventBus';
@@ -471,6 +472,21 @@ async function compactSession(ctx: CommandContext): Promise<void> {
   }
 }
 
+async function openConfigFile(ctx: CommandContext): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+  try {
+    const pathInfo = await ctx.client.getPathInfo();
+    const configPath = vscode.Uri.file(
+      path.join(pathInfo.config, 'opencode.json')
+    );
+    const doc = await vscode.workspace.openTextDocument(configPath);
+    await vscode.window.showTextDocument(doc);
+  } catch (err) {
+    ctx.logger.error('Failed to open config file', err);
+    vscode.window.showErrorMessage(`Failed to open config file: ${errorMessage(err)}`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
@@ -517,6 +533,7 @@ export function registerCommands(
     ['opencode.showDiff', () => showDiff(ctx)],
     ['opencode.focusChat', () => focusChat(ctx)],
     ['opencode.compactSession', () => compactSession(ctx)],
+    ['opencode.openConfigFile', () => openConfigFile(ctx)],
   ];
 
   for (const [id, handler] of commands) {

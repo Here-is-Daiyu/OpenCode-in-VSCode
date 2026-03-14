@@ -123,6 +123,10 @@ export class SettingsViewProvider {
       case 'settings:mcp:toggle':
         await this.handleMCPToggle(message.data);
         break;
+
+      case 'settings:openConfigFile':
+        vscode.commands.executeCommand('opencode.openConfigFile');
+        break;
     }
   }
 
@@ -339,10 +343,10 @@ export class SettingsViewProvider {
   private async sendProviders(): Promise<void> {
     if (!this.client) return;
     try {
-      const resp = await this.client.getProviders();
+      const resp = await this.client.getProviderInfo();
       this.postMessage({
         type: 'providers:loaded',
-        data: { providers: resp.providers, connected: resp.connected },
+        data: { providers: resp.all, connected: resp.connected },
       });
     } catch {
       // best-effort

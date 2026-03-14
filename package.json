@@ -173,6 +173,12 @@
         "command": "opencode.compactSession",
         "title": "Compact Session",
         "category": "OpenCode"
+      },
+      {
+        "command": "opencode.openConfigFile",
+        "title": "Open Config File",
+        "category": "OpenCode",
+        "icon": "$(gear)"
       }
     ],
     "menus": {
@@ -189,6 +195,11 @@
         },
         {
           "command": "opencode.openSettings",
+          "when": "view == opencode.status",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.openConfigFile",
           "when": "view == opencode.status",
           "group": "navigation"
         }

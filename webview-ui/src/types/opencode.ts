@@ -53,7 +53,7 @@ export interface UserMessage {
   sessionID: string;
   role: 'user';
   time: { created: number };
-  format?: unknown;
+  format?: OutputFormat;
   agent: string;
   model: ModelRef;
   system?: string;
@@ -92,6 +92,7 @@ export interface ModelRef {
   modelID: string;
 }
 
+export type OutputFormat = unknown; // TODO: Define structured output format
 export type MessageError = { type: string; message: string };
 
 // Part types
@@ -333,9 +334,45 @@ export interface Question {
 }
 
 // MCP Status
+// Note: The MCP endpoint (`GET /mcp`) returns `Record<string, MCPStatus>` where
+// each key is the server name and the value only contains `status`.
 export interface MCPStatus {
-  name: string;
   status: 'connected' | 'connecting' | 'disconnected' | 'error';
-  tools?: number;
-  error?: string;
+}
+
+// Provider info response from `GET /provider`
+// (distinct from the configured-only response from `GET /config/providers`)
+export interface ProviderInfoResponse {
+  all: Provider[];
+  default: Record<string, string>;
+  connected: string[];
+}
+
+// Formatter status from `GET /formatter`
+export interface FormatterStatus {
+  name: string;
+  extensions: string[];
+  enabled: boolean;
+}
+
+// LSP Status
+export interface LSPStatus {
+  name: string;
+  status: 'running' | 'stopped' | 'error';
+  languages?: string[];
+}
+
+// Path info response from `GET /path`
+export interface PathInfo {
+  home: string;
+  state: string;
+  config: string;
+  worktree: string;
+  directory: string;
+}
+
+// Health
+export interface HealthResponse {
+  healthy: boolean;
+  version: string;
 }

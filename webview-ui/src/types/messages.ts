@@ -73,6 +73,7 @@ export type SettingsToExtensionMessage =
   | { type: 'settings:mcp:add'; data: { name: string; config: MCPServerConfig } }
   | { type: 'settings:mcp:remove'; data: { name: string } }
   | { type: 'settings:mcp:toggle'; data: { name: string; enabled: boolean } }
+  | { type: 'settings:openConfigFile' }
   | { type: 'ready' };
 
 // Settings panel messages (Extension → Webview)

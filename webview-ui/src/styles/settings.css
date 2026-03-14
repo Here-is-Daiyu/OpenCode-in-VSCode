@@ -139,6 +139,32 @@ textarea {
   flex-wrap: wrap;
 }
 
+.settings-header-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--border-base);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  color: var(--text-base);
+  background: var(--surface-base);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.settings-header-button:hover {
+  background: var(--surface-stronger);
+  border-color: var(--border-stronger);
+}
+
+.settings-header-button:active {
+  background: var(--surface-strongest);
+}
+
 .settings-header__indicator,
 .model-group__status,
 .model-option__badge,

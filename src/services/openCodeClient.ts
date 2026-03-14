@@ -13,6 +13,7 @@ import type {
   LSPStatus,
   ProviderInfoResponse,
   FormatterStatus,
+  PathInfo,
 } from '../types/opencode';
 import { Logger } from './logger';
 
@@ -657,6 +658,19 @@ export class OpenCodeClient {
    */
   async getProviderInfo(): Promise<ProviderInfoResponse> {
     return this.get<ProviderInfoResponse>('/provider');
+  }
+
+  // ---------------------------------------------------------------------------
+  //  Path info
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Return filesystem paths (home, config dir, state dir, etc.).
+   *
+   * `GET /path`
+   */
+  async getPathInfo(): Promise<PathInfo> {
+    return this.get<PathInfo>('/path');
   }
 
   // ---------------------------------------------------------------------------

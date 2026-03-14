@@ -116,11 +116,7 @@ function MCPServerCard({
             </span>
           </div>
         </div>
-        {status?.tools !== undefined && (
-          <span className="mcp-card__tools">
-            {status.tools} tool{status.tools !== 1 ? 's' : ''}
-          </span>
-        )}
+
         <div className="mcp-card__actions">
           <button
             className="mcp-card__action-btn"
@@ -189,10 +185,7 @@ function MCPServerCard({
         </div>
       </div>
 
-      {/* Error */}
-      {status?.error && (
-        <div className="mcp-card__error">{status.error}</div>
-      )}
+
     </div>
   );
 }
