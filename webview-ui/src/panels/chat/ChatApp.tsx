@@ -2,8 +2,9 @@
  * ChatApp - Main chat panel component
  *
  * Displays messages, handles user input, and communicates with the extension host.
- * Uses a simple scrollable container instead of virtualization for reliability
- * in VSCode's sidebar/auxiliary panel environment (matching Desktop's approach).
+ * Uses a threshold-based approach: normal rendering for small conversations,
+ * @tanstack/react-virtual for large ones (>= 40 messages) to avoid performance
+ * degradation in VSCode's sidebar/auxiliary panel environment.
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -16,10 +17,14 @@ import { ChatInput } from '../../components/ChatInput';
 import { PermissionCard } from '../../components/PermissionCard';
 import { QuestionCard } from '../../components/QuestionCard';
 import { MessageErrorBoundary } from '../../components/ErrorBoundary';
+import { VirtualizedMessageList } from '../../components/VirtualizedMessageList';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
 
 /** Distance from bottom (px) within which we consider the user "at bottom" */
 const AT_BOTTOM_THRESHOLD = 150;
+
+/** Message count at which we switch to virtualized rendering */
+const VIRTUALIZE_THRESHOLD = 40;
 
 type SessionScopedWebviewMessage = Extract<
   ExtensionToWebviewMessage,
@@ -269,6 +274,11 @@ export function ChatApp() {
       return;
     }
 
+    // This works for both normal and virtualized rendering paths:
+    // - Normal: prepended DOM elements increase scrollHeight directly
+    // - Virtualized: virtualizer.getTotalSize() is computed synchronously
+    //   during render (using estimateSize for new items), so the container's
+    //   style.height is already updated when useLayoutEffect fires
     const scrollHeightDelta = scrollContainer.scrollHeight - pendingScrollState.previousScrollHeight;
     scrollContainer.scrollTop = pendingScrollState.previousScrollTop + scrollHeightDelta;
     prevMessageCountRef.current = messages.length;
@@ -572,11 +582,18 @@ export function ChatApp() {
           key={currentSession?.id ?? 'no-session'}
         >
           <div className="chat-messages__inner">
-            {messages.map((msg) => (
-              <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
-                <MessageBubble message={msg} />
-              </MessageErrorBoundary>
-            ))}
+            {messages.length >= VIRTUALIZE_THRESHOLD ? (
+              <VirtualizedMessageList
+                messages={messages}
+                scrollElementRef={messagesRef}
+              />
+            ) : (
+              messages.map((msg) => (
+                <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
+                  <MessageBubble message={msg} />
+                </MessageErrorBoundary>
+              ))
+            )}
 
             {/* Permission request card */}
             {pendingPermission && (

@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/react-virtual": "^3.13.23",
     "dompurify": "^3.3.1",
     "katex": "^0.16.33",
     "marked": "^17.0.1",
