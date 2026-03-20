@@ -14,46 +14,34 @@ export interface SettingsTabDef {
 
 export const SETTINGS_TABS: SettingsTabDef[] = [
   {
-    id: 'general',
-    label: 'General',
-    description: 'Server, chat, and workspace basics',
-    icon: '◎',
+    id: 'connection',
+    label: 'Connection',
+    description: 'Server connection and startup',
+    icon: '\u2299', // CIRCLED DOT OPERATOR
   },
   {
-    id: 'model',
-    label: 'Model & Agent',
-    description: 'Choose providers, models, and defaults',
-    icon: '✦',
+    id: 'chat',
+    label: 'Chat',
+    description: 'Display, behavior, and editor integration',
+    icon: '\u25C9', // FISHEYE
   },
   {
-    id: 'providers',
-    label: 'Providers',
-    description: 'Add, edit, or disable AI providers',
-    icon: '⚡',
+    id: 'models',
+    label: 'Models',
+    description: 'Model selection, agents, and reasoning',
+    icon: '\u2726', // BLACK FOUR POINTED STAR
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    description: 'MCP servers, commands, and providers',
+    icon: '\u26A1', // HIGH VOLTAGE
   },
   {
     id: 'permissions',
     label: 'Permissions',
-    description: 'Control what the agent may access',
-    icon: '⛨',
-  },
-  {
-    id: 'mcp',
-    label: 'MCP Servers',
-    description: 'Connect remote or local tool surfaces',
-    icon: '⎇',
-  },
-  {
-    id: 'commands',
-    label: 'Commands',
-    description: 'Shape reusable slash command workflows',
-    icon: '⌘',
-  },
-  {
-    id: 'advanced',
-    label: 'Advanced',
-    description: 'Editor integration and reset controls',
-    icon: '⚙',
+    description: 'Access control and safety rules',
+    icon: '\u26E8', // BLACK CROSS ON SHIELD
   },
 ];
 
