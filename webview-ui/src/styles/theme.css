@@ -156,6 +156,17 @@ body[data-vscode-theme-kind='vscode-high-contrast-light'] {
   --syntax-constant: #007b80;
 }
 
+/* Suppress all CSS transitions during theme switch to prevent color flash */
+.theme-transitioning,
+.theme-transitioning *,
+.theme-transitioning *::before,
+.theme-transitioning *::after {
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
 @media (min-width: 768px) {
   :root {
     --chat-column-padding: 20px;

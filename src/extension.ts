@@ -138,6 +138,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         type: 'theme:changed',
         data: { kind },
       });
+      settingsProvider.postMessage({
+        type: 'theme:changed',
+        data: { kind },
+      });
       logger?.debug(`Theme changed to ${kind} (kind=${theme.kind})`);
     })
   );

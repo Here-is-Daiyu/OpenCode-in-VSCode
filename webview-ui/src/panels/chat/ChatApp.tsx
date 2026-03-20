@@ -400,7 +400,16 @@ export function ChatApp() {
             }
             break;
 
-          case 'theme:changed':
+          case 'theme:changed': {
+            // Suppress CSS transitions during theme switch to prevent flash
+            document.documentElement.classList.add('theme-transitioning');
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                document.documentElement.classList.remove('theme-transitioning');
+              });
+            });
+            break;
+          }
           case 'agents:updated':
           case 'todos:updated':
             break;

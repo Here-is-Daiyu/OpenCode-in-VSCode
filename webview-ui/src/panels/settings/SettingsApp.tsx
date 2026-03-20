@@ -53,6 +53,16 @@ export function SettingsApp() {
         case 'mcp:status':
           store.setMCPStatus(msg.data);
           break;
+        case 'theme:changed': {
+          // Suppress CSS transitions during theme switch to prevent flash
+          document.documentElement.classList.add('theme-transitioning');
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              document.documentElement.classList.remove('theme-transitioning');
+            });
+          });
+          break;
+        }
         case 'error':
           store.setError(msg.data.message);
           break;
