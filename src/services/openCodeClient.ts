@@ -289,10 +289,10 @@ export class OpenCodeClient {
   /**
    * Update the server configuration.
    *
-   * `PUT /config`
+   * `PATCH /config`
    */
   async updateConfig(config: Partial<OpenCodeConfig>): Promise<OpenCodeConfig> {
-    return this.put<OpenCodeConfig>('/config', config);
+    return this.patch<OpenCodeConfig>('/config', config);
   }
 
   /**
@@ -350,11 +350,11 @@ export class OpenCodeClient {
   /**
    * Update session metadata (e.g. title).
    *
-   * `PUT /session/:id`
+   * `PATCH /session/:id`
    */
   async updateSession(id: string, data: UpdateSessionData): Promise<Session> {
     this.requireId(id, 'Session ID');
-    return this.put<Session>(`/session/${enc(id)}`, data);
+    return this.patch<Session>(`/session/${enc(id)}`, data);
   }
 
   /**
@@ -463,7 +463,7 @@ export class OpenCodeClient {
   /**
    * Respond to a permission request within a session.
    *
-   * `POST /session/:sessionID/permission/:permissionID`
+   * `POST /session/:sessionID/permissions/:permissionID`
    */
   async respondToPermission(
     sessionID: string,
@@ -476,7 +476,7 @@ export class OpenCodeClient {
       body.remember = remember;
     }
     await this.post(
-      `/session/${enc(sessionID)}/permission/${enc(permissionID)}`,
+      `/session/${enc(sessionID)}/permissions/${enc(permissionID)}`,
       body,
     );
     return true;
@@ -500,11 +500,11 @@ export class OpenCodeClient {
   /**
    * Send a synchronous message to a session (waits for completion).
    *
-   * `POST /session/:id/prompt`
+   * `POST /session/:id/message`
    */
   async sendMessage(sessionID: string, data: SendMessageData): Promise<MessageWithParts> {
     this.requireId(sessionID, 'Session ID');
-    return this.post<MessageWithParts>(`/session/${enc(sessionID)}/prompt`, data);
+    return this.post<MessageWithParts>(`/session/${enc(sessionID)}/message`, data);
   }
 
   /**
@@ -544,7 +544,7 @@ export class OpenCodeClient {
     model?: string,
   ): Promise<MessageWithParts> {
     const body: Record<string, unknown> = { command };
-    if (args !== undefined) { body.args = args; }
+    if (args !== undefined) { body.arguments = args; }
     if (agent !== undefined) { body.agent = agent; }
     if (model !== undefined) { body.model = model; }
     return this.post<MessageWithParts>(`/session/${enc(sessionID)}/command`, body);
@@ -579,28 +579,28 @@ export class OpenCodeClient {
   /**
    * Search for text patterns across the project.
    *
-   * `GET /file/search/text?pattern=...`
+   * `GET /find?pattern=...`
    */
   async searchText(pattern: string): Promise<unknown[]> {
-    return this.get<unknown[]>(`/file/search/text?pattern=${enc(pattern)}`);
+    return this.get<unknown[]>(`/find?pattern=${enc(pattern)}`);
   }
 
   /**
    * Search for files by name / query.
    *
-   * `GET /file/search/files?query=...`
+   * `GET /find/file?query=...`
    */
   async searchFiles(query: string): Promise<string[]> {
-    return this.get<string[]>(`/file/search/files?query=${enc(query)}`);
+    return this.get<string[]>(`/find/file?query=${enc(query)}`);
   }
 
   /**
    * Read a file's contents.
    *
-   * `GET /file/read?path=...`
+   * `GET /file/content?path=...`
    */
   async readFile(path: string): Promise<unknown> {
-    return this.get<unknown>(`/file/read?path=${enc(path)}`);
+    return this.get<unknown>(`/file/content?path=${enc(path)}`);
   }
 
   /**
@@ -628,10 +628,10 @@ export class OpenCodeClient {
   /**
    * Add (or update) an MCP server configuration.
    *
-   * `POST /mcp/server`
+   * `POST /mcp`
    */
   async addMCPServer(name: string, config: MCPServerConfig): Promise<MCPStatus> {
-    return this.post<MCPStatus>('/mcp/server', { name, ...config });
+    return this.post<MCPStatus>('/mcp', { name, config });
   }
 
   // ---------------------------------------------------------------------------
@@ -693,10 +693,11 @@ export class OpenCodeClient {
   /**
    * Set authentication credentials for a provider.
    *
-   * `POST /auth`
+   * `PUT /auth/:id`
    */
   async setProviderAuth(providerID: string, credentials: Record<string, string>): Promise<boolean> {
-    await this.post('/auth', { providerID, ...credentials });
+    this.requireId(providerID, 'Provider ID');
+    await this.put(`/auth/${enc(providerID)}`, credentials);
     return true;
   }
 
@@ -859,6 +860,10 @@ export class OpenCodeClient {
 
   private async put<T>(path: string, body: unknown): Promise<T> {
     return this.request<T>('PUT', path, body);
+  }
+
+  private async patch<T>(path: string, body: unknown): Promise<T> {
+    return this.request<T>('PATCH', path, body);
   }
 
   private async delete<T = void>(path: string): Promise<T> {

@@ -96,6 +96,12 @@ Key points:
 - Types/Interfaces: PascalCase, no I-prefix
 - Events: PascalCase with descriptive names
 
+## Task Planning
+
+- **所有长期、整体性的 TODO 必须先写入项目根目录的 `todo.md`，规划好大致方向后再开始具体修改。** 避免无规划地零散开工。
+- `todo.md` 应包含: 功能名称、优先级、大致实现思路、预估复杂度、当前状态。
+- 每次开工前先检查 `todo.md`，完成后及时更新状态。
+
 ## Git Workflow
 
 - Main branch: `main`
@@ -104,6 +110,7 @@ Key points:
 - Commit messages: Conventional Commits (feat:, fix:, docs:, refactor:, etc.)
 - Each logical change = one commit
 - 后续如果需要开多个 subagent 顺序修复问题，每个 subagent 必须在不同的 git 分支里进行修改，避免相互污染工作区与上下文。
+- **任何修改工作开始前，必须先创建新的 git 分支**（`feature/<name>` 或 `fix/<name>`），不得直接在 `main` 上修改。
 
 ## Testing
 

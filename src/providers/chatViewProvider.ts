@@ -297,7 +297,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'file:open':
-        this.openFile(message.data.path);
+        this.openFile(message.data.path, message.data.line, message.data.column);
         break;
 
       case 'diff:show':
@@ -667,13 +667,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Open a file in the VS Code editor
+   * Open a file in the VS Code editor, optionally jumping to a specific line.
    */
-  private async openFile(filePath: string): Promise<void> {
+  private async openFile(filePath: string, line?: number, column?: number): Promise<void> {
     try {
       const uri = vscode.Uri.file(filePath);
       const doc = await vscode.workspace.openTextDocument(uri);
-      await vscode.window.showTextDocument(doc);
+      const editor = await vscode.window.showTextDocument(doc);
+
+      if (typeof line === 'number' && line > 0) {
+        const pos = new vscode.Position(line - 1, (column ?? 1) - 1);
+        editor.selection = new vscode.Selection(pos, pos);
+        editor.revealRange(
+          new vscode.Range(pos, pos),
+          vscode.TextEditorRevealType.InCenter,
+        );
+      }
     } catch {
       vscode.window.showErrorMessage(
         `Failed to open file: ${filePath}`

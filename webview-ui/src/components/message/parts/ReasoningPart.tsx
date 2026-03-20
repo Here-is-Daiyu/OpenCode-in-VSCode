@@ -48,7 +48,7 @@ export const ReasoningPart = React.memo(function ReasoningPart({
             </svg>
           </span>
           <span className="msg-reasoning__title">
-          Thinking
+          THINKING
           </span>
         {isStreaming && (
           <span className="msg-reasoning__shimmer">

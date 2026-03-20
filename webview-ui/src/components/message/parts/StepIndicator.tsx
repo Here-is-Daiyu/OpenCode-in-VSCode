@@ -15,7 +15,7 @@ import type { StepStartPart, StepFinishPart } from '../../../types/opencode';
 export const StepStartIndicator = React.memo(function StepStartIndicator(
   _props: { part: StepStartPart },
 ) {
-  return <div className="msg-step-start" />;
+  return null;
 });
 
 // ---------------------------------------------------------------------------

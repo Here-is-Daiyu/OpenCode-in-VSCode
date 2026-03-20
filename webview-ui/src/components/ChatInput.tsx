@@ -6,6 +6,7 @@ import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react'
 import { useChatStore } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
 import { ModelSelector } from './ModelSelector';
+import { AgentSelector } from './AgentSelector';
 import { TokenUsageBar } from './TokenUsageBar';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
@@ -386,6 +387,10 @@ export function ChatInput() {
               </div>
             </div>
           )}
+        </div>
+
+        <div className="chat-input__toolbar">
+          <AgentSelector />
         </div>
 
         <div className="chat-input__hint">

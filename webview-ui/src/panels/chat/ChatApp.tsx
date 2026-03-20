@@ -401,8 +401,11 @@ export function ChatApp() {
             break;
 
           case 'theme:changed':
-          case 'agents:updated':
           case 'todos:updated':
+            break;
+
+          case 'agents:updated':
+            useChatStore.getState().setAgents(message.data);
             break;
 
           case 'config:updated':

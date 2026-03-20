@@ -137,6 +137,13 @@
   --shiki-token-string-expression: var(--syntax-string);
   --shiki-token-punctuation: var(--syntax-punctuation);
   --shiki-token-link: var(--text-interactive-base);
+
+  /* Blue accent system */
+  --accent-primary: #3b82f6;
+  --accent-primary-hover: #2563eb;
+  --accent-primary-light: rgba(59, 130, 246, 0.1);
+  --accent-primary-border: rgba(59, 130, 246, 0.3);
+  --accent-primary-text: #3b82f6;
 }
 
 body[data-vscode-theme-kind='vscode-light'],
@@ -154,6 +161,8 @@ body[data-vscode-theme-kind='vscode-high-contrast-light'] {
   --syntax-property: #ed6dc8;
   --syntax-type: #596600;
   --syntax-constant: #007b80;
+
+  --accent-primary-light: rgba(59, 130, 246, 0.08);
 }
 
 @media (min-width: 768px) {

@@ -12,6 +12,7 @@ import type {
   PermissionRequest,
   Question,
   TextPart,
+  Agent,
 } from '../types/opencode';
 
 export type ChatSessionStatus = OpenCodeSessionStatus['status'];
@@ -324,6 +325,10 @@ export interface ChatState {
   savedInputText?: string;
   bufferedRealtimeParts: BufferedRealtimeParts;
 
+  // Agents
+  agents: Agent[];
+  selectedAgent: string;
+
   // Prompts
   pendingPermission?: PermissionRequest;
   pendingQuestion?: Question;
@@ -353,6 +358,8 @@ export interface ChatState {
   clearImages: () => void;
   setPermission: (permission?: PermissionRequest) => void;
   setQuestion: (question?: Question) => void;
+  setAgents: (agents: Agent[]) => void;
+  setSelectedAgent: (agent: string) => void;
   addOptimisticMessage: (text: string, images?: string[]) => string;
   rollbackOptimisticMessage: () => void;
   confirmOptimisticMessage: () => void;
@@ -372,6 +379,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   optimisticMessageID: undefined,
   savedInputText: undefined,
   bufferedRealtimeParts: {},
+  agents: [],
+  selectedAgent: '',
   pendingPermission: undefined,
   pendingQuestion: undefined,
 
@@ -610,6 +619,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setQuestion: (question) => set({ pendingQuestion: question }),
 
+  setAgents: (agents) => set({ agents }),
+
+  setSelectedAgent: (agent) => set({ selectedAgent: agent }),
+
   addOptimisticMessage: (text, images) => {
     const messageID = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
@@ -671,6 +684,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       optimisticMessageID: undefined,
       savedInputText: undefined,
       bufferedRealtimeParts: {},
+      agents: [],
+      selectedAgent: '',
       pendingPermission: undefined,
       pendingQuestion: undefined,
     }),

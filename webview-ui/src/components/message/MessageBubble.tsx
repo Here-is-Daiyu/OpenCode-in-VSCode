@@ -2,14 +2,15 @@
  * MessageBubble - Main message wrapper component.
  *
  * Simplified orchestrator that delegates to:
- *  - MessageHeader (role, model, timestamp)
+ *  - MessageHeader (role icon, provider/model info)
  *  - MessageContent (part dispatcher)
  *  - MessageFooter (minimal copy affordance)
  *
- * Modeled on OpenCode Desktop's SessionTurn approach.
+ * Assistant messages use a flat transparent container (no bubble).
+ * Modeled on the official OpenCode web UI's conversation flow.
  */
 
-import React, { useCallback, useState } from 'react';
+import React from 'react';
 import type {
   MessageWithParts,
   AssistantMessage,
@@ -28,7 +29,6 @@ export const MessageBubble = React.memo(function MessageBubble({
 }: MessageBubbleProps) {
   const { info, parts } = message;
   const isUser = info.role === 'user';
-  const [hovered, setHovered] = useState(false);
 
   const optimisticMessageID = useChatStore((s) => s.optimisticMessageID);
   const isOptimistic = info.id === optimisticMessageID;
@@ -42,25 +42,12 @@ export const MessageBubble = React.memo(function MessageBubble({
     messages[messages.length - 1].info.id === info.id;
   const showStreamingEffects = isStreaming && isLatestAssistant;
 
-  // Copy full text on hover-click
-  const handleCopyAll = useCallback(() => {
-    const textContent = (parts ?? [])
-      .filter((p) => p.type === 'text')
-      .map((p) => (p.type === 'text' ? p.text : ''))
-      .join('\n\n');
-    if (textContent) {
-      navigator.clipboard.writeText(textContent);
-    }
-  }, [parts]);
-
   const roleClass = isUser ? 'msg-bubble--user' : 'msg-bubble--assistant';
   const optimisticClass = isOptimistic ? 'msg-bubble--optimistic' : '';
 
   return (
     <div
       className={`msg-bubble ${roleClass} ${optimisticClass}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       <MessageHeader info={info} />
 
@@ -87,20 +74,6 @@ export const MessageBubble = React.memo(function MessageBubble({
       {/* Footer for completed assistant messages */}
       {!isUser && !showStreamingEffects && (
         <MessageFooter parts={parts} />
-      )}
-
-      {/* Hover copy button for user messages */}
-      {isUser && hovered && (
-        <button
-          className="msg-bubble__hover-copy"
-          onClick={handleCopyAll}
-          title="Copy message"
-          type="button"
-        >
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M4 4h1V2H2v3h2V4zm0 8H2v-3h2v1h1v2H4zm8-8h-1V2h3v3h-2V4zm0 8h2v-3h-2v1h-1v2h1zM6 2h4v1H6V2zm0 11h4v1H6v-1zM2 6h1v4H2V6zm11 0h1v4h-1V6z" />
-          </svg>
-        </button>
       )}
     </div>
   );

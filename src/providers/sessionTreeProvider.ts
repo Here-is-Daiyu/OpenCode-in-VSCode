@@ -59,12 +59,14 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
   /** EventBus unsubscribe callbacks */
   private unsubscribers: Array<() => void> = [];
 
+  /** Debounce timer for batching rapid tree refreshes. */
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+
   constructor(private eventBus: EventBus) {
-    // Auto-refresh on session-related events
+    // Session created/updated/deleted are already handled by
+    // refreshSessionsQuietly() in extension.ts which calls setSessions().
+    // We only need to react to session:status (lightweight, no server fetch).
     this.unsubscribers.push(
-      eventBus.on('session:created', () => void this.refresh()),
-      eventBus.on('session:updated', () => void this.refresh()),
-      eventBus.on('session:deleted', () => void this.refresh()),
       eventBus.on('session:status', (payload) => {
         this.sessionStatuses[payload.sessionID] = payload.status;
         this._onDidChangeTreeData.fire(undefined);
@@ -127,9 +129,13 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
 
   /**
    * Manually update the sessions list (without fetching from server).
+   * Optionally update statuses as well.
    */
-  setSessions(sessions: Session[]): void {
+  setSessions(sessions: Session[], statuses?: Record<string, SessionStatus>): void {
     this.sessions = sessions;
+    if (statuses) {
+      this.sessionStatuses = statuses;
+    }
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -176,6 +182,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       unsub();
     }
     this.unsubscribers = [];
+    if (this.refreshTimer) {
+      clearTimeout(this.refreshTimer);
+    }
     this._onDidChangeTreeData.dispose();
   }
 

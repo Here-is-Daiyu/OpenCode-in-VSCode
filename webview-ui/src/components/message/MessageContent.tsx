@@ -12,6 +12,7 @@ import type {
   StepStartPart,
   StepFinishPart,
   FilePart as FilePartType,
+  SubtaskPart as SubtaskPartType,
 } from '../../types/opencode';
 
 import { TextPart } from './parts/TextPart';
@@ -20,6 +21,7 @@ import { ToolCallPart } from './parts/ToolCallPart';
 import { ContextToolGroup, isContextTool } from './parts/ContextToolGroup';
 import { StepStartIndicator, StepFinishIndicator } from './parts/StepIndicator';
 import { FilePart } from './parts/FilePart';
+import { SubtaskPartComponent } from './parts/SubtaskPart';
 
 interface MessageContentProps {
   parts: Part[];
@@ -35,7 +37,8 @@ type RenderChunk =
   | { kind: 'context-group'; id: string; tools: ToolPart[] }
   | { kind: 'step-start'; id: string; part: StepStartPart }
   | { kind: 'step-finish'; id: string; part: StepFinishPart }
-  | { kind: 'file'; id: string; part: FilePartType };
+  | { kind: 'file'; id: string; part: FilePartType }
+  | { kind: 'subtask'; id: string; part: SubtaskPartType };
 
 function getPartText(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -146,8 +149,15 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
         chunks.push({ kind: 'file', id: part.id, part });
         break;
 
+      case 'subtask':
+        flushText();
+        flushReasoning();
+        flushContext();
+        chunks.push({ kind: 'subtask', id: part.id, part });
+        break;
+
       default:
-        // subtask, snapshot, patch, agent, retry, compaction — skip for now
+        // snapshot, patch, agent, retry, compaction — skip for now
         break;
     }
   }
@@ -159,14 +169,33 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
   return chunks;
 }
 
+/**
+ * Filter parts before rendering (matching official OpenCode web UI).
+ * Removes snapshot, patch, step-finish, duplicate step-starts, etc.
+ */
+function filterParts(parts: Part[]): Part[] {
+  return parts.filter((part, index) => {
+    if (part.type === 'snapshot') return false;
+    if (part.type === 'patch') return false;
+    if (part.type === 'step-finish') return false;
+    if (part.type === 'tool' && part.tool === 'todoread') return false;
+    if (part.type === 'step-start' && index > 0) return false; // Only first step-start
+    if (part.type === 'text' && 'synthetic' in part && (part as any).synthetic) return false;
+    if (part.type === 'text' && !part.text) return false; // Empty text
+    // Note: we still show running tools for streaming UX
+    return true;
+  });
+}
+
 export const MessageContent = React.memo(function MessageContent({
   parts,
   isUser,
   isStreaming,
 }: MessageContentProps) {
+  const filtered = useMemo(() => filterParts(parts ?? []), [parts]);
   const chunks = useMemo(
-    () => buildRenderChunks(parts ?? [], isStreaming),
-    [parts, isStreaming],
+    () => buildRenderChunks(filtered, isStreaming),
+    [filtered, isStreaming],
   );
 
   return (
@@ -201,6 +230,8 @@ export const MessageContent = React.memo(function MessageContent({
             return <StepFinishIndicator key={chunk.id} part={chunk.part} />;
           case 'file':
             return <FilePart key={chunk.id} part={chunk.part} />;
+          case 'subtask':
+            return <SubtaskPartComponent key={chunk.id} part={chunk.part} />;
           default:
             return null;
         }

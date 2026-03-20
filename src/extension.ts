@@ -124,6 +124,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
+  // 11b. Listen to workspace folder changes
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders(e => {
+      handleWorkspaceFolderChange(e, cmdCtx);
+    })
+  );
+
   // 12. Listen to VSCode color theme changes and forward to webview
   context.subscriptions.push(
     vscode.window.onDidChangeActiveColorTheme(theme => {
@@ -527,6 +534,15 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       break;
     }
 
+    case 'mcp.tools.changed': {
+      ctx.logger.debug('MCP tools changed, refreshing MCP status');
+      // Refresh status tree to show updated MCP info
+      ctx.statusProvider.refresh();
+      // Forward to settings webview if it's open
+      ctx.settingsProvider.refreshMCPStatus();
+      break;
+    }
+
     default:
       ctx.logger.debug(`Unhandled SSE event type: ${type}`);
   }
@@ -535,8 +551,11 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 /** Refresh session tree without showing errors (best-effort). */
 async function refreshSessionsQuietly(ctx: CommandContext): Promise<void> {
   try {
-    const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.setSessions(sessions);
+    const [sessions, statuses] = await Promise.all([
+      ctx.client.listSessions(),
+      ctx.client.getSessionStatus(),
+    ]);
+    ctx.sessionProvider.setSessions(sessions, statuses);
   } catch {
     // Silently ignore — the tree will be stale but that's acceptable
   }
@@ -622,4 +641,43 @@ function handleConfigChange(
     ctx.logger.setDebug(debug);
     ctx.logger.info(`Debug mode ${debug ? 'enabled' : 'disabled'}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Workspace folder change handler
+// ---------------------------------------------------------------------------
+
+function handleWorkspaceFolderChange(
+  _e: vscode.WorkspaceFoldersChangeEvent,
+  ctx: CommandContext,
+): void {
+  const newFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!newFolder || newFolder.uri.scheme !== 'file') {
+    return; // No local workspace folder — ignore
+  }
+
+  if (!ctx.serverManager.isRunning()) {
+    ctx.logger.debug('Workspace folder changed but server is not running — will use new CWD on next start');
+    return;
+  }
+
+  const currentCwd = ctx.serverManager.getRunningCwd();
+  const newCwd = newFolder.uri.fsPath;
+
+  if (!currentCwd || currentCwd === newCwd) {
+    return; // Same folder or no recorded CWD — no change needed
+  }
+
+  ctx.logger.info(`Workspace folder changed: "${currentCwd}" → "${newCwd}"`);
+
+  vscode.window
+    .showInformationMessage(
+      `Workspace changed to "${newFolder.name}". Restart OpenCode server in the new directory?`,
+      'Restart Server',
+    )
+    .then(choice => {
+      if (choice === 'Restart Server') {
+        vscode.commands.executeCommand('opencode.restartServer');
+      }
+    });
 }

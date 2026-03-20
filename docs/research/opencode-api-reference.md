@@ -178,64 +178,84 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 
 ## SSE Event Types
 
+Events are received via `GET /global/event` as a Server-Sent Events stream. Each event is a JSON object with a `type` field (dot-notation format) and a `properties` field. The global endpoint wraps events in `{ directory, payload: { type, properties } }`.
+
+> **Note:** The OpenAPI spec schema names use PascalCase (e.g., `EventSessionCreated`), but the actual `type` field sent on the wire uses **dot-notation** (e.g., `session.created`). The PascalCase names are TypeScript type names only.
+
 ### Session Events
 
-- `EventSessionCreated`
-- `EventSessionUpdated`
-- `EventSessionDeleted`
-- `EventSessionStatus`
-- `EventSessionIdle`
-- `EventSessionCompacted`
-- `EventSessionDiff`
-- `EventSessionError`
+| Wire Type | Schema Name | Properties |
+|-----------|-------------|------------|
+| `session.created` | `EventSessionCreated` | `{ info: Session }` |
+| `session.updated` | `EventSessionUpdated` | `{ info: Session }` |
+| `session.deleted` | `EventSessionDeleted` | `{ info: Session }` |
+| `session.status` | `EventSessionStatus` | `{ info: SessionStatus, sessionID: string }` |
+| `session.idle` | `EventSessionIdle` | `{ sessionID: string }` |
+| `session.compacted` | `EventSessionCompacted` | `{ sessionID: string }` |
+| `session.diff` | `EventSessionDiff` | `{ sessionID: string, diffs: FileDiff[] }` |
+| `session.error` | `EventSessionError` | `{ sessionID: string, error: string }` |
 
 ### Message Events
 
-- `EventMessageUpdated`
-- `EventMessageRemoved`
-- `EventMessagePartUpdated`
-- `EventMessagePartDelta`
-- `EventMessagePartRemoved`
+| Wire Type | Schema Name | Properties |
+|-----------|-------------|------------|
+| `message.updated` | `EventMessageUpdated` | `{ info: Message }` |
+| `message.removed` | `EventMessageRemoved` | `{ messageID: string, sessionID: string }` |
+| `message.part.updated` | `EventMessagePartUpdated` | `{ part: Part }` |
+| `message.part.delta` | `EventMessagePartDelta` | `{ sessionID, messageID, partID, delta }` |
+| `message.part.removed` | `EventMessagePartRemoved` | `{ partID: string, sessionID: string, messageID: string }` |
 
 ### Permission Events
 
-- `EventPermissionAsked`
-- `EventPermissionReplied`
+| Wire Type | Schema Name |
+|-----------|-------------|
+| `permission.asked` | `EventPermissionAsked` |
+| `permission.replied` | `EventPermissionReplied` |
 
 ### Question Events
 
-- `EventQuestionAsked`
-- `EventQuestionReplied`
-- `EventQuestionRejected`
+| Wire Type | Schema Name |
+|-----------|-------------|
+| `question.asked` | `EventQuestionAsked` |
+| `question.replied` | `EventQuestionReplied` |
+| `question.rejected` | `EventQuestionRejected` |
 
 ### File Events
 
-- `EventFileEdited`
-- `EventFileWatcherUpdated`
+| Wire Type | Schema Name |
+|-----------|-------------|
+| `file.edited` | `EventFileEdited` |
+| `file.watcher.updated` | `EventFileWatcherUpdated` |
 
 ### Project Events
 
-- `EventProjectUpdated`
+| Wire Type | Schema Name |
+|-----------|-------------|
+| `project.updated` | `EventProjectUpdated` |
 
 ### System Events
 
-- `EventServerConnected`
-- `EventServerInstanceDisposed`
-- `EventInstallationUpdated`
-- `EventInstallationUpdateAvailable`
+| Wire Type | Schema Name |
+|-----------|-------------|
+| `server.connected` | `EventServerConnected` |
+| `server.instance.disposed` | `EventServerInstanceDisposed` |
+| `installation.updated` | `EventInstallationUpdated` |
+| `installation.update.available` | `EventInstallationUpdateAvailable` |
 
 ### Other Events
 
-- `EventTodoUpdated`
-- `EventCommandExecuted`
-- `EventTuiPromptAppend`
-- `EventTuiToastShow`
-- `EventLspClientDiagnostics`
-- `EventVcsBranchUpdated`
-- `EventPtyCreated`
-- `EventPtyUpdated`
-- `EventPtyExited`
-- `EventPtyDeleted`
+| Wire Type | Schema Name |
+|-----------|-------------|
+| `todo.updated` | `EventTodoUpdated` |
+| `command.executed` | `EventCommandExecuted` |
+| `tui.prompt.append` | `EventTuiPromptAppend` |
+| `tui.toast.show` | `EventTuiToastShow` |
+| `lsp.client.diagnostics` | `EventLspClientDiagnostics` |
+| `vcs.branch.updated` | `EventVcsBranchUpdated` |
+| `pty.created` | `EventPtyCreated` |
+| `pty.updated` | `EventPtyUpdated` |
+| `pty.exited` | `EventPtyExited` |
+| `pty.deleted` | `EventPtyDeleted` |
 
 ---
 

@@ -47,6 +47,7 @@ export class ServerManager implements vscode.Disposable {
   private healthFailures = 0;
   private serverVersion = '';
   private startupAbort: AbortController | null = null;
+  private serverCwd = '';
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -76,6 +77,7 @@ export class ServerManager implements vscode.Disposable {
     const config = this.readConfig();
     this.hostname = config.hostname;
     const cwd = this.getServerCwd();
+    this.serverCwd = cwd;
 
     this.logger.info(
       `Starting opencode server (exec="${config.executablePath}", host=${config.hostname}, port=${config.port}, cwd="${cwd}")`,
@@ -127,6 +129,7 @@ export class ServerManager implements vscode.Disposable {
     this.state = 'stopped';
     this.healthFailures = 0;
     this.serverVersion = '';
+    this.serverCwd = '';
 
     this.eventBus.emit('server:disconnected', { reason: 'Server stopped' });
     this.logger.info('Server stopped');
@@ -324,12 +327,19 @@ export class ServerManager implements vscode.Disposable {
    * - If a local (file://) workspace exists, use its first folder.
    * - Otherwise default to the user's home directory.
    */
-  private getServerCwd(): string {
+  public getServerCwd(): string {
     const firstFolder = vscode.workspace.workspaceFolders?.[0];
     if (firstFolder?.uri.scheme === 'file') {
       return firstFolder.uri.fsPath;
     }
     return os.homedir();
+  }
+
+  /**
+   * Returns the working directory used for the currently running (or last started) server process.
+   */
+  getRunningCwd(): string {
+    return this.serverCwd;
   }
 
   /**

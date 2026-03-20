@@ -21,6 +21,8 @@ export class SettingsViewProvider {
   private disposables: vscode.Disposable[] = [];
   private client?: OpenCodeClient;
   private logger?: Logger;
+  private mcpPollTimer: ReturnType<typeof setInterval> | undefined;
+  private mcpStatusInFlight = false;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -73,10 +75,14 @@ export class SettingsViewProvider {
 
     // Cleanup on dispose
     this.panel.onDidDispose(() => {
+      this.stopMCPPolling();
       this.panel = undefined;
       this.disposables.forEach((d) => d.dispose());
       this.disposables = [];
     });
+
+    // Start MCP status polling while settings panel is open
+    this.startMCPPolling();
   }
 
   /**
@@ -84,6 +90,15 @@ export class SettingsViewProvider {
    */
   postMessage(message: ExtensionToSettingsMessage): void {
     this.panel?.webview.postMessage(message);
+  }
+
+  /**
+   * Refresh MCP status and send to the webview (if open).
+   * Called externally when SSE events indicate MCP state changed.
+   */
+  async refreshMCPStatus(): Promise<void> {
+    if (!this.panel) return; // Settings panel not open — skip
+    await this.sendMCPStatus();
   }
 
   // ---------------------------------------------------------------------------
@@ -355,12 +370,31 @@ export class SettingsViewProvider {
 
   /** Fetch and send MCP status to the webview. */
   private async sendMCPStatus(): Promise<void> {
-    if (!this.client) return;
+    if (!this.client || this.mcpStatusInFlight) return;
+    this.mcpStatusInFlight = true;
     try {
       const status = await this.client.getMCPStatus();
       this.postMessage({ type: 'mcp:status', data: status });
     } catch {
       // best-effort
+    } finally {
+      this.mcpStatusInFlight = false;
+    }
+  }
+
+  /** Start periodic MCP status polling (every 10 seconds). */
+  private startMCPPolling(): void {
+    this.stopMCPPolling();
+    this.mcpPollTimer = setInterval(() => {
+      this.sendMCPStatus();
+    }, 10_000);
+  }
+
+  /** Stop MCP status polling. */
+  private stopMCPPolling(): void {
+    if (this.mcpPollTimer !== undefined) {
+      clearInterval(this.mcpPollTimer);
+      this.mcpPollTimer = undefined;
     }
   }
 
