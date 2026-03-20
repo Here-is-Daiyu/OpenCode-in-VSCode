@@ -155,6 +155,16 @@
         "category": "OpenCode"
       },
       {
+        "command": "opencode.explainCode",
+        "title": "Explain Code",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.improveCode",
+        "title": "Improve Code",
+        "category": "OpenCode"
+      },
+      {
         "command": "opencode.openTerminal",
         "title": "Open Terminal",
         "category": "OpenCode"
@@ -205,6 +215,12 @@
         "icon": "$(link-external)"
       }
     ],
+    "submenus": [
+      {
+        "id": "opencode.submenu",
+        "label": "OpenCode"
+      }
+    ],
     "menus": {
       "view/title": [
         {
@@ -230,13 +246,29 @@
       ],
       "editor/context": [
         {
+          "submenu": "opencode.submenu",
+          "group": "navigation"
+        }
+      ],
+      "opencode.submenu": [
+        {
+          "command": "opencode.explainCode",
+          "when": "editorHasSelection",
+          "group": "1_actions"
+        },
+        {
+          "command": "opencode.improveCode",
+          "when": "editorHasSelection",
+          "group": "1_actions"
+        },
+        {
           "command": "opencode.addSelectionToPrompt",
           "when": "editorHasSelection",
-          "group": "opencode"
+          "group": "2_context"
         },
         {
           "command": "opencode.addFileToPrompt",
-          "group": "opencode"
+          "group": "2_context"
         }
       ],
       "view/item/context": [

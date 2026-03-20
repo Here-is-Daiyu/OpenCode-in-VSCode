@@ -31,6 +31,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'file:added'; data: { path: string; name: string; content: string } }
   | { type: 'selection:added'; data: { path: string; name: string; content: string; startLine: number; endLine: number } }
   | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } }
+  | { type: 'chat:autoSend'; data: { text: string } }
   | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } };
 
 // Webview → Extension messages
