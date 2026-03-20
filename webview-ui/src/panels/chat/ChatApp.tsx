@@ -90,6 +90,12 @@ export function ChatApp() {
   const [error, setError] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
 
+  // Read viewMode from initial data injected by the extension host
+  const initialData = (window as unknown as Record<string, unknown>).__OPENCODE_INITIAL__ as
+    | Record<string, string>
+    | undefined;
+  const viewMode = initialData?.viewMode || 'sidebar';
+
   // Refs for scroll management
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);

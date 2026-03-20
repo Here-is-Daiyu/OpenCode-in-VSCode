@@ -6,6 +6,7 @@ import {
   SessionTreeProvider,
   StatusTreeProvider,
   SettingsViewProvider,
+  SessionEditorPanelProvider,
 } from './providers';
 import { StatusBarManager, SessionManager } from './managers';
 import { registerCommands, type CommandContext } from './commands';
@@ -28,6 +29,7 @@ let eventBus: EventBus | undefined;
 let serverManager: ServerManager | undefined;
 let client: OpenCodeClient | undefined;
 let statusBarManager: StatusBarManager | undefined;
+let editorPanelProviderRef: SessionEditorPanelProvider | undefined;
 let sseAbort: AbortController | undefined;
 let sseStreamActive = false;
 let eventUnsubscribers: Array<() => void> = [];
@@ -63,6 +65,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const settingsProvider = new SettingsViewProvider(context.extensionUri);
   settingsProvider.setClient(client);
   settingsProvider.setLogger(logger);
+
+  const editorPanelProvider = new SessionEditorPanelProvider(context.extensionUri);
+  editorPanelProvider.setClient(client);
+  editorPanelProvider.setLogger(logger);
+  editorPanelProviderRef = editorPanelProvider;
 
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(
@@ -104,6 +111,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     sessionProvider,
     statusProvider,
     settingsProvider,
+    editorPanelProvider,
     statusBarManager,
     sessionManager,
     activeSessionId: undefined,
@@ -134,17 +142,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // 12. Listen to VSCode color theme changes and forward to webview
   context.subscriptions.push(
     vscode.window.onDidChangeActiveColorTheme(theme => {
-      const kind =
+      const kind: 'light' | 'dark' | 'highContrast' =
         theme.kind === vscode.ColorThemeKind.Light ||
         theme.kind === vscode.ColorThemeKind.HighContrastLight
           ? 'light'
           : theme.kind === vscode.ColorThemeKind.HighContrast
             ? 'highContrast'
             : 'dark';
-      chatProvider.postMessage({
-        type: 'theme:changed',
+      const themeMessage = {
+        type: 'theme:changed' as const,
         data: { kind },
-      });
+      };
+      chatProvider.postMessage(themeMessage);
+      editorPanelProvider.broadcastMessage(themeMessage);
       logger?.debug(`Theme changed to ${kind} (kind=${theme.kind})`);
     })
   );
@@ -191,6 +201,10 @@ export async function deactivate(): Promise<void> {
 
   // Clean up EventBus
   eventBus?.removeAllListeners();
+
+  // Dispose all editor panels
+  editorPanelProviderRef?.disposeAll();
+  editorPanelProviderRef = undefined;
 
   // ServerManager and Logger are disposed via context.subscriptions
   logger?.info('OpenCode for VSCode deactivated.');
@@ -412,6 +426,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       ctx.activeSessionId = session.id;
       ctx.eventBus.emit('session:created', session);
       ctx.chatProvider.postMessageToWebview({ type: 'session:created', data: session });
+      ctx.editorPanelProvider.routeSessionMessage(session.id, { type: 'session:created', data: session });
       refreshSessionsQuietly(ctx);
       break;
     }
@@ -421,6 +436,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!session?.id) { break; }
       ctx.eventBus.emit('session:updated', session);
       ctx.chatProvider.postMessageToWebview({ type: 'session:updated', data: session });
+      ctx.editorPanelProvider.routeSessionMessage(session.id, { type: 'session:updated', data: session });
       refreshSessionsQuietly(ctx);
       break;
     }
@@ -430,6 +446,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!payload?.id) { break; }
       ctx.eventBus.emit('session:deleted', payload);
       ctx.chatProvider.postMessageToWebview({ type: 'session:deleted', data: payload });
+      ctx.editorPanelProvider.routeSessionMessage(payload.id, { type: 'session:deleted', data: payload });
       if (ctx.activeSessionId === payload.id) {
         ctx.activeSessionId = undefined;
       }
@@ -442,6 +459,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!status?.sessionID || !status?.status) { break; }
       ctx.eventBus.emit('session:status', status);
       ctx.chatProvider.postMessageToWebview({ type: 'session:status', data: status });
+      ctx.editorPanelProvider.routeSessionMessage(status.sessionID, { type: 'session:status', data: status });
 
       const busy = status.status.status === 'active';
       vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', busy);
@@ -455,6 +473,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!msg) { break; }
       ctx.eventBus.emit('message:updated', msg);
       ctx.chatProvider.postMessageToWebview({ type: 'message:updated', data: msg });
+      ctx.editorPanelProvider.routeSessionMessage(msg.info.sessionID, { type: 'message:updated', data: msg });
 
       // Update token usage from assistant messages
       if (msg.info.role === 'assistant' && 'tokens' in msg.info && msg.info.tokens) {
@@ -468,6 +487,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!part) { break; }
       ctx.eventBus.emit('message:partUpdated', part);
       ctx.chatProvider.postMessageToWebview({ type: 'message:partUpdated', data: part });
+      ctx.editorPanelProvider.routeSessionMessage(part.sessionID, { type: 'message:partUpdated', data: part });
       break;
     }
 
@@ -484,6 +504,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       }
       ctx.eventBus.emit('message:partDelta', delta);
       ctx.chatProvider.postMessageToWebview({ type: 'message:partDelta', data: delta });
+      ctx.editorPanelProvider.routeSessionMessage(delta.sessionID, { type: 'message:partDelta', data: delta });
       break;
     }
 
@@ -492,6 +513,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!removed?.sessionID || !removed?.messageID) { break; }
       ctx.eventBus.emit('message:removed', removed);
       ctx.chatProvider.postMessageToWebview({ type: 'message:removed', data: removed });
+      ctx.editorPanelProvider.routeSessionMessage(removed.sessionID, { type: 'message:removed', data: removed });
       break;
     }
 
@@ -500,6 +522,11 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!perm?.id) { break; }
       ctx.eventBus.emit('permission:asked', perm);
       ctx.chatProvider.postMessageToWebview({ type: 'permission:asked', data: perm });
+      // Permission requests may carry a sessionID in the raw payload
+      const permSessionID = (properties as Record<string, unknown>).sessionID;
+      if (typeof permSessionID === 'string') {
+        ctx.editorPanelProvider.routeSessionMessage(permSessionID, { type: 'permission:asked', data: perm });
+      }
       break;
     }
 
@@ -508,6 +535,11 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!question?.id) { break; }
       ctx.eventBus.emit('question:asked', question);
       ctx.chatProvider.postMessageToWebview({ type: 'question:asked', data: question });
+      // Question events may carry a sessionID in the raw payload
+      const questionSessionID = (properties as Record<string, unknown>).sessionID;
+      if (typeof questionSessionID === 'string') {
+        ctx.editorPanelProvider.routeSessionMessage(questionSessionID, { type: 'question:asked', data: question });
+      }
       break;
     }
 
@@ -516,6 +548,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!config) { break; }
       ctx.eventBus.emit('config:updated', config);
       ctx.chatProvider.postMessageToWebview({ type: 'config:updated', data: config });
+      ctx.editorPanelProvider.broadcastMessage({ type: 'config:updated', data: config });
       break;
     }
 
@@ -524,6 +557,7 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (!todos?.sessionID) { break; }
       ctx.eventBus.emit('todo:updated', todos);
       ctx.chatProvider.postMessageToWebview({ type: 'todos:updated', data: todos.todos });
+      ctx.editorPanelProvider.routeSessionMessage(todos.sessionID, { type: 'todos:updated', data: todos.todos });
       break;
     }
 
@@ -571,10 +605,12 @@ function subscribeToEvents(ctx: CommandContext): void {
     ctx.eventBus.on('server:connected', ({ version }) => {
       ctx.statusBarManager.setConnected(version);
       vscode.commands.executeCommand('setContext', 'opencode.serverConnected', true);
-      ctx.chatProvider.postMessageToWebview({
-        type: 'server:status',
+      const serverStatusMsg = {
+        type: 'server:status' as const,
         data: { connected: true, version },
-      });
+      };
+      ctx.chatProvider.postMessageToWebview(serverStatusMsg);
+      ctx.editorPanelProvider.broadcastMessage(serverStatusMsg);
     })
   );
 
@@ -584,10 +620,12 @@ function subscribeToEvents(ctx: CommandContext): void {
       ctx.statusBarManager.setDisconnected();
       vscode.commands.executeCommand('setContext', 'opencode.serverConnected', false);
       vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', false);
-      ctx.chatProvider.postMessageToWebview({
-        type: 'server:status',
+      const serverStatusMsg = {
+        type: 'server:status' as const,
         data: { connected: false },
-      });
+      };
+      ctx.chatProvider.postMessageToWebview(serverStatusMsg);
+      ctx.editorPanelProvider.broadcastMessage(serverStatusMsg);
     })
   );
 

@@ -8,6 +8,7 @@ import type { ChatViewProvider } from '../providers/chatViewProvider';
 import type { SessionTreeProvider } from '../providers/sessionTreeProvider';
 import type { StatusTreeProvider } from '../providers/statusTreeProvider';
 import type { SettingsViewProvider } from '../providers/settingsViewProvider';
+import type { SessionEditorPanelProvider } from '../providers/sessionEditorPanelProvider';
 import type { StatusBarManager } from '../managers/statusBarManager';
 import type { SessionManager } from '../managers/sessionManager';
 
@@ -23,6 +24,7 @@ export interface CommandContext {
   sessionProvider: SessionTreeProvider;
   statusProvider: StatusTreeProvider;
   settingsProvider: SettingsViewProvider;
+  editorPanelProvider: SessionEditorPanelProvider;
   statusBarManager: StatusBarManager;
   sessionManager: SessionManager;
   /** Track the currently active session ID. */
@@ -488,6 +490,60 @@ async function openConfigFile(ctx: CommandContext): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Editor panel commands
+// ---------------------------------------------------------------------------
+
+function openSessionInEditor(ctx: CommandContext, sessionId?: unknown): void {
+  if (!requireConnected(ctx)) { return; }
+
+  // sessionId may be a plain string (called programmatically) or a
+  // SessionTreeItem (called from tree view context menu).
+  let id: string | undefined;
+  if (typeof sessionId === 'string') {
+    id = sessionId.trim() || undefined;
+  } else if (sessionId && typeof sessionId === 'object' && 'session' in sessionId) {
+    // SessionTreeItem has a `session` property with an `id`
+    const item = sessionId as { session?: { id?: string } };
+    id = item.session?.id;
+  }
+
+  if (!id) {
+    vscode.window.showWarningMessage('No session ID provided.');
+    return;
+  }
+
+  ctx.editorPanelProvider.createOrShow(id);
+}
+
+function openNewSessionInEditor(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+  ctx.editorPanelProvider.createOrShowNewSession();
+}
+
+function openActiveSessionInEditor(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+
+  const sessionId = ctx.activeSessionId;
+  if (!sessionId) {
+    vscode.window.showWarningMessage('No active session. Create or select a session first.');
+    return;
+  }
+
+  ctx.editorPanelProvider.createOrShow(sessionId);
+}
+
+function openCurrentOrNewSessionInEditor(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+
+  const sessionId = ctx.activeSessionId;
+  if (sessionId) {
+    ctx.editorPanelProvider.createOrShow(sessionId);
+  } else {
+    ctx.editorPanelProvider.createOrShowNewSession();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Utilities
 // ---------------------------------------------------------------------------
 
@@ -534,6 +590,10 @@ export function registerCommands(
     ['opencode.focusChat', () => focusChat(ctx)],
     ['opencode.compactSession', () => compactSession(ctx)],
     ['opencode.openConfigFile', () => openConfigFile(ctx)],
+    ['opencode.openSessionInEditor', (sessionId?: unknown) => openSessionInEditor(ctx, sessionId)],
+    ['opencode.openNewSessionInEditor', () => openNewSessionInEditor(ctx)],
+    ['opencode.openActiveSessionInEditor', () => openActiveSessionInEditor(ctx)],
+    ['opencode.openCurrentOrNewSessionInEditor', () => openCurrentOrNewSessionInEditor(ctx)],
   ];
 
   for (const [id, handler] of commands) {

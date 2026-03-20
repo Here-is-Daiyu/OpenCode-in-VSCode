@@ -179,6 +179,30 @@
         "title": "Open Config File",
         "category": "OpenCode",
         "icon": "$(gear)"
+      },
+      {
+        "command": "opencode.openSessionInEditor",
+        "title": "Open Session in Editor",
+        "category": "OpenCode",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "opencode.openNewSessionInEditor",
+        "title": "Open New Session in Editor",
+        "category": "OpenCode",
+        "icon": "$(add)"
+      },
+      {
+        "command": "opencode.openActiveSessionInEditor",
+        "title": "Open Active Session in Editor",
+        "category": "OpenCode",
+        "icon": "$(link-external)"
+      },
+      {
+        "command": "opencode.openCurrentOrNewSessionInEditor",
+        "title": "Open Session in Editor (Current or New)",
+        "category": "OpenCode",
+        "icon": "$(link-external)"
       }
     ],
     "menus": {
@@ -214,6 +238,18 @@
           "command": "opencode.addFileToPrompt",
           "group": "opencode"
         }
+      ],
+      "view/item/context": [
+        {
+          "command": "opencode.openSessionInEditor",
+          "when": "view == opencode.sessions && viewItem =~ /session/",
+          "group": "inline"
+        },
+        {
+          "command": "opencode.openSessionInEditor",
+          "when": "view == opencode.sessions && viewItem =~ /session/",
+          "group": "navigation"
+        }
       ]
     },
     "keybindings": [
@@ -232,6 +268,12 @@
         "command": "opencode.abortSession",
         "key": "escape",
         "when": "opencode.sessionBusy"
+      },
+      {
+        "command": "opencode.openCurrentOrNewSessionInEditor",
+        "key": "ctrl+shift+e",
+        "mac": "cmd+shift+e",
+        "when": "opencode.serverConnected"
       }
     ],
     "configuration": {
