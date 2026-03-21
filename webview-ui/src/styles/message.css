@@ -491,6 +491,13 @@
   background: var(--surface-base);
 }
 
+/* ANSI-rendered terminal output container */
+.msg-tool-compact__result pre.ansi-output span {
+  /* Ensure styled spans don't break layout */
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .msg-tool-compact__footer {
   font-size: 0.75rem;
   color: var(--text-weaker);
@@ -962,7 +969,7 @@
   padding: 4px 0;
   border: none;
   background: transparent;
-  color: var(--text-link-base, var(--text-accent-base, #4dabf7));
+  color: var(--text-interactive-base);
   font-size: var(--font-size-small);
   font-weight: var(--font-weight-medium);
   cursor: pointer;
@@ -973,7 +980,8 @@
 }
 
 .msg-subtask__view-session:hover {
-  color: var(--text-link-hover-base, var(--text-accent-hover-base, #74c0fc));
+  color: var(--text-interactive-base);
+  filter: brightness(1.2);
   text-decoration-style: solid;
 }
 

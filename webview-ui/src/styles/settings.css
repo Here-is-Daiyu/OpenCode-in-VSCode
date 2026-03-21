@@ -394,7 +394,7 @@ textarea {
 }
 
 .settings-error__dismiss:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-base-hover);
 }
 
 /* =====================================================================
@@ -640,10 +640,10 @@ textarea {
   appearance: none;
   width: 16px;
   height: 16px;
-  border: 2px solid white;
+  border: 2px solid var(--surface-raised-stronger-non-alpha);
   border-radius: 999px;
   background: var(--accent-primary);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: var(--shadow-xs-border-base);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -660,10 +660,10 @@ textarea {
 .setting-number-input__slider::-moz-range-thumb {
   width: 16px;
   height: 16px;
-  border: 2px solid white;
+  border: 2px solid var(--surface-raised-stronger-non-alpha);
   border-radius: 999px;
   background: var(--border-selected);
-  box-shadow: 0 4px 12px color-mix(in srgb, var(--border-selected) 28%, transparent);
+  box-shadow: var(--shadow-xs-border-base);
   cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
 }
@@ -733,8 +733,8 @@ textarea {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: white;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-xs-border-base);
   transition: transform 0.15s;
 }
 
@@ -1417,7 +1417,8 @@ textarea {
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background: rgba(0, 0, 0, 0.5);
+  background: color-mix(in srgb, var(--background-base) 60%, transparent);
+  backdrop-filter: blur(2px);
 }
 
 .confirm-dialog__box {

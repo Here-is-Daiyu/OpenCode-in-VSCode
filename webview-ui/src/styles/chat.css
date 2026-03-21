@@ -469,10 +469,7 @@ textarea {
 }
 
 .chat-input__shell:focus-within {
-  box-shadow:
-    0 0 0 1px var(--border-selected),
-    0 0 0 3px var(--border-weak-selected),
-    0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: var(--shadow-xs-border-focus);
 }
 
 .chat-input__field {
@@ -1402,8 +1399,8 @@ textarea {
   height: 16px;
   padding: 0 5px;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, #22c55e 15%, transparent);
-  color: #22c55e;
+  background: var(--surface-success-weak);
+  color: var(--icon-success-base);
   font-size: 9px;
   font-weight: var(--font-weight-semibold, 600);
   line-height: 1;
@@ -1435,11 +1432,11 @@ textarea {
 }
 
 .model-selector__fav--active {
-  color: #f59e0b;
+  color: var(--icon-warning-base);
 }
 
 .model-selector__fav--active:hover {
-  color: #d97706;
+  color: var(--text-on-warning-base);
 }
 
 /* Option layout update - add flex-wrap for tags */

@@ -162,7 +162,13 @@ body[data-vscode-theme-kind='vscode-high-contrast-light'] {
   --syntax-type: #596600;
   --syntax-constant: #007b80;
 
-  --accent-primary-light: rgba(59, 130, 246, 0.08);
+  --accent-primary: #2563eb;
+  --accent-primary-hover: #1d4ed8;
+  --accent-primary-text: #2563eb;
+  --accent-primary-light: rgba(37, 99, 235, 0.08);
+  --accent-primary-border: rgba(37, 99, 235, 0.25);
+
+  --shadow-md: 0 16px 48px rgba(16, 24, 40, 0.12);
 }
 
 /* Suppress all CSS transitions during theme switch to prevent color flash */
