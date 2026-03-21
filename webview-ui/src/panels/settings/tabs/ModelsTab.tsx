@@ -1,6 +1,9 @@
 /**
- * Model & Agent tab — select current model grouped by provider, view model
- * capabilities, choose agent, and adjust reasoning effort if applicable.
+ * Models settings tab — model selection, agent mode, and provider availability.
+ *
+ * Combines the old ModelTab (current model summary, model selection grid,
+ * agent selection) with the old ProvidersTab's "Provider Availability"
+ * section into a unified models management tab.
  */
 
 import React, { useCallback, useMemo } from 'react';
@@ -8,27 +11,28 @@ import type { OpenCodeConfig, Provider } from '../../../types/opencode';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
 import { Field } from '../../../components/settings/Field';
 import { SegmentedControl } from '../../../components/settings/SegmentedControl';
+import { Toggle } from '../../../components/settings/Toggle';
 
-interface ModelTabProps {
+interface ModelsTabProps {
   config: OpenCodeConfig;
   providers: Provider[];
   connectedProviders: string[];
   onUpdateConfig: (partial: Record<string, unknown>) => void;
 }
 
-/** Format a context/output limit into a human-readable string (e.g. 128000 → "128K"). */
+/** Format a context/output limit into a human-readable string (e.g. 128000 -> "128K"). */
 function formatLimit(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n % 1_000_000 === 0 ? 0 : 1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(n % 1_000 === 0 ? 0 : 1)}K`;
   return String(n);
 }
 
-export function ModelTab({
+export function ModelsTab({
   config,
   providers,
   connectedProviders,
   onUpdateConfig,
-}: ModelTabProps) {
+}: ModelsTabProps) {
   // Current model is stored as "providerId/modelId"
   const currentModel = config.model ?? '';
 
@@ -49,9 +53,6 @@ export function ModelTab({
     return undefined;
   }, [providers, currentProviderID, currentModelID]);
 
-  // Check if the current model supports reasoning
-  const supportsReasoning = currentModelObj?.capabilities?.reasoning ?? false;
-
   // Select a model
   const handleModelSelect = useCallback(
     (providerID: string, modelID: string) => {
@@ -60,13 +61,28 @@ export function ModelTab({
     [onUpdateConfig],
   );
 
-  // Agent selection — we don't have a separate agents list in props,
-  // so we use config.agent and allow the user to set it as a string.
+  // Agent selection
   const handleAgentChange = useCallback(
     (value: string) => {
       onUpdateConfig({ agent: value || undefined });
     },
     [onUpdateConfig],
+  );
+
+  // Disabled-providers toggle
+  const disabledProviders = config.disabled_providers ?? [];
+
+  const handleToggleProvider = useCallback(
+    (providerId: string, enabled: boolean) => {
+      let updated: string[];
+      if (enabled) {
+        updated = disabledProviders.filter((id) => id !== providerId);
+      } else {
+        updated = [...disabledProviders, providerId];
+      }
+      onUpdateConfig({ disabled_providers: updated });
+    },
+    [disabledProviders, onUpdateConfig],
   );
 
   // Sort providers: connected first, then alphabetically
@@ -131,7 +147,6 @@ export function ModelTab({
       >
         {providers.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state__icon">🔌</div>
             <div className="empty-state__text">
               No providers available. Make sure the OpenCode server is running and has
               providers configured.
@@ -241,25 +256,38 @@ export function ModelTab({
         </Field>
       </SettingGroup>
 
-      {/* ---- Reasoning Effort (conditional) ---- */}
-      {supportsReasoning && (
+      {/* ---- Provider Availability ---- */}
+      {providers.length > 0 && (
         <SettingGroup
-          title="Reasoning"
-          description="Configure reasoning behavior for models that support it."
+          title="Provider Availability"
+          description="Enable or disable known providers. Disabled providers will not appear in model selection."
         >
-          <div className="setting-row">
-            <span className="setting-row__label">Reasoning Effort</span>
-            <span className="setting-row__description">
-              Higher values produce more thorough reasoning chains but use more tokens.
-              Not all providers support this parameter.
-            </span>
-            <div className="setting-row__control">
-              <div className="reasoning-effort-labels">
-                <span className="reasoning-effort-labels__low">Low</span>
-                <span className="reasoning-effort-labels__medium">Medium</span>
-                <span className="reasoning-effort-labels__high">High</span>
-              </div>
-            </div>
+          <div className="provider-availability">
+            {providers.map((p) => {
+              const isConnected = connectedProviders.includes(p.id);
+              const isEnabled = !disabledProviders.includes(p.id);
+
+              return (
+                <div className="provider-availability__row" key={p.id}>
+                  <div className="provider-availability__info">
+                    <span className="provider-availability__name">
+                      {p.name || p.id}
+                    </span>
+                    <span
+                      className={`provider-availability__status provider-availability__status--${isConnected ? 'connected' : 'disconnected'}`}
+                    >
+                      {isConnected ? 'Connected' : 'Not connected'}
+                    </span>
+                  </div>
+                  <Toggle
+                    label={`Enable ${p.name || p.id}`}
+                    description={`${Object.keys(p.models).length} model(s) available`}
+                    checked={isEnabled}
+                    onChange={(checked) => handleToggleProvider(p.id, checked)}
+                  />
+                </div>
+              );
+            })}
           </div>
         </SettingGroup>
       )}

@@ -9,13 +9,11 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
 import { getVsCodeApi } from '../../utils/vscodeApi';
 import { SettingsTabs, getSettingsTabDef } from '../../components/settings/SettingsTabs';
-import { GeneralTab } from './tabs/GeneralTab';
-import { ModelTab } from './tabs/ModelTab';
+import { ConnectionTab } from './tabs/ConnectionTab';
+import { ChatTab } from './tabs/ChatTab';
+import { ModelsTab } from './tabs/ModelsTab';
+import { IntegrationsTab } from './tabs/IntegrationsTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
-import { ProvidersTab } from './tabs/ProvidersTab';
-import { MCPTab } from './tabs/MCPTab';
-import { CommandsTab } from './tabs/CommandsTab';
-import { AdvancedTab } from './tabs/AdvancedTab';
 import type { ExtensionToSettingsMessage } from '../../types/messages';
 import '../../styles/settings.css';
 
@@ -132,61 +130,49 @@ export function SettingsApp() {
   // ------------------------------------------------------------------
   const renderTab = () => {
     switch (store.activeTab) {
-      case 'general':
+      case 'connection':
         return (
-          <GeneralTab
+          <ConnectionTab
             settings={store.vscodeSettings}
             onUpdate={updateVSCodeSetting}
           />
         );
-      case 'model':
+      case 'chat':
         return (
-          <ModelTab
+          <ChatTab
+            settings={store.vscodeSettings}
+            onUpdate={updateVSCodeSetting}
+          />
+        );
+      case 'models':
+        return (
+          <ModelsTab
             config={store.opencodeConfig}
             providers={store.providers}
             connectedProviders={store.connectedProviders}
             onUpdateConfig={updateOpenCodeConfig}
           />
         );
-      case 'providers':
+      case 'integrations':
         return (
-          <ProvidersTab
+          <IntegrationsTab
             config={store.opencodeConfig}
             providers={store.providers}
             connectedProviders={store.connectedProviders}
+            mcpStatus={store.mcpStatus}
             onUpdateConfig={updateOpenCodeConfig}
+            onMCPAdd={addMCPServer}
+            onMCPRemove={removeMCPServer}
+            onMCPToggle={toggleMCPServer}
           />
         );
       case 'permissions':
         return (
           <PermissionsTab
             config={store.opencodeConfig}
-            onUpdateConfig={updateOpenCodeConfig}
-          />
-        );
-      case 'mcp':
-        return (
-          <MCPTab
-            config={store.opencodeConfig}
-            mcpStatus={store.mcpStatus}
-            onAdd={addMCPServer}
-            onRemove={removeMCPServer}
-            onToggle={toggleMCPServer}
-          />
-        );
-      case 'commands':
-        return (
-          <CommandsTab
-            config={store.opencodeConfig}
-            providers={store.providers}
-            onUpdateConfig={updateOpenCodeConfig}
-          />
-        );
-      case 'advanced':
-        return (
-          <AdvancedTab
             settings={store.vscodeSettings}
-            onUpdate={updateVSCodeSetting}
+            onUpdateConfig={updateOpenCodeConfig}
+            onUpdateSetting={updateVSCodeSetting}
           />
         );
       default:

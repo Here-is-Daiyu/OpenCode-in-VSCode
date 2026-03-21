@@ -1,14 +1,18 @@
 /**
  * Permissions settings tab.
  *
- * Shows a table of permission rules (read, edit, bash, glob, grep, etc.)
- * with allow/ask/deny dropdowns.
+ * Shows permission rules for AI agent actions, bash command pattern
+ * overrides, and a reset-to-defaults section for VS Code extension settings.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
 import { SegmentedControl } from '../../../components/settings/SegmentedControl';
 import type { OpenCodeConfig, PermissionValue } from '../../../types/opencode';
+
+// ---------------------------------------------------------------------------
+//  Constants
+// ---------------------------------------------------------------------------
 
 /** Well-known permission keys. */
 const KNOWN_PERMISSIONS = [
@@ -27,13 +31,46 @@ const PERMISSION_OPTIONS = [
   { value: 'deny', label: 'Deny' },
 ] as const;
 
+/** Default values for all VS Code extension settings. */
+const SETTING_DEFAULTS: Record<string, unknown> = {
+  'server.hostname': '127.0.0.1',
+  'server.port': 0,
+  'server.autoStart': true,
+  'server.executablePath': 'opencode',
+  'chat.fontSize': 14,
+  'chat.showTimestamps': true,
+  'chat.wordWrap': true,
+  'chat.maxImageSize': 10,
+  'chat.showToolCalls': 'collapsed',
+  'editor.showInlineDiffs': true,
+  'editor.codeLensEnabled': false,
+};
+
+// ---------------------------------------------------------------------------
+//  Props
+// ---------------------------------------------------------------------------
+
 interface PermissionsTabProps {
   config: OpenCodeConfig;
+  settings: Record<string, unknown>;
   onUpdateConfig: (partial: Record<string, unknown>) => void;
+  onUpdateSetting: (key: string, value: unknown) => void;
 }
 
-export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) {
+// ---------------------------------------------------------------------------
+//  Main component
+// ---------------------------------------------------------------------------
+
+export function PermissionsTab({
+  config,
+  settings,
+  onUpdateConfig,
+  onUpdateSetting,
+}: PermissionsTabProps) {
   const permission = config.permission ?? {};
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
+
+  // ---- Permission rule handlers ----
 
   const handlePermissionChange = useCallback(
     (key: string, value: PermissionValue) => {
@@ -43,7 +80,8 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
     [permission, onUpdateConfig],
   );
 
-  // Bash sub-permissions (patterns)
+  // ---- Bash pattern sub-permissions ----
+
   const bashPerms = useMemo(() => {
     const bash = permission['bash'];
     if (typeof bash === 'object' && bash !== null) {
@@ -113,9 +151,20 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
     [bashPatterns, permission, onUpdateConfig],
   );
 
+  // ---- Reset handler ----
+
+  const handleReset = useCallback(() => {
+    for (const [key, value] of Object.entries(SETTING_DEFAULTS)) {
+      onUpdateSetting(key, value);
+    }
+    setShowResetConfirm(false);
+  }, [onUpdateSetting]);
+
   return (
     <>
-      {/* Basic Permissions */}
+      {/* -------------------------------------------------------------- */}
+      {/*  Section 1 — Permission Rules                                  */}
+      {/* -------------------------------------------------------------- */}
       <SettingGroup
         title="Permission Rules"
         description="Control what actions the AI agent can perform. 'Allow' grants permission automatically, 'Ask' prompts you each time, and 'Deny' blocks the action."
@@ -153,7 +202,9 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
         </div>
       </SettingGroup>
 
-      {/* Bash Pattern Permissions */}
+      {/* -------------------------------------------------------------- */}
+      {/*  Section 2 — Bash Command Patterns                             */}
+      {/* -------------------------------------------------------------- */}
       <SettingGroup
         title="Bash Command Patterns"
         description="Fine-grained permissions for shell commands. Use glob patterns to match specific commands (e.g. 'git *' to allow all git commands)."
@@ -197,6 +248,45 @@ export function PermissionsTab({ config, onUpdateConfig }: PermissionsTabProps) 
             + Add bash pattern
           </button>
         </div>
+      </SettingGroup>
+
+      {/* -------------------------------------------------------------- */}
+      {/*  Section 3 — Reset Settings                                    */}
+      {/* -------------------------------------------------------------- */}
+      <SettingGroup
+        title="Reset Settings"
+        description="Reset all VS Code extension settings to their default values. This does not affect OpenCode server configuration."
+      >
+        {showResetConfirm ? (
+          <div className="confirm-dialog" onClick={() => setShowResetConfirm(false)}>
+            <div className="confirm-dialog__box" onClick={(e) => e.stopPropagation()}>
+              <div className="confirm-dialog__title">Reset all settings?</div>
+              <div className="confirm-dialog__message">
+                This will reset all OpenCode VSCode extension settings to their default
+                values. OpenCode server configuration (model, permissions, MCP, commands) will not be affected.
+              </div>
+              <div className="confirm-dialog__actions">
+                <button
+                  className="btn btn--secondary"
+                  type="button"
+                  onClick={() => setShowResetConfirm(false)}
+                >
+                  Cancel
+                </button>
+                <button className="btn btn--danger" type="button" onClick={handleReset}>
+                  Reset All Settings
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+        <button
+          className="btn btn--danger"
+          type="button"
+          onClick={() => setShowResetConfirm(true)}
+        >
+          Reset All Settings to Defaults
+        </button>
       </SettingGroup>
     </>
   );

@@ -20,13 +20,11 @@ import type {
 // ---------------------------------------------------------------------------
 
 export type SettingsTab =
-  | 'general'
-  | 'model'
-  | 'providers'
-  | 'permissions'
-  | 'mcp'
-  | 'commands'
-  | 'advanced';
+  | 'connection'
+  | 'chat'
+  | 'models'
+  | 'integrations'
+  | 'permissions';
 
 // ---------------------------------------------------------------------------
 //  Store interface
@@ -121,7 +119,7 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   providers: [],
   connectedProviders: [],
   mcpStatus: {},
-  activeTab: 'general',
+  activeTab: 'connection',
   isDirty: false,
   saveIndicator: false,
   error: null,
