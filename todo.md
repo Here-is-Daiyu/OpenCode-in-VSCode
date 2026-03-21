@@ -1,7 +1,7 @@
 # OpenCode for VSCode - TODO
 
 > 最后更新: 2026-03-21
-> 当前分支: `main` (合并中)
+> 当前分支: `feature/slash-command-enhancement`
 
 ---
 
@@ -31,9 +31,24 @@
 
 ## 进行中
 
-### 🔨 合并所有 feature 分支到 main
+### 🔨 Slash Command 系统增强
+- **分支:** `feature/slash-command-enhancement`
 - **状态:** 进行中
-- 8 个分支 → main
+- **复杂度:** 中
+- **思路:** 参考 OpenCodeUI 实现（clean-room），增强命令菜单的缓存、过滤、UI 交互
+
+| # | 子任务 | 状态 |
+|---|--------|------|
+| 1 | 创建 commandStore.ts (Zustand) — TTL 缓存 + 请求去重 | ⬜ |
+| 2 | filterCommands 增强 — name + description 搜索 | ⬜ |
+| 3 | SlashCommandMenu 加载/空状态 | ⬜ |
+| 4 | 点击外部关闭菜单 | ⬜ |
+| 5 | 动态菜单定位（视口感知） | ⬜ |
+| 6 | 支持命令参数（/command 后保留文本） | ⬜ |
+| 7 | 底部键盘提示 | ⬜ |
+| 8 | 集成 commandStore 到 ChatInput | ⬜ |
+| 9 | 新增 CSS 样式 | ⬜ |
+| 10 | 构建验证 | ⬜ |
 
 ---
 
@@ -42,16 +57,16 @@
 ### P3 - 收尾
 
 #### 1. Light/Dark 主题兼容性检查
-- **状态:** 未开始
+- **状态:** ✅ 已完成 (feature/final-polish)
 - **思路:** 逐一检查新 UI 在 VSCode 亮色/暗色主题下的表现
 
 #### 2. ANSI 颜色渲染 (Tool Output)
-- **状态:** 未开始
+- **状态:** ✅ 已完成 (feature/final-polish)
 - **复杂度:** 低
-- **思路:** 使用 `ansi-to-html` 或 `ansi-to-react` 处理 bash tool output 中的 ANSI 着色
+- **思路:** 自实现 ansiToHtml.ts 解析器 (~310 行)，SGR 0-107, 256-color, truecolor
 
 #### 3. 最终打包 VSIX
-- **状态:** 等全部功能完成
+- **状态:** ✅ 已完成 (feature/final-polish, 1.41 MB)
 - **思路:** `npm run package` → 检查大小 → 发布
 
 ---
@@ -64,7 +79,9 @@
 | `feature/editor-panel` | ✅ 已合并 | ✅ |
 | `feature/virtual-scroll` | ✅ 已合并 | ✅ |
 | `feature/context-menu` | ✅ 已合并 | ✅ |
-| `feature/settings-redesign` | 🔨 合并中 | - |
-| `feature/theme-flash-fix` | 待合并 | - |
-| `feature/reasoning-traces` | 待合并 | - |
-| `feature/agent-validation` | 待合并 | - |
+| `feature/settings-redesign` | ✅ 已合并 | ✅ |
+| `feature/theme-flash-fix` | ✅ 已合并 | ✅ |
+| `feature/reasoning-traces` | ✅ 已合并 | ✅ |
+| `feature/agent-validation` | ✅ 已合并 | ✅ |
+| `feature/final-polish` | ✅ 已提交 (ffa5443) | 待合并 |
+| `feature/slash-command-enhancement` | 🔨 进行中 | - |

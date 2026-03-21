@@ -65,12 +65,13 @@ export function detectSlashTrigger(
 /**
  * Filter a list of slash commands by a partial query string.
  *
- * Matching is case-insensitive and checks whether the command name
- * starts with the given query. An empty query returns all commands.
+ * Matching is case-insensitive against both name and description.
+ * Name matches (prefix) are returned first, followed by
+ * description-only matches (substring). An empty query returns all commands.
  *
  * @param commands - The full list of available commands
- * @param query - The partial name to match against (without leading `/`)
- * @returns Commands whose name starts with the lowercased query
+ * @param query - The partial text to match against (without leading `/`)
+ * @returns Commands matching by name first, then by description
  */
 export function filterCommands(
   commands: SlashCommand[],
@@ -81,5 +82,16 @@ export function filterCommands(
   }
 
   const lowerQuery = query.toLowerCase();
-  return commands.filter((cmd) => cmd.name.toLowerCase().startsWith(lowerQuery));
+  const nameMatches: SlashCommand[] = [];
+  const descMatches: SlashCommand[] = [];
+
+  for (const cmd of commands) {
+    if (cmd.name.toLowerCase().startsWith(lowerQuery)) {
+      nameMatches.push(cmd);
+    } else if (cmd.description?.toLowerCase().includes(lowerQuery)) {
+      descMatches.push(cmd);
+    }
+  }
+
+  return [...nameMatches, ...descMatches];
 }
