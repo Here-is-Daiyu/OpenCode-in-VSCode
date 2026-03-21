@@ -42,6 +42,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'chat:sendResult'; data: { success: boolean; messageID?: string; error?: string } }
   | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } }
   | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } }
+  | { type: 'chat:autoSend'; data: { text: string } }
   | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } };
 
 // Webview -> Extension messages

@@ -458,6 +458,42 @@ function focusChat(_ctx: CommandContext): void {
   vscode.commands.executeCommand('opencode.chatView.focus');
 }
 
+function explainCode(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) { return; }
+  const selection = editor.selection;
+  const selectedText = editor.document.getText(selection);
+  if (!selectedText) { return; }
+
+  const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+  const languageId = editor.document.languageId;
+  const startLine = selection.start.line + 1;
+  const endLine = selection.end.line + 1;
+  const lineRange = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+
+  const prompt = `Explain the following code:\n\n${filePath}:${lineRange}\n\`\`\`${languageId}\n${selectedText}\n\`\`\``;
+  ctx.chatProvider.createNewSessionWithPrompt(prompt);
+}
+
+function improveCode(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) { return; }
+  const selection = editor.selection;
+  const selectedText = editor.document.getText(selection);
+  if (!selectedText) { return; }
+
+  const filePath = vscode.workspace.asRelativePath(editor.document.uri);
+  const languageId = editor.document.languageId;
+  const startLine = selection.start.line + 1;
+  const endLine = selection.end.line + 1;
+  const lineRange = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+
+  const prompt = `Improve the following code:\n\n${filePath}:${lineRange}\n\`\`\`${languageId}\n${selectedText}\n\`\`\``;
+  ctx.chatProvider.createNewSessionWithPrompt(prompt);
+}
+
 async function compactSession(ctx: CommandContext): Promise<void> {
   const sessionId = requireSession(ctx);
   if (!sessionId) { return; }
@@ -585,6 +621,8 @@ export function registerCommands(
     ['opencode.openSettings', () => openSettings(ctx)],
     ['opencode.addFileToPrompt', () => addFileToPrompt(ctx)],
     ['opencode.addSelectionToPrompt', () => addSelectionToPrompt(ctx)],
+    ['opencode.explainCode', () => explainCode(ctx)],
+    ['opencode.improveCode', () => improveCode(ctx)],
     ['opencode.openTerminal', () => openTerminal(ctx)],
     ['opencode.showDiff', () => showDiff(ctx)],
     ['opencode.focusChat', () => focusChat(ctx)],

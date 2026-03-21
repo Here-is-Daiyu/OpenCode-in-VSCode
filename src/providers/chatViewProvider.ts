@@ -209,6 +209,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * Create a new session and auto-send a prompt.
+   * Shows the sidebar, clears the current session so a fresh one is created,
+   * then sends a chat:autoSend message to the webview.
+   */
+  createNewSessionWithPrompt(prompt: string): void {
+    // Clear current session so handleChatSend will auto-create a new one
+    this.currentSessionID = undefined;
+    this.lastSessionLoaded = undefined;
+    this.view?.show?.(true);
+    this.postMessageToWebview({
+      type: 'chat:autoSend',
+      data: { text: prompt },
+    });
+  }
+
+  /**
    * Handle messages received from the webview
    */
   handleWebviewMessage(message: WebviewToExtensionMessage): void {

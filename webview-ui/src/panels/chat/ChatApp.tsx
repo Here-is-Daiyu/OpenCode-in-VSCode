@@ -435,6 +435,24 @@ export function ChatApp() {
           case 'model-prefs:loaded':
             useModelStore.getState().setModelPrefs(message.data);
             break;
+
+          case 'chat:autoSend': {
+            // Auto-send a prompt. The extension-side handleChatSend will
+            // auto-create a new session if none exists, so we only need
+            // to add an optimistic message and fire the send.
+            const autoSendText = message.data.text;
+            if (autoSendText) {
+              // Clear current session so handleChatSend creates a fresh one
+              clearSession();
+              // Add optimistic message and send
+              useChatStore.getState().addOptimisticMessage(autoSendText);
+              postMessage({
+                type: 'chat:send',
+                data: { text: autoSendText },
+              });
+            }
+            break;
+          }
         }
       } catch (err) {
         console.error('[ChatApp] Error handling extension message:', message.type, err);
