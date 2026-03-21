@@ -71,7 +71,54 @@
 
 ## 待完成
 
-暂无新功能计划。
+> 基于 2026-03-21 功能差距分析 (详见 `docs/research/feature-gap-analysis.md`)
+
+### Phase 1 — Quick Wins (XS-S)
+
+| # | 功能 | 复杂度 | 优先级 | 备注 |
+|---|------|--------|--------|------|
+| 24 | Context Window Usage Bar | XS | 中 | 进度条显示 context 使用量 vs 模型上限 |
+| 25 | Session 时间分组 | S | 中 | Today/Yesterday/Previous 7 Days 分桶 |
+| 26 | 可折叠的用户消息 | S | 中 | 长消息 8 行预览 + Show more/less |
+| 27 | Turn Duration 显示 | S | 中 | user→assistant 往返时间 |
+| 28 | Session 搜索 | S | 中 | 实时过滤 session 列表 |
+| 29 | 输入历史 | S | 低 | ↑↓ 箭头浏览已发送消息 |
+
+### Phase 2 — Core Enhancements (S-M)
+
+| # | 功能 | 复杂度 | 优先级 | 备注 |
+|---|------|--------|--------|------|
+| 30 | 缺失的 Message Part 渲染 | M | 高 | snapshot/patch/agent/retry/compaction 5 种 |
+| 31 | Retry Status Inline | S | 中 | 重试倒计时 + 可展开错误详情 |
+| 32 | Agent Variant 选择器 | S | 中 | default/fast/deep 思考模式下拉 |
+| 33 | Tool-Specific Renderers | M | 中 | TaskRenderer/TodoRenderer/DefaultRenderer |
+
+### Phase 3 — Major Features (M-L)
+
+| # | 功能 | 复杂度 | 优先级 | 备注 |
+|---|------|--------|--------|------|
+| 34 | @-Mention 系统 | L | 高 | 文件选择器、搜索 API、mention 解析、pill UI |
+| 35 | Fisheye Outline Index | L | 低 | 浮动右侧消息导航 |
+| 36 | Tool Timeline 布局 | M | 低 | 垂直时间线连接器 |
+| 37 | Active Sessions Tab | M | 低 | 侧边栏活跃 session 视图 |
+| 38 | 通知系统 | M | 低 | Toast + 历史面板 |
+
+### 未消费的 Server API
+
+| 端点 | 用途 | 关联功能 |
+|------|------|----------|
+| `GET /file`, `GET /file/content` | 文件浏览 | @-Mention (#34) |
+| `GET /find`, `GET /find/file`, `GET /find/symbol` | 搜索 | @-Mention (#34) |
+| `POST /session/:id/summarize` | AI 上下文压缩 | compaction part (#30) |
+| `POST /session/:id/shell` | Session 内 shell 执行 | 未规划 |
+| `GET /provider/auth` | Provider 认证方式 | Settings 增强 |
+| `GET /experimental/tool/ids`, `GET /experimental/tool` | 工具 schema | Tool renderers (#33) |
+| `GET /experimental/resource` | MCP 资源 | 未规划 |
+| `GET /experimental/workspace`, `POST /experimental/workspace` | 工作区管理 | 未规划 |
+| `GET /experimental/worktree` | Git worktree | 未规划 |
+| `GET /vcs` | VCS/Git 信息 | 未规划 |
+| `GET /command` | 服务端命令列表 | Slash commands 增强 |
+| `GET /skill` | 可用 skills | 未规划 |
 
 ---
 

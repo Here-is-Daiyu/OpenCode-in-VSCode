@@ -8,17 +8,26 @@
  *
  * Assistant messages use a flat transparent container (no bubble).
  * Modeled on the official OpenCode web UI's conversation flow.
+ *
+ * Long user messages are collapsed by default (show ~3 lines) with
+ * a "Show more / Show less" toggle.
  */
 
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import type {
   MessageWithParts,
   AssistantMessage,
+  MessageError,
 } from '../../types/opencode';
 import { useChatStore } from '../../stores/chatStore';
 import { MessageHeader } from './MessageHeader';
 import { MessageContent } from './MessageContent';
 import { MessageFooter } from './MessageFooter';
+
+/** Character threshold after which user messages are collapsible. */
+const COLLAPSE_CHAR_THRESHOLD = 300;
+/** Line threshold after which user messages are collapsible. */
+const COLLAPSE_LINE_THRESHOLD = 4;
 
 interface MessageBubbleProps {
   message: MessageWithParts;
@@ -42,6 +51,21 @@ export const MessageBubble = React.memo(function MessageBubble({
     messages[messages.length - 1].info.id === info.id;
   const showStreamingEffects = isStreaming && isLatestAssistant;
 
+  // --- Collapsible user messages ---
+  const isLongUserMessage = useMemo(() => {
+    if (!isUser) return false;
+    const text = parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .join('\n');
+    return (
+      text.length > COLLAPSE_CHAR_THRESHOLD ||
+      text.split('\n').length >= COLLAPSE_LINE_THRESHOLD
+    );
+  }, [isUser, parts]);
+
+  const [collapsed, setCollapsed] = useState(true);
+
   const roleClass = isUser ? 'msg-bubble--user' : 'msg-bubble--assistant';
   const optimisticClass = isOptimistic ? 'msg-bubble--optimistic' : '';
 
@@ -51,16 +75,40 @@ export const MessageBubble = React.memo(function MessageBubble({
     >
       <MessageHeader info={info} />
 
-      <MessageContent
-        parts={parts}
-        isUser={isUser}
-        isStreaming={showStreamingEffects}
-      />
+      {isUser && isLongUserMessage ? (
+        <>
+          <div
+            className={`msg-bubble__collapse-wrapper${
+              collapsed ? ' msg-bubble__collapse-wrapper--collapsed' : ''
+            }`}
+          >
+            <MessageContent
+              parts={parts}
+              isUser={isUser}
+              isStreaming={false}
+            />
+          </div>
+          <button
+            className="msg-bubble__toggle"
+            onClick={() => setCollapsed((prev) => !prev)}
+            aria-expanded={!collapsed}
+            type="button"
+          >
+            {collapsed ? 'Show more ▸' : 'Show less ▾'}
+          </button>
+        </>
+      ) : (
+        <MessageContent
+          parts={parts}
+          isUser={isUser}
+          isStreaming={showStreamingEffects}
+        />
+      )}
 
       {/* Error display */}
       {!isUser && (info as AssistantMessage).error && (() => {
-        const err = (info as AssistantMessage).error;
-        const errMsg = typeof err === 'string' ? err : (err as any)?.message ?? 'Unknown error';
+        const err = (info as AssistantMessage).error as MessageError;
+        const errMsg = err.message ?? 'Unknown error';
         return (
           <div className="msg-bubble__error">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
@@ -73,7 +121,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
       {/* Footer for completed assistant messages */}
       {!isUser && !showStreamingEffects && (
-        <MessageFooter parts={parts} />
+        <MessageFooter parts={parts} info={info as AssistantMessage} />
       )}
     </div>
   );

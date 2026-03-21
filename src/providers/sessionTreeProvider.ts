@@ -4,10 +4,41 @@ import type { EventBus } from '../services/eventBus';
 import type { OpenCodeClient } from '../services/openCodeClient';
 
 // ---------------------------------------------------------------------------
-//  Tree item
+//  Time group definitions
 // ---------------------------------------------------------------------------
 
+/** Discriminator keys for session time groups, ordered from newest to oldest. */
+const TIME_GROUP_KEYS = ['today', 'yesterday', 'previous7Days', 'previous30Days', 'older'] as const;
+type TimeGroupKey = (typeof TIME_GROUP_KEYS)[number];
+
+const TIME_GROUP_LABELS: Record<TimeGroupKey, string> = {
+  today: 'Today',
+  yesterday: 'Yesterday',
+  previous7Days: 'Previous 7 Days',
+  previous30Days: 'Previous 30 Days',
+  older: 'Older',
+};
+
+// ---------------------------------------------------------------------------
+//  Tree items
+// ---------------------------------------------------------------------------
+
+/**
+ * A collapsible group header in the session tree (e.g. "Today", "Yesterday").
+ */
+export class SessionGroupTreeItem extends vscode.TreeItem {
+  readonly kind = 'group' as const;
+
+  constructor(public readonly groupKey: TimeGroupKey) {
+    super(TIME_GROUP_LABELS[groupKey], vscode.TreeItemCollapsibleState.Expanded);
+    this.contextValue = 'sessionGroup';
+    this.iconPath = new vscode.ThemeIcon('calendar');
+  }
+}
+
 export class SessionTreeItem extends vscode.TreeItem {
+  readonly kind = 'session' as const;
+
   constructor(
     public readonly session: Session,
     public readonly hasChildren: boolean,
@@ -35,6 +66,9 @@ export class SessionTreeItem extends vscode.TreeItem {
   }
 }
 
+/** Union type for all tree items used by the provider. */
+type SessionTreeElement = SessionGroupTreeItem | SessionTreeItem;
+
 // ---------------------------------------------------------------------------
 //  Provider
 // ---------------------------------------------------------------------------
@@ -43,11 +77,14 @@ export class SessionTreeItem extends vscode.TreeItem {
  * Provides a hierarchical session list TreeView.
  *
  * Sessions that have a `parentID` are displayed as children of their parent.
+ * Root-level sessions are grouped by update time (Today, Yesterday, etc.)
+ * unless a text filter is active, in which case a flat list is shown.
+ *
  * The provider subscribes to EventBus session events so the tree refreshes
  * automatically when sessions are created, updated or deleted.
  */
-export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeItem> {
-  private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined>();
+export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeElement> {
+  private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeElement | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private sessions: Session[] = [];
@@ -102,6 +139,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
 
   /**
    * Apply a text filter to sessions. Pass an empty string to clear.
+   * When a filter is active the tree is flattened (no time groups).
    */
   setFilter(text: string): void {
     this.filterText = text.toLowerCase();
@@ -143,34 +181,67 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
   //  TreeDataProvider
   // -------------------------------------------------------------------------
 
-  getTreeItem(element: SessionTreeItem): vscode.TreeItem {
+  getTreeItem(element: SessionTreeElement): vscode.TreeItem {
     return element;
   }
 
-  async getChildren(element?: SessionTreeItem): Promise<SessionTreeItem[]> {
-    if (element) {
-      // Return children of the given parent session
+  async getChildren(element?: SessionTreeElement): Promise<SessionTreeElement[]> {
+    if (!element) {
+      // Root level
+      if (this.filterText) {
+        // When filtering, show a flat list (no time groups)
+        return this.buildItems(undefined);
+      }
+      // Show time-grouped headers
+      return this.buildGroupItems();
+    }
+
+    if (element instanceof SessionGroupTreeItem) {
+      // Children of a time group: root sessions in that time bucket
+      return this.buildItemsForGroup(element.groupKey);
+    }
+
+    if (element instanceof SessionTreeItem) {
+      // Children of a session (subtask / child sessions)
       return this.buildItems(element.session.id);
     }
-    // Top-level: sessions without a parentID (root sessions)
-    return this.buildItems(undefined);
+
+    return [];
   }
 
-  getParent(element: SessionTreeItem): SessionTreeItem | undefined {
-    if (!element.session.parentID) {
+  getParent(element: SessionTreeElement): SessionTreeElement | undefined {
+    if (element instanceof SessionGroupTreeItem) {
+      // Groups are top-level items
       return undefined;
     }
-    const parent = this.sessions.find(s => s.id === element.session.parentID);
-    if (!parent) {
-      return undefined;
+
+    if (element instanceof SessionTreeItem) {
+      const session = element.session;
+
+      if (session.parentID) {
+        // Child session → parent is another SessionTreeItem
+        const parent = this.sessions.find(s => s.id === session.parentID);
+        if (!parent) {
+          return undefined;
+        }
+        const hasChildren = this.sessions.some(s => s.parentID === parent.id);
+        return new SessionTreeItem(
+          parent,
+          hasChildren,
+          parent.id === this.activeSessionId,
+          this.sessionStatuses[parent.id],
+        );
+      }
+
+      // Root-level session → parent is a group item (unless filtering)
+      if (this.filterText) {
+        return undefined;
+      }
+      const groupKey = getTimeGroup(session.time.updated);
+      return new SessionGroupTreeItem(groupKey);
     }
-    const hasChildren = this.sessions.some(s => s.parentID === parent.id);
-    return new SessionTreeItem(
-      parent,
-      hasChildren,
-      parent.id === this.activeSessionId,
-      this.sessionStatuses[parent.id],
-    );
+
+    return undefined;
   }
 
   // -------------------------------------------------------------------------
@@ -193,7 +264,47 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
   // -------------------------------------------------------------------------
 
   /**
-   * Build tree items for children of `parentId` (or root items when
+   * Build group header items for root level. Only returns groups that
+   * contain at least one root session.
+   */
+  private buildGroupItems(): SessionGroupTreeItem[] {
+    const rootSessions = this.sessions.filter(s => !s.parentID);
+    if (rootSessions.length === 0) {
+      return [];
+    }
+
+    // Determine which groups have sessions
+    const populatedGroups = new Set<TimeGroupKey>();
+    for (const session of rootSessions) {
+      populatedGroups.add(getTimeGroup(session.time.updated));
+    }
+
+    // Return groups in chronological order (newest first), only those with sessions
+    return TIME_GROUP_KEYS
+      .filter(key => populatedGroups.has(key))
+      .map(key => new SessionGroupTreeItem(key));
+  }
+
+  /**
+   * Build session tree items for a specific time group.
+   */
+  private buildItemsForGroup(groupKey: TimeGroupKey): SessionTreeItem[] {
+    const rootSessions = this.sessions
+      .filter(s => !s.parentID && getTimeGroup(s.time.updated) === groupKey);
+
+    // Sort by most recently updated first
+    rootSessions.sort((a, b) => b.time.updated - a.time.updated);
+
+    return rootSessions.map(session => {
+      const hasChildren = this.sessions.some(s => s.parentID === session.id);
+      const isActive = session.id === this.activeSessionId;
+      const status = this.sessionStatuses[session.id];
+      return new SessionTreeItem(session, hasChildren, isActive, status);
+    });
+  }
+
+  /**
+   * Build tree items for children of `parentId` (or filtered root items when
    * `parentId` is `undefined`).
    */
   private buildItems(parentId: string | undefined): SessionTreeItem[] {
@@ -216,6 +327,35 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       return new SessionTreeItem(session, hasChildren, isActive, status);
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+//  Time group helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine which time group a given epoch-millisecond timestamp belongs to.
+ */
+function getTimeGroup(epochMs: number): TimeGroupKey {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const yesterdayStart = todayStart - 86_400_000;
+  const sevenDaysAgoStart = todayStart - 7 * 86_400_000;
+  const thirtyDaysAgoStart = todayStart - 30 * 86_400_000;
+
+  if (epochMs >= todayStart) {
+    return 'today';
+  }
+  if (epochMs >= yesterdayStart) {
+    return 'yesterday';
+  }
+  if (epochMs >= sevenDaysAgoStart) {
+    return 'previous7Days';
+  }
+  if (epochMs >= thirtyDaysAgoStart) {
+    return 'previous30Days';
+  }
+  return 'older';
 }
 
 // ---------------------------------------------------------------------------

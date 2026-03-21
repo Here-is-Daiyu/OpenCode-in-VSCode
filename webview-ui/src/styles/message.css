@@ -992,3 +992,82 @@
 .msg-width-sm { max-width: 28rem; }
 .msg-width-md { max-width: 40rem; }
 .msg-width-lg { max-width: 56rem; }
+
+/* ====================================================================
+ * Collapsible user message (#26)
+ * ==================================================================== */
+
+.msg-bubble__collapse-wrapper {
+  position: relative;
+  overflow: hidden;
+  transition: max-height 0.2s ease;
+}
+
+.msg-bubble__collapse-wrapper--collapsed {
+  max-height: 4.8em; /* ~3 lines at 1.6 line-height */
+}
+
+.msg-bubble__collapse-wrapper--collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, var(--background-base));
+  pointer-events: none;
+}
+
+.msg-bubble__toggle {
+  appearance: none;
+  border: none;
+  background: none;
+  padding: 2px 0;
+  color: var(--text-interactive-base);
+  font-size: var(--font-size-small);
+  font-family: inherit;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+
+.msg-bubble__toggle:hover {
+  color: var(--text-interactive-base);
+  filter: brightness(1.2);
+}
+
+/* ====================================================================
+ * Footer stats — turn duration, tokens, cost (#27)
+ * ==================================================================== */
+
+.msg-footer__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-weaker);
+  font-size: 11px;
+  line-height: 1;
+  margin-right: auto;
+  opacity: 0;
+  transform: translateY(2px);
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+
+.msg-bubble:hover .msg-footer__stats,
+.msg-footer__stats:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.msg-footer__stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.msg-footer__stat svg {
+  display: block;
+  opacity: 0.7;
+}

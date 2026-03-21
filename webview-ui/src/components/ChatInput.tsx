@@ -12,6 +12,7 @@ import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
 import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
 import { useCommandStore } from '../stores/commandStore';
+import { useInputHistory } from '../hooks/useInputHistory';
 
 /** Maximum file size for image attachments in bytes (10 MB) */
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
@@ -42,6 +43,8 @@ export function ChatInput() {
   const commandsLoading = useCommandStore((s) => s.loading);
   const initCommandListener = useCommandStore((s) => s.initListener);
   const fetchCommands = useCommandStore((s) => s.fetchCommands);
+
+  const { addToHistory, navigateUp, navigateDown, reset: resetHistory } = useInputHistory();
 
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
@@ -82,6 +85,10 @@ export function ChatInput() {
 
     const text = inputText.trim();
     const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
+
+    // Add to input history before clearing
+    addToHistory(text);
+    resetHistory();
 
     // Check if this is a command execution (starts with / followed by a known command name)
     const commandMatch = text.match(/^\/(\S+)(?:\s+(.*))?$/s);
@@ -130,7 +137,7 @@ export function ChatInput() {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [canSend, inputText, attachedImages, commands, addOptimisticMessage, setInputText]);
+  }, [canSend, inputText, attachedImages, commands, addOptimisticMessage, setInputText, addToHistory, resetHistory]);
 
   const handleStop = useCallback(() => {
     postMessage({ type: 'chat:abort' });
@@ -162,13 +169,59 @@ export function ChatInput() {
         }
       }
 
+      // Input history navigation with ↑/↓ (only when cursor is at first/last line)
+      const textarea = textareaRef.current;
+      if (textarea && !slashOpen) {
+        if (e.key === 'ArrowUp') {
+          const cursorPos = textarea.selectionStart;
+          const textBeforeCursor = inputText.slice(0, cursorPos);
+          // At first line: no newline before cursor
+          if (!textBeforeCursor.includes('\n')) {
+            const result = navigateUp(inputText);
+            if (result !== null) {
+              e.preventDefault();
+              setInputText(result);
+              // Move cursor to end after React re-renders
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.selectionStart = result.length;
+                  textareaRef.current.selectionEnd = result.length;
+                }
+              }, 0);
+            }
+            return;
+          }
+        }
+
+        if (e.key === 'ArrowDown') {
+          const cursorPos = textarea.selectionStart;
+          const textAfterCursor = inputText.slice(cursorPos);
+          // At last line: no newline after cursor
+          if (!textAfterCursor.includes('\n')) {
+            const result = navigateDown();
+            if (result !== null) {
+              e.preventDefault();
+              setInputText(result);
+              // Move cursor to end after React re-renders
+              setTimeout(() => {
+                if (textareaRef.current) {
+                  textareaRef.current.selectionStart = result.length;
+                  textareaRef.current.selectionEnd = result.length;
+                }
+              }, 0);
+            }
+            return;
+          }
+        }
+      }
+
       // Enter to send, Shift+Enter for newline
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [slashOpen, filteredCommands.length, handleSend]
+    [slashOpen, filteredCommands.length, handleSend, inputText, navigateUp, navigateDown, setInputText]
   );
 
   const handleChange = useCallback(
@@ -434,7 +487,7 @@ export function ChatInput() {
         </div>
 
         <div className="chat-input__hint">
-          <span>Enter to send · Shift+Enter for new line</span>
+          <span>Enter to send · Shift+Enter for new line · ↑↓ for history</span>
         </div>
         <TokenUsageBar />
       </div>

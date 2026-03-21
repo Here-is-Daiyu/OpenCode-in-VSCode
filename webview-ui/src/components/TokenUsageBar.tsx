@@ -83,13 +83,22 @@ export function TokenUsageBar() {
   const segments = getTokenSegments(lastTokens);
   const limit = contextLimit > 0 ? contextLimit : totalUsed;
 
+  // Context usage percentage and color coding
+  const usagePercent = contextLimit > 0 ? (totalUsed / contextLimit) * 100 : 0;
+  const trackClass =
+    contextLimit > 0 && usagePercent >= 90
+      ? 'token-bar__track token-bar__track--danger'
+      : contextLimit > 0 && usagePercent >= 70
+        ? 'token-bar__track token-bar__track--warning'
+        : 'token-bar__track';
+
   return (
     <div
       className="token-bar"
       onMouseEnter={() => setTooltipVisible(true)}
       onMouseLeave={() => setTooltipVisible(false)}
     >
-      <div className="token-bar__track">
+      <div className={trackClass}>
         {segments.map((seg) => (
           <div
             key={seg.key}
@@ -104,6 +113,11 @@ export function TokenUsageBar() {
       <span className="token-bar__label">
         {formatTokenCount(totalUsed)}
         {contextLimit > 0 ? ` / ${formatTokenCount(contextLimit)}` : ''}
+        {contextLimit > 0 && (
+          <span className="token-bar__pct">
+            {` (${Math.round(usagePercent)}%)`}
+          </span>
+        )}
       </span>
 
       {tooltipVisible && (

@@ -1875,3 +1875,20 @@ textarea {
     right: 0;
   }
 }
+
+/* ====================================================================
+ * Context usage color coding
+ * ==================================================================== */
+
+.token-bar__track--warning {
+  background: color-mix(in srgb, var(--icon-warning-base) 15%, var(--surface-base));
+}
+
+.token-bar__track--danger {
+  background: color-mix(in srgb, var(--icon-critical-base) 15%, var(--surface-base));
+}
+
+.token-bar__pct {
+  color: inherit;
+  font-variant-numeric: tabular-nums;
+}

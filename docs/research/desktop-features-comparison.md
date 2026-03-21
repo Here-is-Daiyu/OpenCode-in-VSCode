@@ -34,7 +34,7 @@ Comparison between OpenCode Desktop application features and our planned VS Code
 | Context usage | ✅ | ✅ | |
 | Todo list | ✅ | ✅ Panel in sidebar | |
 | Slash commands | ✅ | ✅ | |
-| File references (@) | ✅ | ✅ Autocomplete | |
+| File references (@) | ✅ | ❌ Not implemented | Placeholder text only — no file picker, mention parsing, or context provider |
 | Voice input | ❌ (OpenGUI has it) | 🔮 Future | |
 | Prompt queue | ❌ (OpenGUI has it) | 🔮 Future | |
 | Multi-project | ✅ | ✅ VSCode workspaces | Better: native workspaces |
