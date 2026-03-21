@@ -10,6 +10,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useModelStore } from '../../stores/modelStore';
+import { useAgentStore } from '../../stores/agentStore';
 import { useMessageListener } from '../../hooks/useMessageListener';
 import { postMessage } from '../../utils/vscodeApi';
 import { MessageBubble } from '../../components/message';
@@ -428,7 +429,7 @@ export function ChatApp() {
           }
 
           case 'agents:updated':
-            useChatStore.getState().setAgents(message.data);
+            useAgentStore.getState().setAgents(message.data);
             break;
 
           case 'todos:updated':
@@ -436,6 +437,7 @@ export function ChatApp() {
 
           case 'config:updated':
             useModelStore.getState().setConfig(message.data);
+            useAgentStore.getState().setSelectedAgent(message.data.agent);
             break;
 
           case 'providers:updated':

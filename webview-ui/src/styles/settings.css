@@ -587,6 +587,13 @@ textarea {
 
 .setting-number-input__field {
   max-width: 160px;
+  -moz-appearance: textfield;
+}
+
+.setting-number-input__field::-webkit-inner-spin-button,
+.setting-number-input__field::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .setting-number-input__value {
@@ -618,6 +625,14 @@ textarea {
   border-radius: 999px;
   background: color-mix(in srgb, var(--text-weaker) 24%, transparent);
   outline: none;
+  cursor: pointer;
+}
+
+.setting-number-input__slider::-moz-range-track {
+  height: 6px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-weaker) 28%, transparent);
 }
 
 .setting-number-input__slider::-webkit-slider-thumb {
@@ -630,6 +645,16 @@ textarea {
   background: var(--accent-primary);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.setting-number-input__slider:hover::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--border-selected) 42%, transparent);
+}
+
+.setting-number-input__slider:active::-webkit-slider-thumb {
+  transform: scale(0.95);
 }
 
 .setting-number-input__slider::-moz-range-thumb {
@@ -637,8 +662,19 @@ textarea {
   height: 16px;
   border: 2px solid white;
   border-radius: 999px;
-  background: var(--accent-primary);
+  background: var(--border-selected);
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--border-selected) 28%, transparent);
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.setting-number-input__slider:hover::-moz-range-thumb {
+  transform: scale(1.15);
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--border-selected) 42%, transparent);
+}
+
+.setting-number-input__slider:active::-moz-range-thumb {
+  transform: scale(0.95);
 }
 
 .setting-number-input__range-label {
