@@ -362,6 +362,11 @@
   font-style: italic;
 }
 
+.msg-reasoning__spinner {
+  animation: spin 1s linear infinite;
+  transform-origin: center;
+}
+
 /* ====================================================================
  * Tool call — compact official style
  * ==================================================================== */
@@ -495,6 +500,7 @@
  * Context tool group — collapsible grouped tool calls
  * ==================================================================== */
 
+.msg-tool,
 .msg-context-group {
   width: min(100%, 40rem);
   min-width: 0;
