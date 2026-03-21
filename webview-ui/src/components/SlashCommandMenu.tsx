@@ -5,6 +5,13 @@
  * slash commands with keyboard navigation and mouse interaction support.
  * Parent controls visibility and the filtered command list; this component
  * exposes imperative navigation methods via ref.
+ *
+ * Features:
+ * - Loading state with spinner
+ * - Empty states (no commands / no match)
+ * - Click-outside-to-close
+ * - Dynamic max-height based on viewport space
+ * - Footer with keyboard navigation hints
  */
 
 import React, {
@@ -12,6 +19,7 @@ import React, {
   useImperativeHandle,
   useRef,
   useEffect,
+  useLayoutEffect,
   useCallback,
   useState,
 } from 'react';
@@ -33,14 +41,28 @@ interface SlashCommandMenuProps {
   commands: SlashCommand[];
   /** Whether the menu should be shown. */
   visible: boolean;
+  /** Whether commands are currently being fetched. */
+  loading: boolean;
+  /** Current slash command query text (without the leading slash). */
+  query: string;
   /** Called when a command is selected (via keyboard or click). */
   onSelect: (command: SlashCommand) => void;
+  /** Called when the menu should close (e.g. click outside). */
+  onClose: () => void;
 }
 
+/** Padding from the top of the viewport (px). */
+const VIEWPORT_TOP_PADDING = 8;
+/** Maximum allowed menu height (px). */
+const MAX_HEIGHT_CAP = 300;
+/** Minimum allowed menu height (px). */
+const MIN_HEIGHT_CAP = 120;
+
 export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandMenuProps>(
-  function SlashCommandMenu({ commands, visible, onSelect }, ref) {
+  function SlashCommandMenu({ commands, visible, loading, query, onSelect, onClose }, ref) {
     const [highlightIndex, setHighlightIndex] = useState(0);
     const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     // Reset highlight when the command list changes
     useEffect(() => {
@@ -54,6 +76,42 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
         el.scrollIntoView({ block: 'nearest' });
       }
     }, [highlightIndex]);
+
+    // Click-outside-to-close
+    useEffect(() => {
+      if (!visible) return;
+
+      const handlePointerDown = (e: PointerEvent) => {
+        if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+          onClose();
+        }
+      };
+
+      document.addEventListener('pointerdown', handlePointerDown);
+      return () => {
+        document.removeEventListener('pointerdown', handlePointerDown);
+      };
+    }, [visible, onClose]);
+
+    // Dynamic max-height based on available viewport space above the menu
+    useLayoutEffect(() => {
+      if (!visible || !menuRef.current) return;
+
+      const rafId = requestAnimationFrame(() => {
+        const el = menuRef.current;
+        if (!el) return;
+
+        const rect = el.getBoundingClientRect();
+        // The menu is positioned above the input (bottom: calc(100% + 4px)),
+        // so rect.bottom is approximately the top edge of the input area.
+        // Available space is from the top of the viewport to the menu's bottom.
+        const available = rect.bottom - VIEWPORT_TOP_PADDING;
+        const clamped = Math.max(MIN_HEIGHT_CAP, Math.min(MAX_HEIGHT_CAP, available));
+        el.style.setProperty('--slash-menu-max-height', `${clamped}px`);
+      });
+
+      return () => cancelAnimationFrame(rafId);
+    }, [visible]);
 
     const moveUp = useCallback(() => {
       setHighlightIndex((prev) => (prev <= 0 ? commands.length - 1 : prev - 1));
@@ -80,16 +138,38 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
       [moveUp, moveDown, selectCurrent, getSelectedCommand],
     );
 
-    // Nothing to render
-    if (!visible || commands.length === 0) {
+    // Not visible at all
+    if (!visible) {
       return null;
+    }
+
+    // Loading state: show spinner
+    if (loading && commands.length === 0) {
+      return (
+        <div ref={menuRef} className="slash-menu" role="status">
+          <div className="slash-menu__loading">
+            <div className="slash-menu__spinner" />
+            <span>Loading commands…</span>
+          </div>
+        </div>
+      );
+    }
+
+    // Empty states
+    if (commands.length === 0) {
+      const message = query === '' ? 'No commands available' : 'No matching commands';
+      return (
+        <div ref={menuRef} className="slash-menu" role="status">
+          <div className="slash-menu__empty">{message}</div>
+        </div>
+      );
     }
 
     // Keep the refs array in sync with the command list length
     itemRefs.current = itemRefs.current.slice(0, commands.length);
 
     return (
-      <div className="slash-menu" role="listbox">
+      <div ref={menuRef} className="slash-menu" role="listbox">
         {commands.map((cmd, index) => (
           <div
             key={cmd.name}
@@ -113,6 +193,14 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, SlashCommandM
             )}
           </div>
         ))}
+        <div className="slash-menu__footer" aria-label="Keyboard shortcuts: Arrow keys to navigate, Enter to select, Escape to close">
+          {loading && <span className="slash-menu__loading-hint">Loading…</span>}
+          <kbd>↑↓</kbd> Navigate
+          <span className="slash-menu__footer-sep">·</span>
+          <kbd>Enter</kbd> Select
+          <span className="slash-menu__footer-sep">·</span>
+          <kbd>Esc</kbd> Close
+        </div>
       </div>
     );
   },

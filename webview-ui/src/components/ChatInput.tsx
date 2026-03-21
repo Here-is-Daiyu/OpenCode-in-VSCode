@@ -10,8 +10,8 @@ import { AgentSelector } from './AgentSelector';
 import { TokenUsageBar } from './TokenUsageBar';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
-import { FRONTEND_COMMANDS, detectSlashTrigger, filterCommands } from '../utils/slashCommands';
-import type { SlashCommand } from '../utils/slashCommands';
+import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
+import { useCommandStore } from '../stores/commandStore';
 
 /** Maximum file size for image attachments in bytes (10 MB) */
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
@@ -37,42 +37,26 @@ export function ChatInput() {
   const addImage = useChatStore((s) => s.addImage);
   const addOptimisticMessage = useChatStore((s) => s.addOptimisticMessage);
 
-  // Slash command state
+  // Slash command state from store
+  const commands = useCommandStore((s) => s.commands);
+  const commandsLoading = useCommandStore((s) => s.loading);
+  const initCommandListener = useCommandStore((s) => s.initListener);
+  const fetchCommands = useCommandStore((s) => s.fetchCommands);
+
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
-  const [apiCommands, setApiCommands] = useState<SlashCommand[]>([]);
 
-  // Fetch API commands from extension host
+  // Initialize command store listener and do initial fetch
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      const msg = event.data;
-      if (msg?.type === 'command:listed' && Array.isArray(msg.data?.commands)) {
-        setApiCommands(
-          msg.data.commands.map((cmd: { name: string; description?: string }) => ({
-            name: cmd.name,
-            description: cmd.description,
-            source: 'api' as const,
-          }))
-        );
-      }
-    };
+    const cleanup = initCommandListener();
+    fetchCommands();
+    return cleanup;
+  }, [initCommandListener, fetchCommands]);
 
-    window.addEventListener('message', handleMessage);
-    // Request commands from extension
-    postMessage({ type: 'command:list' });
-
-    return () => window.removeEventListener('message', handleMessage);
-  }, []);
-
-  // Merge frontend + API commands, then filter by current query
-  const allCommands = useMemo(
-    () => [...FRONTEND_COMMANDS, ...apiCommands],
-    [apiCommands]
-  );
-
+  // Filter commands by current query
   const filteredCommands = useMemo(
-    () => filterCommands(allCommands, slashQuery),
-    [allCommands, slashQuery]
+    () => filterCommands(commands, slashQuery),
+    [commands, slashQuery]
   );
 
   const canSend = connected && inputText.trim().length > 0;
@@ -95,10 +79,44 @@ export function ChatInput() {
     const text = inputText.trim();
     const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
 
-    // Optimistic update: add message to store immediately, clear input
+    // Check if this is a command execution (starts with / followed by a known command name)
+    const commandMatch = text.match(/^\/(\S+)(?:\s+(.*))?$/s);
+    if (commandMatch) {
+      const cmdName = commandMatch[1];
+      const cmdArgs = commandMatch[2]?.trim() || undefined;
+      const matchedCommand = commands.find(
+        (c) => c.name.toLowerCase() === cmdName.toLowerCase()
+      );
+
+      if (matchedCommand) {
+        setInputText('');
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
+
+        if (matchedCommand.source === 'frontend') {
+          switch (matchedCommand.name) {
+            case 'new':
+              postMessage({ type: 'session:create' });
+              break;
+            case 'compact':
+              addOptimisticMessage('/compact');
+              postMessage({ type: 'chat:send', data: { text: '/compact' } });
+              break;
+          }
+        } else {
+          postMessage({
+            type: 'command:execute',
+            data: { command: matchedCommand.name, args: cmdArgs },
+          });
+        }
+        return;
+      }
+    }
+
+    // Regular message send
     addOptimisticMessage(text, images);
 
-    // Fire-and-forget: send to extension host
     postMessage({
       type: 'chat:send',
       data: { text, images },
@@ -108,7 +126,7 @@ export function ChatInput() {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [canSend, inputText, attachedImages, addOptimisticMessage]);
+  }, [canSend, inputText, attachedImages, commands, addOptimisticMessage, setInputText]);
 
   const handleStop = useCallback(() => {
     postMessage({ type: 'chat:abort' });
@@ -158,6 +176,10 @@ export function ChatInput() {
       // Detect slash trigger
       const trigger = detectSlashTrigger(value, cursorPos);
       if (trigger) {
+        if (!slashOpen) {
+          // Trigger fetch when menu first opens (respects TTL internally)
+          fetchCommands();
+        }
         setSlashOpen(true);
         setSlashQuery(trigger.query);
       } else {
@@ -165,43 +187,54 @@ export function ChatInput() {
         setSlashQuery('');
       }
     },
-    [setInputText]
+    [setInputText, slashOpen, fetchCommands]
   );
 
   const handleSlashSelect = useCallback(
-    (command: SlashCommand) => {
+    (command: { name: string; description?: string; source: 'frontend' | 'api' }) => {
       setSlashOpen(false);
       setSlashQuery('');
-      setInputText('');
-
-      // Reset textarea height
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.focus();
-      }
 
       if (command.source === 'frontend') {
-        // Handle frontend commands locally
+        // Frontend commands execute immediately
+        setInputText('');
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.focus();
+        }
+
         switch (command.name) {
           case 'new':
             postMessage({ type: 'session:create' });
             break;
           case 'compact':
-            // Send /compact as a regular message to be processed by the server
             addOptimisticMessage('/compact');
             postMessage({ type: 'chat:send', data: { text: '/compact' } });
             break;
         }
       } else {
-        // API command: send via command:execute
-        postMessage({
-          type: 'command:execute',
-          data: { command: command.name },
-        });
+        // API commands: set input to "/commandName " so user can add arguments
+        const newText = `/${command.name} `;
+        setInputText(newText);
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          // Use setTimeout(0) to ensure React has committed the DOM update
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.selectionStart = newText.length;
+              textareaRef.current.selectionEnd = newText.length;
+            }
+          }, 0);
+        }
       }
     },
     [setInputText, addOptimisticMessage]
   );
+
+  const handleSlashClose = useCallback(() => {
+    setSlashOpen(false);
+    setSlashQuery('');
+  }, []);
 
   const processImageFile = useCallback(
     (file: File) => {
@@ -293,7 +326,10 @@ export function ChatInput() {
             ref={slashMenuRef}
             commands={filteredCommands}
             visible={slashOpen}
+            loading={commandsLoading}
+            query={slashQuery}
             onSelect={handleSlashSelect}
+            onClose={handleSlashClose}
           />
           <div className="chat-input__shell">
             <div className="chat-input__row">
