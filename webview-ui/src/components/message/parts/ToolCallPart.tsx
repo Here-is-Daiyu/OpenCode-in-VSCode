@@ -6,30 +6,35 @@
  *     [Show results ▸] / [Hide results ▾]
  *     (collapsed content when expanded)
  *     2.5s (only if duration > 2000ms)
+ *
+ * Specialized renderers are dispatched for certain tools (todo, bash, edit/write).
  */
 
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import type { ToolPart } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
 import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
+import { TodoRenderer } from './TodoRenderer';
+import { BashRenderer } from './BashRenderer';
+import { EditRenderer } from './EditRenderer';
 
 // ---------------------------------------------------------------------------
-// Tool helpers
+// Tool helpers (exported for use by specialized renderers)
 // ---------------------------------------------------------------------------
 
 const CONTEXT_TOOLS = new Set(['read', 'list', 'glob', 'grep']);
 
 const EMPTY_RECORD: Record<string, unknown> = {};
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-function toRecord(value: unknown): Record<string, unknown> {
+export function toRecord(value: unknown): Record<string, unknown> {
   return isRecord(value) ? value : EMPTY_RECORD;
 }
 
-function stringifyValue(value: unknown): string {
+export function stringifyValue(value: unknown): string {
   if (typeof value === 'string') {
     return value;
   }
@@ -45,7 +50,7 @@ function stringifyValue(value: unknown): string {
   }
 }
 
-function getToolName(value: unknown): string {
+export function getToolName(value: unknown): string {
   return typeof value === 'string' && value ? value : 'tool';
 }
 
@@ -107,7 +112,7 @@ function getToolIcon(toolName: string): React.ReactNode {
 // Arg summary — returns structured info so file paths can be made clickable
 // ---------------------------------------------------------------------------
 
-interface ArgsSummaryInfo {
+export interface ArgsSummaryInfo {
   text: string;
   /** If set, clicking the summary should open this file. */
   filePath?: string;
@@ -115,7 +120,7 @@ interface ArgsSummaryInfo {
   line?: number;
 }
 
-function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInfo {
+export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInfo {
   const name = tool.toLowerCase();
   const value = toRecord(input);
 
@@ -179,7 +184,7 @@ function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInfo {
 // Format helpers
 // ---------------------------------------------------------------------------
 
-function formatDuration(ms: number): string {
+export function formatDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
@@ -212,7 +217,8 @@ export interface ToolCallPartProps {
   grouped?: boolean;
 }
 
-export const ToolCallPart = React.memo(function ToolCallPart({
+/** Generic renderer — used for all tools without a specialized renderer. */
+const GenericToolCallPart = React.memo(function GenericToolCallPart({
   part,
   grouped,
 }: ToolCallPartProps) {
@@ -335,6 +341,31 @@ export const ToolCallPart = React.memo(function ToolCallPart({
       )}
     </div>
   );
+});
+
+// ---------------------------------------------------------------------------
+// Dispatcher — routes to specialized renderers or falls back to generic
+// ---------------------------------------------------------------------------
+
+export const ToolCallPart = React.memo(function ToolCallPart({
+  part,
+  grouped,
+}: ToolCallPartProps) {
+  const tool = getToolName(part.tool).toLowerCase();
+
+  switch (tool) {
+    case 'todowrite':
+    case 'todoread':
+      return <TodoRenderer part={part} />;
+    case 'bash':
+    case 'shell':
+      return <BashRenderer part={part} grouped={grouped} />;
+    case 'edit':
+    case 'write':
+      return <EditRenderer part={part} grouped={grouped} />;
+    default:
+      return <GenericToolCallPart part={part} grouped={grouped} />;
+  }
 });
 
 export { CONTEXT_TOOLS, getToolIcon };

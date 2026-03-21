@@ -24,6 +24,9 @@ export function AgentSelector() {
   const containerRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  // Filter out hidden agents for the dropdown
+  const visibleAgents = agents.filter((a) => !a.hidden);
+
   // Derive current agent label
   const currentAgent = agents.find((a) => a.name === selectedAgent);
   const displayName = currentAgent ? capitalize(currentAgent.name) : selectedAgent ? capitalize(selectedAgent) : 'Agent';
@@ -71,8 +74,8 @@ export function AgentSelector() {
     [setSelectedAgent]
   );
 
-  // Don't render if no agents available
-  if (agents.length === 0) {
+  // Don't render if no visible agents available
+  if (visibleAgents.length === 0) {
     return null;
   }
 
@@ -100,6 +103,9 @@ export function AgentSelector() {
           <path d="M6.5 13.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1H7a.5.5 0 0 1-.5-.5z" />
         </svg>
         <span className="agent-selector__name">{displayName}</span>
+        {currentAgent?.model && (
+          <span className="agent-selector__model-badge">{currentAgent.model}</span>
+        )}
         <svg
           className="agent-selector__chevron"
           width="10"
@@ -113,7 +119,7 @@ export function AgentSelector() {
 
       {isOpen && (
         <div className="agent-selector__dropdown" role="listbox">
-          {agents.map((agent) => {
+          {visibleAgents.map((agent) => {
             const isSelected = agent.name === selectedAgent;
             return (
               <div
@@ -123,8 +129,16 @@ export function AgentSelector() {
                 aria-selected={isSelected}
                 onClick={() => handleSelect(agent.name)}
               >
-                <span className="agent-selector__item-name">{capitalize(agent.name)}</span>
-                {agent.description && (
+                <span className="agent-selector__item-name">
+                  {capitalize(agent.name)}
+                  {agent.mode === 'subagent' && (
+                    <span className="agent-selector__item-mode">(sub)</span>
+                  )}
+                </span>
+                {agent.model && (
+                  <span className="agent-selector__item-model">{agent.model}</span>
+                )}
+                {!agent.model && agent.description && (
                   <span className="agent-selector__item-desc">{agent.description}</span>
                 )}
                 {isSelected && (

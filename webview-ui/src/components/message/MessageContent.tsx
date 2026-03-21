@@ -13,6 +13,11 @@ import type {
   StepFinishPart,
   FilePart as FilePartType,
   SubtaskPart as SubtaskPartType,
+  SnapshotPart,
+  PatchPart,
+  AgentPart,
+  RetryPart,
+  CompactionPart,
 } from '../../types/opencode';
 
 import { TextPart } from './parts/TextPart';
@@ -22,6 +27,11 @@ import { ContextToolGroup, isContextTool } from './parts/ContextToolGroup';
 import { StepStartIndicator, StepFinishIndicator } from './parts/StepIndicator';
 import { FilePart } from './parts/FilePart';
 import { SubtaskPartComponent } from './parts/SubtaskPart';
+import { SnapshotPartView } from './parts/SnapshotPart';
+import { PatchPartView } from './parts/PatchPartView';
+import { AgentPartView } from './parts/AgentPartView';
+import { RetryPartView } from './parts/RetryPartView';
+import { CompactionPartView } from './parts/CompactionPartView';
 
 interface MessageContentProps {
   parts: Part[];
@@ -38,7 +48,12 @@ type RenderChunk =
   | { kind: 'step-start'; id: string; part: StepStartPart }
   | { kind: 'step-finish'; id: string; part: StepFinishPart }
   | { kind: 'file'; id: string; part: FilePartType }
-  | { kind: 'subtask'; id: string; part: SubtaskPartType };
+  | { kind: 'subtask'; id: string; part: SubtaskPartType }
+  | { kind: 'snapshot'; id: string; part: SnapshotPart }
+  | { kind: 'patch'; id: string; part: PatchPart }
+  | { kind: 'agent-marker'; id: string; part: AgentPart }
+  | { kind: 'retry'; id: string; part: RetryPart }
+  | { kind: 'compaction'; id: string; part: CompactionPart };
 
 function getPartText(value: unknown): string {
   return typeof value === 'string' ? value : '';
@@ -156,8 +171,42 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
         chunks.push({ kind: 'subtask', id: part.id, part });
         break;
 
+      case 'snapshot':
+        flushText();
+        flushReasoning();
+        flushContext();
+        chunks.push({ kind: 'snapshot', id: part.id, part });
+        break;
+
+      case 'patch':
+        flushText();
+        flushReasoning();
+        flushContext();
+        chunks.push({ kind: 'patch', id: part.id, part });
+        break;
+
+      case 'agent':
+        flushText();
+        flushReasoning();
+        flushContext();
+        chunks.push({ kind: 'agent-marker', id: part.id, part });
+        break;
+
+      case 'retry':
+        flushText();
+        flushReasoning();
+        flushContext();
+        chunks.push({ kind: 'retry', id: part.id, part });
+        break;
+
+      case 'compaction':
+        flushText();
+        flushReasoning();
+        flushContext();
+        chunks.push({ kind: 'compaction', id: part.id, part });
+        break;
+
       default:
-        // snapshot, patch, agent, retry, compaction — skip for now
         break;
     }
   }
@@ -171,16 +220,14 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
 
 /**
  * Filter parts before rendering (matching official OpenCode web UI).
- * Removes snapshot, patch, step-finish, duplicate step-starts, etc.
+ * Removes step-finish, duplicate step-starts, etc.
  */
 function filterParts(parts: Part[]): Part[] {
   return parts.filter((part, index) => {
-    if (part.type === 'snapshot') return false;
-    if (part.type === 'patch') return false;
     if (part.type === 'step-finish') return false;
     if (part.type === 'tool' && part.tool === 'todoread') return false;
     if (part.type === 'step-start' && index > 0) return false; // Only first step-start
-    if (part.type === 'text' && 'synthetic' in part && (part as any).synthetic) return false;
+    if (part.type === 'text' && 'synthetic' in part && (part as Record<string, unknown>).synthetic) return false;
     if (part.type === 'text' && !part.text) return false; // Empty text
     // Note: we still show running tools for streaming UX
     return true;
@@ -232,6 +279,16 @@ export const MessageContent = React.memo(function MessageContent({
             return <FilePart key={chunk.id} part={chunk.part} />;
           case 'subtask':
             return <SubtaskPartComponent key={chunk.id} part={chunk.part} />;
+          case 'snapshot':
+            return <SnapshotPartView key={chunk.id} part={chunk.part} />;
+          case 'patch':
+            return <PatchPartView key={chunk.id} part={chunk.part} />;
+          case 'agent-marker':
+            return <AgentPartView key={chunk.id} part={chunk.part} />;
+          case 'retry':
+            return <RetryPartView key={chunk.id} part={chunk.part} isStreaming={isStreaming} />;
+          case 'compaction':
+            return <CompactionPartView key={chunk.id} part={chunk.part} />;
           default:
             return null;
         }

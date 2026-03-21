@@ -1856,6 +1856,42 @@ textarea {
   font-size: var(--font-size-small);
 }
 
+.agent-selector__model-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  max-width: 120px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--background-overlay);
+  color: var(--text-weaker);
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-selector__item-model {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-weaker);
+  font-size: var(--font-size-small);
+  text-align: right;
+}
+
+.agent-selector__item-mode {
+  margin-left: 4px;
+  color: var(--text-weaker);
+  font-size: var(--font-size-small);
+  font-weight: normal;
+}
+
 /* ====================================================================
  * Responsive: Model Selector + Token Bar
  * ==================================================================== */
