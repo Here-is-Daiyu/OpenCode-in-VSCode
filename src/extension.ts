@@ -248,10 +248,22 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
       }
     }
 
+    // Send config to chat webview so it knows the current model/agent on startup
+    ctx.chatProvider.postMessageToWebview({ type: 'config:updated', data: config });
+
     ctx.statusProvider.refresh();
     ctx.logger.debug(`Loaded ${sessions.length} sessions`);
   } catch (err) {
     ctx.logger.error('Failed to load initial data', err);
+  }
+
+  // Load agents (separate try-catch so failure doesn't break session/config loading)
+  try {
+    const agents = await ctx.client.listAgents();
+    ctx.chatProvider.postMessageToWebview({ type: 'agents:updated', data: agents });
+    ctx.logger.debug(`Loaded ${agents.length} agents`);
+  } catch (err) {
+    ctx.logger.error('Failed to load agents', err);
   }
 }
 

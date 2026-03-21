@@ -2,7 +2,7 @@
  * Number input with an optional slider.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { Field } from './Field';
 
 interface NumberInputProps {
@@ -43,6 +43,11 @@ export function NumberInput({
     [onChange],
   );
 
+  const sliderProgress = useMemo(() => {
+    if (min === undefined || max === undefined || max === min) return 0;
+    return ((value - min) / (max - min)) * 100;
+  }, [value, min, max]);
+
   return (
     <Field label={label} description={description}>
       <div className="setting-number-input">
@@ -72,6 +77,9 @@ export function NumberInput({
                 step={step}
                 value={value}
                 onChange={handleSliderChange}
+                style={{
+                  background: `linear-gradient(to right, var(--border-selected) ${sliderProgress}%, color-mix(in srgb, var(--text-weaker) 28%, transparent) ${sliderProgress}%)`,
+                }}
               />
             <span className="setting-number-input__range-label">{max}</span>
           </div>

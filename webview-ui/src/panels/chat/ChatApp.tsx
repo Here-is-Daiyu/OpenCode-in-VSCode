@@ -9,6 +9,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useModelStore } from '../../stores/modelStore';
+import { useAgentStore } from '../../stores/agentStore';
 import { useMessageListener } from '../../hooks/useMessageListener';
 import { postMessage } from '../../utils/vscodeApi';
 import { MessageBubble } from '../../components/message';
@@ -401,12 +402,16 @@ export function ChatApp() {
             break;
 
           case 'theme:changed':
-          case 'agents:updated':
           case 'todos:updated':
+            break;
+
+          case 'agents:updated':
+            useAgentStore.getState().setAgents(message.data);
             break;
 
           case 'config:updated':
             useModelStore.getState().setConfig(message.data);
+            useAgentStore.getState().setSelectedAgent(message.data.agent);
             break;
 
           case 'providers:updated':

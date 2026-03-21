@@ -6,8 +6,8 @@
 import React, { useCallback, useMemo } from 'react';
 import type { OpenCodeConfig, Provider } from '../../../types/opencode';
 import { SettingGroup } from '../../../components/settings/SettingGroup';
-import { Field } from '../../../components/settings/Field';
-import { SegmentedControl } from '../../../components/settings/SegmentedControl';
+import { Dropdown } from '../../../components/settings/Dropdown';
+import { useAgentStore } from '../../../stores/agentStore';
 
 interface ModelTabProps {
   config: OpenCodeConfig;
@@ -62,6 +62,7 @@ export function ModelTab({
 
   // Agent selection — we don't have a separate agents list in props,
   // so we use config.agent and allow the user to set it as a string.
+  const agents = useAgentStore((s) => s.agents);
   const handleAgentChange = useCallback(
     (value: string) => {
       onUpdateConfig({ agent: value || undefined });
@@ -225,20 +226,27 @@ export function ModelTab({
         title="Agent"
         description="Choose the agent mode. Leave empty for the default agent."
       >
-        <Field
-          label="Agent mode"
-          description="The agent determines which tools and system prompt are used."
-        >
-          <SegmentedControl
-            value={(config.agent ?? '') as '' | 'code' | 'task'}
-            options={[
-              { value: '', label: 'Default' },
-              { value: 'code', label: 'Code' },
-              { value: 'task', label: 'Task' },
-            ]}
+        <Dropdown
+            label="Agent mode"
+            description="The agent determines which tools and system prompt are used."
+            value={config.agent ?? ''}
+            options={
+              agents.length > 0
+                ? [
+                    { value: '', label: 'Default' },
+                    ...agents.map((a) => ({
+                      value: a.name || a.id,
+                      label: a.name || a.id,
+                    })),
+                  ]
+                : [
+                    { value: '', label: 'Default' },
+                    { value: 'code', label: 'Code' },
+                    { value: 'task', label: 'Task' },
+                  ]
+            }
             onChange={handleAgentChange}
           />
-        </Field>
       </SettingGroup>
 
       {/* ---- Reasoning Effort (conditional) ---- */}
