@@ -8,9 +8,10 @@
  *     2.5s (only if duration > 2000ms)
  */
 
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import type { ToolPart } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
+import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
 
 // ---------------------------------------------------------------------------
 // Tool helpers
@@ -254,6 +255,10 @@ export const ToolCallPart = React.memo(function ToolCallPart({
 
   const hasContent = output.trim() || error.trim();
   const toolDisplayName = getToolDisplayName(tool);
+  const outputHtml = useMemo(
+    () => (containsAnsi(output) ? ansiToHtml(output) : null),
+    [output],
+  );
 
   return (
     <div className={`msg-tool-compact ${grouped ? 'msg-tool-compact--grouped' : ''}`}>
@@ -311,7 +316,14 @@ export const ToolCallPart = React.memo(function ToolCallPart({
         >
           <div ref={bodyRef} className="msg-tool-compact__result">
             {output.trim() && (
-              <pre>{output}</pre>
+              outputHtml !== null ? (
+                <pre
+                  className="ansi-output"
+                  dangerouslySetInnerHTML={{ __html: outputHtml }}
+                />
+              ) : (
+                <pre>{output}</pre>
+              )
             )}
           </div>
         </div>
