@@ -10,9 +10,13 @@ import { AgentSelector } from './AgentSelector';
 import { TokenUsageBar } from './TokenUsageBar';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
+import { MentionMenu } from './MentionMenu';
+import type { MentionMenuHandle } from './MentionMenu';
 import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
 import { useCommandStore } from '../stores/commandStore';
 import { useInputHistory } from '../hooks/useInputHistory';
+import { useMentionSearch } from '../hooks/useMentionSearch';
+import type { MentionResult } from '../hooks/useMentionSearch';
 
 /** Maximum file size for image attachments in bytes (10 MB) */
 const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
@@ -28,6 +32,7 @@ export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null);
+  const mentionMenuRef = useRef<MentionMenuHandle>(null);
 
   const inputText = useChatStore((s) => s.inputText);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -48,6 +53,12 @@ export function ChatInput() {
 
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
+
+  // Mention (@) state
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionTriggerIndex, setMentionTriggerIndex] = useState(-1);
+  const mentionSearch = useMentionSearch();
 
   // Initialize command store listener and do initial fetch
   useEffect(() => {
@@ -143,6 +154,76 @@ export function ChatInput() {
     postMessage({ type: 'chat:abort' });
   }, []);
 
+  /**
+   * Detect whether the current cursor position is inside an @-mention trigger.
+   * Returns the trigger info or null.
+   */
+  const detectMentionTrigger = useCallback(
+    (text: string, cursorPos: number): { query: string; startIndex: number } | null => {
+      // Walk backward from cursor to find an unescaped '@'
+      for (let i = cursorPos - 1; i >= 0; i--) {
+        const ch = text[i];
+        // Stop if we hit whitespace or newline before finding '@'
+        if (ch === ' ' || ch === '\n' || ch === '\r' || ch === '\t') {
+          return null;
+        }
+        if (ch === '@') {
+          // '@' must be at start of text or preceded by whitespace
+          if (i > 0) {
+            const prev = text[i - 1];
+            if (prev !== ' ' && prev !== '\n' && prev !== '\r' && prev !== '\t') {
+              return null;
+            }
+          }
+          const query = text.slice(i + 1, cursorPos);
+          return { query, startIndex: i };
+        }
+      }
+      return null;
+    },
+    [],
+  );
+
+  /** Close mention menu and clear search state. */
+  const closeMentionMenu = useCallback(() => {
+    setMentionOpen(false);
+    setMentionQuery('');
+    setMentionTriggerIndex(-1);
+    mentionSearch.clear();
+  }, [mentionSearch]);
+
+  /** Handle a file being selected from the mention menu. */
+  const handleMentionSelect = useCallback(
+    (result: MentionResult) => {
+      const textarea = textareaRef.current;
+      if (!textarea || mentionTriggerIndex < 0) {
+        closeMentionMenu();
+        return;
+      }
+
+      // Replace `@query` with `@filename `
+      const before = inputText.slice(0, mentionTriggerIndex);
+      const cursorPos = textarea.selectionStart ?? inputText.length;
+      const after = inputText.slice(cursorPos);
+      const insertText = `@${result.name} `;
+      const newText = before + insertText + after;
+      const newCursorPos = before.length + insertText.length;
+
+      setInputText(newText);
+      closeMentionMenu();
+
+      // Restore focus and set cursor position after React re-render
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.selectionStart = newCursorPos;
+          textareaRef.current.selectionEnd = newCursorPos;
+        }
+      }, 0);
+    },
+    [inputText, mentionTriggerIndex, setInputText, closeMentionMenu],
+  );
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       // When slash menu is open, intercept navigation keys
@@ -169,9 +250,39 @@ export function ChatInput() {
         }
       }
 
+      // When mention menu is open, intercept navigation keys
+      if (mentionOpen && mentionSearch.results.length > 0) {
+        switch (e.key) {
+          case 'ArrowUp':
+            e.preventDefault();
+            mentionMenuRef.current?.moveUp();
+            return;
+          case 'ArrowDown':
+            e.preventDefault();
+            mentionMenuRef.current?.moveDown();
+            return;
+          case 'Tab':
+          case 'Enter':
+            e.preventDefault();
+            mentionMenuRef.current?.selectCurrent();
+            return;
+          case 'Escape':
+            e.preventDefault();
+            closeMentionMenu();
+            return;
+        }
+      } else if (mentionOpen) {
+        // Menu is open but no results — still intercept Escape
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeMentionMenu();
+          return;
+        }
+      }
+
       // Input history navigation with ↑/↓ (only when cursor is at first/last line)
       const textarea = textareaRef.current;
-      if (textarea && !slashOpen) {
+      if (textarea && !slashOpen && !mentionOpen) {
         if (e.key === 'ArrowUp') {
           const cursorPos = textarea.selectionStart;
           const textBeforeCursor = inputText.slice(0, cursorPos);
@@ -221,7 +332,7 @@ export function ChatInput() {
         handleSend();
       }
     },
-    [slashOpen, filteredCommands.length, handleSend, inputText, navigateUp, navigateDown, setInputText]
+    [slashOpen, filteredCommands.length, mentionOpen, mentionSearch.results.length, closeMentionMenu, handleSend, inputText, navigateUp, navigateDown, setInputText]
   );
 
   const handleChange = useCallback(
@@ -239,12 +350,27 @@ export function ChatInput() {
         }
         setSlashOpen(true);
         setSlashQuery(trigger.query);
+        // Close mention menu if slash is active
+        if (mentionOpen) closeMentionMenu();
       } else {
         setSlashOpen(false);
         setSlashQuery('');
       }
+
+      // Detect mention trigger (only when slash menu is not active)
+      if (!trigger) {
+        const mention = detectMentionTrigger(value, cursorPos);
+        if (mention) {
+          setMentionOpen(true);
+          setMentionQuery(mention.query);
+          setMentionTriggerIndex(mention.startIndex);
+          mentionSearch.search(mention.query);
+        } else if (mentionOpen) {
+          closeMentionMenu();
+        }
+      }
     },
-    [setInputText, slashOpen, fetchCommands]
+    [setInputText, slashOpen, fetchCommands, mentionOpen, closeMentionMenu, detectMentionTrigger, mentionSearch]
   );
 
   const handleSlashSelect = useCallback(
@@ -387,6 +513,15 @@ export function ChatInput() {
             query={slashQuery}
             onSelect={handleSlashSelect}
             onClose={handleSlashClose}
+          />
+          <MentionMenu
+            ref={mentionMenuRef}
+            results={mentionSearch.results}
+            visible={mentionOpen}
+            loading={mentionSearch.loading}
+            query={mentionQuery}
+            onSelect={handleMentionSelect}
+            onClose={closeMentionMenu}
           />
           <div className="chat-input__shell">
             <div className="chat-input__row">

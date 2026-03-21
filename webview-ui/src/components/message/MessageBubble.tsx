@@ -72,6 +72,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   return (
     <div
       className={`msg-bubble ${roleClass} ${optimisticClass}`}
+      data-message-id={info.id}
     >
       <MessageHeader info={info} />
 

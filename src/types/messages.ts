@@ -32,7 +32,9 @@ export type ExtensionToWebviewMessage =
   | { type: 'selection:added'; data: { path: string; name: string; content: string; startLine: number; endLine: number } }
   | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } }
   | { type: 'chat:autoSend'; data: { text: string } }
-  | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } };
+  | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } }
+  | { type: 'mention:results'; data: { query: string; results: Array<{ name: string; path: string; type: 'file' | 'folder' }> } }
+  | { type: 'activeSessions:updated'; data: { count: number } };
 
 // Webview → Extension messages
 export type WebviewToExtensionMessage =
@@ -59,6 +61,7 @@ export type WebviewToExtensionMessage =
   | { type: 'model-prefs:toggle-favorite'; data: { providerID: string; modelID: string } }
   | { type: 'model-prefs:add-recent'; data: { providerID: string; modelID: string } }
   | { type: 'model-prefs:set-variant'; data: { key: string; variant: string | undefined } }
+  | { type: 'mention:search'; data: { query: string } }
   | { type: 'ready' };
 
 // Settings panel messages (Webview → Extension)

@@ -347,6 +347,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'model-prefs:set-variant':
         this.handleModelPrefsSetVariant(message.data);
         break;
+
+      case 'mention:search':
+        this.handleMentionSearch(message.data.query);
+        break;
     }
   }
 
@@ -534,6 +538,35 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       this.logger?.warn('Failed to fetch commands from server', err);
       this.postMessage({ type: 'command:listed', data: { commands: [] } });
+    }
+  }
+
+  /**
+   * Search for files matching a query and send results back to the webview.
+   */
+  private async handleMentionSearch(query: string): Promise<void> {
+    if (!this.client) {
+      this.postMessage({ type: 'mention:results', data: { query, results: [] } });
+      return;
+    }
+
+    try {
+      const paths = await this.client.searchFiles(query);
+      const results = paths.map((filePath) => {
+        const segments = filePath.replace(/\\/g, '/').split('/');
+        const name = segments[segments.length - 1] || filePath;
+        // Heuristic: treat entries ending with / or without an extension containing a dot as folders
+        const isFolder = filePath.endsWith('/') || filePath.endsWith('\\');
+        return {
+          name,
+          path: filePath,
+          type: (isFolder ? 'folder' : 'file') as 'file' | 'folder',
+        };
+      });
+      this.postMessage({ type: 'mention:results', data: { query, results } });
+    } catch (err) {
+      this.logger?.warn('Failed to search files for mention', err);
+      this.postMessage({ type: 'mention:results', data: { query, results: [] } });
     }
   }
 

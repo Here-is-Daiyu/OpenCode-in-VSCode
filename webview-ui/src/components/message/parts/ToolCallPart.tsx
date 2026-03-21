@@ -215,6 +215,12 @@ export interface ToolCallPartProps {
   part: ToolPart;
   /** If true, rendered inside a context group (minimal chrome). */
   grouped?: boolean;
+  /** If true, render in timeline layout with rail + connector lines. */
+  timelineMode?: boolean;
+  /** First item in a timeline group (no top connector line). */
+  isFirst?: boolean;
+  /** Last item in a timeline group (no bottom connector line). */
+  isLast?: boolean;
 }
 
 /** Generic renderer — used for all tools without a specialized renderer. */
@@ -350,22 +356,55 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
 export const ToolCallPart = React.memo(function ToolCallPart({
   part,
   grouped,
+  timelineMode,
+  isFirst,
+  isLast,
 }: ToolCallPartProps) {
   const tool = getToolName(part.tool).toLowerCase();
+  const status = part.state?.status ?? 'pending';
 
+  let inner: React.ReactNode;
   switch (tool) {
     case 'todowrite':
     case 'todoread':
-      return <TodoRenderer part={part} />;
+      inner = <TodoRenderer part={part} />;
+      break;
     case 'bash':
     case 'shell':
-      return <BashRenderer part={part} grouped={grouped} />;
+      inner = <BashRenderer part={part} grouped={grouped} />;
+      break;
     case 'edit':
     case 'write':
-      return <EditRenderer part={part} grouped={grouped} />;
+      inner = <EditRenderer part={part} grouped={grouped} />;
+      break;
     default:
-      return <GenericToolCallPart part={part} grouped={grouped} />;
+      inner = <GenericToolCallPart part={part} grouped={grouped} />;
+      break;
   }
+
+  if (!timelineMode) {
+    return <>{inner}</>;
+  }
+
+  const itemClass =
+    `msg-tool-timeline__item` +
+    (status === 'running' ? ' msg-tool-timeline__item--active' : '') +
+    (status === 'error' ? ' msg-tool-timeline__item--error' : '');
+
+  return (
+    <div className={itemClass}>
+      <div className="msg-tool-timeline__rail">
+        {!isFirst && <div className="msg-tool-timeline__line msg-tool-timeline__line--top" />}
+        <div className="msg-tool-timeline__dot">
+          {getToolIcon(part.tool)}
+        </div>
+        {!isLast && <div className="msg-tool-timeline__line msg-tool-timeline__line--bottom" />}
+      </div>
+      <div className="msg-tool-timeline__content">
+        {inner}
+      </div>
+    </div>
+  );
 });
 
 export { CONTEXT_TOOLS, getToolIcon };

@@ -1798,3 +1798,77 @@
   border-radius: 0.25rem;
   background: var(--surface-base);
 }
+
+/* ====================================================================
+ * Tool Timeline Layout — vertical connector for consecutive tool calls
+ * ==================================================================== */
+
+.msg-tool-timeline {
+  display: flex;
+  flex-direction: column;
+  margin: 4px 0;
+}
+
+.msg-tool-timeline__item {
+  display: flex;
+  min-width: 0;
+  max-width: 40rem;
+}
+
+.msg-tool-timeline__rail {
+  width: 24px;
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.msg-tool-timeline__dot {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  color: var(--text-weak);
+}
+
+.msg-tool-timeline__dot svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Active tool dot */
+.msg-tool-timeline__item--active .msg-tool-timeline__dot {
+  color: var(--accent-primary);
+}
+
+/* Error tool dot */
+.msg-tool-timeline__item--error .msg-tool-timeline__dot {
+  color: var(--vscode-errorForeground, #f44747);
+}
+
+.msg-tool-timeline__line {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 1px;
+  border-radius: 0.5px;
+  background: var(--border-weaker-base);
+}
+
+.msg-tool-timeline__line--top {
+  top: 0;
+  height: 6px;
+}
+
+.msg-tool-timeline__line--bottom {
+  top: 22px;
+  bottom: 0;
+}
+
+.msg-tool-timeline__content {
+  flex: 1;
+  min-width: 0;
+}

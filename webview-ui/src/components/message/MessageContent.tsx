@@ -45,6 +45,7 @@ type RenderChunk =
   | { kind: 'reasoning'; id: string; text: string; isStreaming?: boolean }
   | { kind: 'tool'; id: string; part: ToolPart }
   | { kind: 'context-group'; id: string; tools: ToolPart[] }
+  | { kind: 'tool-group'; id: string; tools: ToolPart[] }
   | { kind: 'step-start'; id: string; part: StepStartPart }
   | { kind: 'step-finish'; id: string; part: StepFinishPart }
   | { kind: 'file'; id: string; part: FilePartType }
@@ -219,6 +220,40 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
 }
 
 /**
+ * Groups 2+ consecutive non-context `tool` chunks into `tool-group` chunks
+ * for timeline layout rendering. Single tool chunks remain as-is.
+ */
+function groupConsecutiveTools(chunks: RenderChunk[]): RenderChunk[] {
+  const result: RenderChunk[] = [];
+  let toolBuffer: ToolPart[] = [];
+
+  const flushTools = () => {
+    if (toolBuffer.length >= 2) {
+      result.push({
+        kind: 'tool-group',
+        id: `tg_${toolBuffer[0].id}`,
+        tools: [...toolBuffer],
+      });
+    } else if (toolBuffer.length === 1) {
+      result.push({ kind: 'tool', id: toolBuffer[0].id, part: toolBuffer[0] });
+    }
+    toolBuffer = [];
+  };
+
+  for (const chunk of chunks) {
+    if (chunk.kind === 'tool') {
+      toolBuffer.push(chunk.part);
+    } else {
+      flushTools();
+      result.push(chunk);
+    }
+  }
+  flushTools();
+
+  return result;
+}
+
+/**
  * Filter parts before rendering (matching official OpenCode web UI).
  * Removes step-finish, duplicate step-starts, etc.
  */
@@ -241,7 +276,7 @@ export const MessageContent = React.memo(function MessageContent({
 }: MessageContentProps) {
   const filtered = useMemo(() => filterParts(parts ?? []), [parts]);
   const chunks = useMemo(
-    () => buildRenderChunks(filtered, isStreaming),
+    () => groupConsecutiveTools(buildRenderChunks(filtered, isStreaming)),
     [filtered, isStreaming],
   );
 
@@ -269,6 +304,20 @@ export const MessageContent = React.memo(function MessageContent({
             );
           case 'tool':
             return <ToolCallPart key={chunk.id} part={chunk.part} />;
+          case 'tool-group':
+            return (
+              <div key={chunk.id} className="msg-tool-timeline">
+                {chunk.tools.map((tool, i) => (
+                  <ToolCallPart
+                    key={tool.id}
+                    part={tool}
+                    isFirst={i === 0}
+                    isLast={i === chunk.tools.length - 1}
+                    timelineMode
+                  />
+                ))}
+              </div>
+            );
           case 'context-group':
             return <ContextToolGroup key={chunk.id} tools={chunk.tools} />;
           case 'step-start':

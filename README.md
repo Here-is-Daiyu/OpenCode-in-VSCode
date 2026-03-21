@@ -1,41 +1,41 @@
-# opencode-vscode
+# OpenCode for VSCode
 
-`opencode-vscode` is a Visual Studio Code extension that brings OpenCode into VS Code as native chat, session, status, and settings experiences. It manages or connects to `opencode serve`, syncs against the global event stream, and keeps the extension host and webview UI aligned through typed messages.
+A Visual Studio Code extension that brings [OpenCode](https://github.com/nicepkg/opencode) AI coding assistant into VS Code as native chat, session, status, and settings experiences. It manages or connects to `opencode serve`, syncs against the global event stream, and keeps the extension host and webview UI aligned through typed messages.
 
->This is not built by the OpenCode team and is not affiliated with OpenCode team in any way.
+> This is not built by the OpenCode team and is not affiliated with OpenCode in any way.
 
-## Project overview
+**License: MIT**
 
-This repository packages a VS Code extension for working with OpenCode without leaving the editor. The current implementation focuses on:
+---
 
-- an activity bar chat experience inside VS Code
-- real-time session and message sync
-- local server lifecycle management for `opencode serve`
-- native VS Code integration for diffs, terminals, commands, and tree views
+## Features
 
-## Current feature summary
+- **Chat UI** — Activity bar chat panel closely matching the official OpenCode experience, with streaming text, tool call rendering, ANSI color output, KaTeX math, and code highlighting via Shiki
+- **Real-time sync** — SSE-driven session/message updates with automatic reconnection
+- **Session management** — Tree view with create, switch, delete, fork, share, and recent-first loading with batched older-history hydration
+- **Image attachments** — Via picker, drag and drop, and paste
+- **Settings webview** — VS Code settings plus OpenCode configuration (Connection, Chat, Models, Integrations, Permissions tabs)
+- **Status tree & status bar** — Connection state, model info, providers, MCP, LSP, and token usage
+- **Editor integration** — Show diffs, open terminals, add files/selections to prompts, right-click context menu (Explain/Improve Code)
+- **Slash commands** — `/` command system with server-side command discovery and caching
+- **Agent selector** — Switch between agent variants (default/fast/deep thinking modes)
+- **Virtualized scrolling** — @tanstack/react-virtual for long message lists (40-message threshold)
+- **Editor panel** — Open chat in a full editor tab via `SessionEditorPanelProvider`
+- **Reasoning traces** — Elapsed time display with spinner for streaming reasoning blocks
+- **Theme-aware** — Anti-flash theme switching, light/dark compatible with CSS variable theming
 
-- Chat UI in the OpenCode activity bar, updated to more closely match the official OpenCode experience
-- Real-time session/message updates driven by the global SSE event stream
-- Image attachments via picker, drag and drop, and paste
-- Session tree with create, switch, delete, fork, share, and refresh flows
-- Faster session switching with recent-first loading and batched older-history hydration
-- Settings webview for VS Code settings plus OpenCode configuration data
-- Status tree and status bar for connection state, model info, providers, MCP, LSP, and token usage
-- Native VS Code helpers for showing diffs, opening a terminal, and adding files or selections to prompts
-
-## Requirements / prerequisites
+## Requirements
 
 - VS Code `^1.94.0`
 - Node.js `20+`
 - `npm`
-- OpenCode CLI installed and available as `opencode`, or configured through `opencode.server.executablePath`
+- OpenCode CLI installed and available as `opencode`, or configured via `opencode.server.executablePath`
 
-If your OpenCode server uses auth, launch VS Code with the appropriate environment variables available to the extension host.
+If the server uses auth, launch VS Code with the appropriate env vars available to the extension host.
 
 ## Installation
 
-### Install from a local VSIX
+### From a local VSIX
 
 ```bash
 npm ci
@@ -44,72 +44,222 @@ npm run build
 npm run package
 ```
 
-Then install the generated `.vsix` file with **Extensions: Install from VSIX...** in VS Code.
+Then install the generated `.vsix` via **Extensions: Install from VSIX...** in VS Code.
 
-## Local development
+## Development
 
 ```bash
 npm ci
 npm ci --prefix webview-ui
 ```
 
-Useful commands:
+| Command | Purpose |
+|---------|---------|
+| `npm run dev` | Watch extension + webview builds during development |
+| `npm run build` | Production build (extension bundle + webview UI) |
+| `npm run typecheck` | Type-check both extension and webview code |
+| `npm run package` | Package into `.vsix` |
 
-```bash
-npm run dev
-npm run typecheck
+To debug locally:
+
+1. Open this repo in VS Code
+2. Run the `Run Extension` launch config (or `F5`)
+3. Test in the Extension Development Host
+
+## Architecture
+
+### High-Level Separation
+
+```
+Extension Host (src/)           Webview (webview-ui/src/)
+  Node.js runtime                 Browser runtime (React 18+)
+  Full VSCode API access          No VSCode API (postMessage only)
+  No DOM access                   Full DOM control
+       │                                │
+       └──── postMessage (typed) ───────┘
+       │
+       └──── REST API + SSE (@opencode-ai/sdk) ──→ opencode serve
 ```
 
-To run the extension locally:
+### Communication Patterns
 
-1. Open this repository in VS Code
-2. Start the provided `Run Extension` launch configuration (or press `F5`)
-3. Use the Extension Development Host to test the extension
+1. **Extension ↔ OpenCode Server** — REST API + SSE via `@opencode-ai/sdk`
+2. **Extension ↔ Webview** — Typed bidirectional `postMessage`
+3. **Internal** — Event-driven via typed `EventBus`
 
-## Build / package commands
+### Directory Structure
 
-| Command | Purpose |
-| --- | --- |
-| `npm run build` | Build the extension bundle and the webview UI |
-| `npm run typecheck` | Type-check both the extension and webview code |
-| `npm run dev` | Watch the extension and webview builds during development |
-| `npm run package` | Package the extension into a `.vsix` file |
+```
+src/
+  extension.ts                    — Activation entry point
+  commands/index.ts               — Command registration
+  providers/
+    chatViewProvider.ts           — Chat WebviewViewProvider
+    settingsViewProvider.ts       — Settings WebviewViewProvider
+    sessionTreeProvider.ts        — Session TreeDataProvider
+    statusTreeProvider.ts         — Status TreeDataProvider
+    sessionEditorPanelProvider.ts — Full editor tab panel
+    codeLensProvider.ts           — CodeLens integration
+  managers/
+    sessionManager.ts             — Session switching & batched history loading
+    statusBarManager.ts           — Status bar item management
+  services/
+    openCodeClient.ts             — REST + SSE client for OpenCode
+    serverManager.ts              — Start/stop/monitor opencode serve
+    eventBus.ts                   — Typed event bus
+    diffService.ts                — Diff viewing
+    decorationService.ts          — Editor decorations
+    fileReferenceService.ts       — File reference handling
+    terminalService.ts            — Terminal integration
+    modelPreferences.ts           — Model preference persistence
+    logger.ts                     — Extension logging
+  types/
+    messages.ts                   — Extension ↔ Webview message types
+    events.ts                     — Internal event types
+    opencode.ts                   — OpenCode API response types
+  utils/
+    webviewHtml.ts                — Webview HTML generation with nonce CSP
 
-## Basic usage in VS Code
+webview-ui/src/
+  panels/
+    chat/ChatApp.tsx              — Main chat panel
+    settings/SettingsApp.tsx       — Settings panel with 5 tabs
+  components/
+    ChatInput.tsx                 — Message input with mention/slash support
+    VirtualizedMessageList.tsx    — Virtualized message rendering
+    MarkdownRenderer.tsx          — Markdown + KaTeX + Shiki rendering
+    ModelSelector.tsx             — Model switching dropdown
+    AgentSelector.tsx             — Agent variant selector
+    message/                      — Message bubble & 15 part renderers
+    settings/                     — Settings form components
+  stores/
+    chatStore.ts                  — Chat state (Zustand)
+    modelStore.ts                 — Model/provider state
+    settingsStore.ts              — Settings state
+    agentStore.ts                 — Agent state
+    commandStore.ts               — Slash command state
+  hooks/                          — Custom React hooks (5)
+  utils/                          — Utility functions (ansiToHtml, markdown, etc.)
+```
 
-1. Open a folder or workspace in VS Code
-2. Make sure the `opencode` CLI is available
-3. Let the extension auto-start the server, or run `OpenCode: Start Server`
-4. Open the **OpenCode** activity bar container and use the **Chat**, **Sessions**, and **Status** views
-5. Run `OpenCode: Open Settings` to open the settings webview
-6. Use editor/context commands to add the active file or selection to the prompt, and `OpenCode: Show Session Diff` to inspect session changes
+### Key Design Decisions
 
-## Release / tag packaging
+| Choice | Rationale |
+|--------|-----------|
+| React 18+ | Complex interactive UI needs component framework |
+| Zustand | Lightweight, TypeScript-friendly state management |
+| esbuild | Fast extension bundling |
+| Vite | HMR in dev, optimized production webview builds |
+| Shiki | Syntax highlighting that matches VSCode themes |
+| KaTeX | LaTeX math rendering |
+| marked | Markdown parsing |
+| Nonce-based CSP | Webview security |
 
-The workflow in `.github/workflows/release-vsix-on-tag.yml` behaves as follows:
+### Type Safety
 
-- Pushes to `main` run install, build, and typecheck steps only
-- Pushes of tags matching `v*` or `V*` (for example `v1.0.0` or `V1.0.0`) also package the extension into a VSIX
-- Tagged builds upload the VSIX as a GitHub Actions workflow artifact
-- Regular non-tag pushes do **not** upload packaging artifacts
-- The workflow does **not** create a GitHub Release or upload release assets
+- All Extension ↔ Webview messages typed in `src/types/messages.ts`
+- All API response types have TypeScript interfaces
+- Discriminated unions for message/event types
+- No `any` types except at API boundaries with proper validation
 
-## Architecture summary
+## Common Development Patterns
 
-- `src/` — VS Code extension host code: activation, commands, providers, managers, services
-- `src/services/serverManager.ts` — starts/stops and monitors `opencode serve`
-- `src/services/openCodeClient.ts` — REST + SSE client for OpenCode
-- `src/managers/sessionManager.ts` — coordinates session switching and batched history loading
-- `webview-ui/` — React-based chat/settings UI built with Vite and Zustand
-- `src/types/` plus webview message types — typed contracts between extension host and webview
+### Adding a New Command
 
-## Docs / research notes
+1. Define command ID in `package.json` → `contributes.commands`
+2. Create handler in `src/commands/`
+3. Register in `src/commands/index.ts`
+4. Add keyboard shortcut if appropriate
 
-The `docs/research/` directory contains useful reference material:
+### Adding a New Webview Message Type
 
-- `docs/research/opencode-api-reference.md`
-- `docs/research/desktop-features-comparison.md`
-- `docs/research/vscode-extension-api.md`
+1. Define type in `src/types/messages.ts`
+2. Add handler in the relevant provider (`src/providers/`)
+3. Add sender in the webview component
+4. Test bidirectional communication
 
-Some research notes reference local machine paths used during investigation of the official OpenCode sources. Treat those as reference notes only, not as required build dependencies.
+### Adding a New Setting
 
+1. Add to `package.json` → `contributes.configuration`
+2. Add to settings webview UI
+3. Add change handler if needed
+
+## Naming Conventions
+
+| Entity | Convention | Example |
+|--------|-----------|---------|
+| Files | `camelCase.ts` / `PascalCase.tsx` (components) | `eventBus.ts`, `ChatApp.tsx` |
+| Classes/Types/Interfaces | `PascalCase`, no `I` prefix | `SessionManager`, `ChatMessage` |
+| Functions/Variables | `camelCase` | `handleMessage`, `isConnected` |
+| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRY_COUNT` |
+| Events | `PascalCase` with descriptive names | `SessionSwitched` |
+
+## Performance Notes
+
+- Virtual scrolling for long message lists (40+ messages)
+- Debounced SSE updates to webview at ~60fps
+- Lazy-load Shiki languages
+- `requestAnimationFrame` for streaming text updates
+- `retainContextWhenHidden` to keep webview alive during active sessions
+
+## Known Constraints
+
+- `WebviewView` cannot be programmatically placed in auxiliary sidebar (user must drag)
+- Webview has no direct filesystem access (goes through extension host)
+- SSE connection must handle reconnection gracefully
+- Windows process management requires `taskkill /T`
+
+## Dependencies
+
+### Runtime
+
+| Package | Purpose |
+|---------|---------|
+| `@opencode-ai/sdk` | Official OpenCode SDK (REST + SSE) |
+| `react`, `react-dom` | Webview UI framework |
+| `zustand` | State management |
+| `shiki` | Syntax highlighting |
+| `katex`, `marked-katex-extension` | Math rendering |
+| `marked` | Markdown parsing |
+| `@tanstack/react-virtual` | Virtual scrolling |
+| `@vscode/codicons` | VS Code icon set |
+
+### Dev
+
+| Package | Purpose |
+|---------|---------|
+| `vscode` (types) | Extension API types |
+| `esbuild` | Extension bundling |
+| `vite` | Webview bundling |
+| `typescript` | Type checking |
+
+## Release / CI
+
+The workflow in `.github/workflows/release-vsix-on-tag.yml`:
+
+- Pushes to `main` → install, build, typecheck only
+- Tags matching `v*` / `V*` → also package into VSIX and upload as workflow artifact
+- Does **not** auto-create GitHub Releases
+
+## Research Documentation
+
+The `docs/research/` directory contains accumulated research notes:
+
+| File | Content |
+|------|---------|
+| `opencode-api-reference.md` | REST API endpoints, SSE events, TypeScript types, SDK usage, message fetching caveats |
+| `desktop-features-comparison.md` | Desktop vs Extension feature matrix, Desktop UI architecture (SolidJS, part registry, throttled rendering) |
+| `vscode-extension-api.md` | WebviewView API, TreeView, Configuration, postMessage patterns |
+| `feature-gap-analysis.md` | Feature gap analysis and implementation roadmap |
+| `opencode-server-official.md` | Server internals analysis |
+| `opencode-tui-tips.md` | TUI interaction patterns reference |
+| `vscode-settings-ui-research.md` | Settings UI implementation research |
+
+## Git Workflow
+
+- Main branch: `main`
+- Feature branches: `feature/<name>`
+- Fix branches: `fix/<name>`
+- Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, etc.
+- Each logical change = one commit
+- Never commit directly to `main`

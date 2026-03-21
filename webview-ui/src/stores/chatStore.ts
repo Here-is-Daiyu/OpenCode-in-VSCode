@@ -333,6 +333,9 @@ export interface ChatState {
   pendingPermission?: PermissionRequest;
   pendingQuestion?: Question;
 
+  // Active sessions (other sessions that are busy)
+  activeSessionCount: number;
+
   // Actions
   setConnected: (connected: boolean, version?: string) => void;
   setSession: (session: Session, messages: MessageWithParts[]) => void;
@@ -363,6 +366,7 @@ export interface ChatState {
   addOptimisticMessage: (text: string, images?: string[]) => string;
   rollbackOptimisticMessage: () => void;
   confirmOptimisticMessage: () => void;
+  setActiveSessionCount: (count: number) => void;
   clear: () => void;
 }
 
@@ -383,6 +387,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   selectedAgent: '',
   pendingPermission: undefined,
   pendingQuestion: undefined,
+  activeSessionCount: 0,
 
   // Actions
   setConnected: (connected, version) => set({ connected, version }),
@@ -673,6 +678,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
   },
 
+  setActiveSessionCount: (count) => set({ activeSessionCount: count }),
+
   clear: () =>
     set({
       currentSession: undefined,
@@ -688,5 +695,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       selectedAgent: '',
       pendingPermission: undefined,
       pendingQuestion: undefined,
+      activeSessionCount: 0,
     }),
 }));

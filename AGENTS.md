@@ -1,171 +1,121 @@
-# AGENTS.md - OpenCode for VSCode Development Guide
+# AGENTS.md — OpenCode for VSCode
 
-## Project Overview
+> **This file is loaded in full into the AI Agent context. It contains only the essential information that affects coding decisions.**
+> For detailed architecture, conventions, build instructions, etc., see `README.md`.
 
-OpenCode for VSCode is a VSCode extension that provides a full-featured OpenCode AI coding assistant interface within Visual Studio Code. It communicates with the `opencode serve` backend via REST API + SSE.
+## One-Liner
 
-本地已拉取官方 `opencode` 源码副本到 `vendor/opencode-official/`，仅用于对照实现与排查问题；该目录已加入 `.gitignore`，不要提交到当前仓库。
+VSCode extension that connects to the `opencode serve` backend via REST API + SSE, providing a full OpenCode AI coding assistant UI inside VS Code. **MIT License.**
 
-## ⚠️ License 兼容性
+## Reference Resources (Must-Know)
 
-`vendor/OpenCodeUI/`（OpenCode Desktop）采用 **GPL-3.0**，具有传染性：任何包含 GPL 代码的项目必须整体以 GPL-3.0 发布。本项目是 **MIT**，因此**禁止**直接复制/粘贴 OpenCodeUI 的任何源码。只能阅读理解思路后独立实现（clean-room）。
+### Live Instance
 
-## Architecture Principles
+A running opencode instance is available at `http://127.0.0.1:23452`:
+- **Read-only** — use it to verify actual API responses (GET requests, SSE event formats)
+- Cross-validate against `docs/` documentation
+- **Do NOT** perform write operations (POST prompt, etc.)
 
-### Separation of Concerns
+### Reference Source Code
 
-- **Extension Host** (src/): Node.js runtime, VSCode API access, no DOM
-- **Webview** (webview-ui/): Browser runtime, React UI, no VSCode API (only postMessage)
-- **Types** (src/types/): Shared type definitions
-- **Services** (src/services/): Business logic, API communication
-- **Providers** (src/providers/): VSCode view providers
-- **Managers** (src/managers/): State management on extension side
+| Directory | Content | License | Usage |
+|-----------|---------|---------|-------|
+| `vendor/opencode-official/` | OpenCode CLI/Server official source | MIT | Freely reference for API behavior investigation |
+| `vendor/OpenCodeUI/` | Community OpenCode Desktop WebUI | **GPL-3.0** | **Read for understanding only — do NOT copy/paste any source code** (GPL virality is incompatible with this project's MIT license) |
 
-### Communication Patterns
+Both directories are `.gitignore`d and not committed to this repository.
 
-1. **Extension ↔ OpenCode Server**: REST API + SSE via @opencode-ai/sdk
-2. **Extension ↔ Webview**: postMessage (typed, bidirectional)
-3. **Components**: Event-driven via typed EventBus
+### Research Documentation (docs/)
 
-### Key Design Decisions
-
-- **React** for webview UI (complex interactive UI needs component framework)
-- **Zustand** for webview state management (lightweight, TypeScript-friendly)
-- **esbuild** for extension bundling (fast, simple)
-- **Vite** for webview bundling (HMR in dev, optimized production builds)
-- **Shiki** for code highlighting (matches VSCode themes perfectly)
-- **KaTeX** for LaTeX rendering
-- **marked** for Markdown parsing
-- **Nonce-based CSP** for webview security
-
-### Type Safety
-
-- All message types between extension and webview MUST be typed
-- All API response types from OpenCode MUST have TypeScript interfaces
-- Use discriminated unions for message/event types
-- NO `any` types except at API boundaries with proper validation
-
-## Documentation Index
-
-The `docs/` directory contains detailed research notes — read them before duplicating investigation:
+`docs/research/` contains key findings accumulated from previous investigations. **Always check these files before re-investigating.**
 
 | File | Content |
 |------|---------|
-| `docs/research/opencode-api-reference.md` | Complete REST API endpoints, SSE event types, TypeScript types, SDK usage, message fetching notes (timestamp format, `?limit=` behavior, payload size) |
-| `docs/research/desktop-features-comparison.md` | Feature matrix (Desktop vs Extension), Desktop chat UI architecture deep dive (SolidJS, part registry, throttled rendering, context tool grouping, overflow-anchor scrolling) |
-| `docs/research/vscode-extension-api.md` | WebviewView API, TreeView, Configuration, Editor integration, build systems (esbuild + Vite), postMessage patterns (large payload, race conditions, caching/resend) |
+| `opencode-api-reference.md` | REST API endpoints, SSE event types, TypeScript types, SDK usage, message fetching caveats |
+| `desktop-features-comparison.md` | Desktop vs Extension feature matrix, Desktop UI architecture analysis |
+| `vscode-extension-api.md` | WebviewView API, TreeView, Configuration, editor integration, postMessage patterns |
+| `feature-gap-analysis.md` | Feature gap analysis, implementation roadmap |
+| `opencode-server-official.md` | opencode server internals analysis |
+| `opencode-tui-tips.md` | TUI interaction patterns reference |
+| `vscode-settings-ui-research.md` | Settings UI implementation research |
 
-- 遇到 endpoint response / request format 问题时，排查顺序必须固定：先查本地 docs（优先 `docs/research/opencode-api-reference.md`），再对照 `opencode` / `opencode desktop` 源码确认真实结构，最后才连到 `23452` 端口做实测，避免过早依赖 runtime probing。
+**Fixed order for troubleshooting API issues:**
+1. Check `docs/research/opencode-api-reference.md` first
+2. Cross-reference with `vendor/opencode-official/` source to confirm actual structure
+3. Only then probe the live instance at `127.0.0.1:23452`
 
-## OpenCode API Reference
+**If new information is discovered during investigation, it MUST be written into the corresponding file under `docs/research/` to keep documentation up to date.**
 
-See `docs/research/opencode-api-reference.md` for the complete API documentation.
+## Architecture (Key Constraints)
 
-Key points:
+```
+Extension Host (src/)          Webview (webview-ui/src/)
+  Node.js runtime                Browser runtime (React)
+  Full VSCode API access         No VSCode API access
+  No DOM access                  Communicates with Extension only via postMessage
+       │                                │
+       └─── postMessage (typed) ────────┘
+       │
+       └─── REST API + SSE (@opencode-ai/sdk) ──→ opencode serve
+```
 
-- Base URL: `http://{hostname}:{port}`
-- Authentication: HTTP Basic Auth (optional, via env vars)
-- SSE endpoint: `GET /event` for real-time updates
-- Async prompts: `POST /session/:id/prompt_async` (preferred for UI)
-- Session-centric: All conversations are within sessions
+- **Type safety:** Extension ↔ Webview messages MUST be typed in `src/types/messages.ts`. API responses MUST have TypeScript interfaces. Use discriminated unions. No unvalidated `any`.
+- **Build:** Extension uses esbuild, Webview uses Vite.
+- **State management:** Webview side uses Zustand.
 
-## File Conventions
+## Key Directories
 
-### Extension Source (src/)
+```
+src/
+  extension.ts          — Activation entry point
+  commands/             — VSCode commands
+  providers/            — WebviewViewProvider, TreeDataProvider, etc.
+  managers/             — SessionManager, StatusBarManager
+  services/             — OpenCodeClient, ServerManager, EventBus, etc.
+  types/                — Message types, event types, API types
+webview-ui/src/
+  panels/chat/          — Chat panel (ChatApp.tsx)
+  panels/settings/      — Settings panel (SettingsApp.tsx)
+  components/           — UI components
+  components/message/   — Message rendering (MessageBubble, parts/*)
+  stores/               — Zustand stores
+  hooks/                — Custom React hooks
+  utils/                — Utility functions
+```
 
-- One class/module per file
-- Use barrel exports (index.ts) for directories
-- Services are singletons, created in extension.ts activate()
-- Providers implement VSCode provider interfaces
-- Commands are registered in commands/index.ts
+## Workflow Rules
 
-### Webview Source (webview-ui/src/)
+### Task Planning
 
-- Components: PascalCase, one component per file
-- Hooks: camelCase, prefixed with "use"
-- Stores: camelCase, one store per domain
-- Utils: camelCase, pure functions
-- CSS: CSS Modules or Tailwind (TBD)
+- **All long-term TODOs go into `todo.md`** — plan the direction before starting work. Check before each session, update after completion.
+- Task order: major refactors first, small details after. Finish all tasks before stopping.
+
+### Git
+
+- **Create a new branch before any changes** (`feature/<name>` / `fix/<name>`) — never modify `main` directly.
+- Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, etc.
+- When multiple subagents work sequentially, each must use a different branch to avoid workspace pollution.
 
 ### Naming Conventions
 
-- Files: camelCase.ts / PascalCase.tsx (components)
-- Classes: PascalCase
-- Functions: camelCase
-- Constants: UPPER_SNAKE_CASE
-- Types/Interfaces: PascalCase, no I-prefix
-- Events: PascalCase with descriptive names
+- Files: `camelCase.ts` / `PascalCase.tsx` (components)
+- Classes/Types/Interfaces: `PascalCase`, no `I` prefix
+- Functions/Variables: `camelCase`
+- Constants: `UPPER_SNAKE_CASE`
 
-## Task Planning
-
-- **所有长期、整体性的 TODO 必须先写入项目根目录的 `todo.md`，规划好大致方向后再开始具体修改。** 避免无规划地零散开工。
-- `todo.md` 应包含: 功能名称、优先级、大致实现思路、预估复杂度、当前状态。
-- 每次开工前先检查 `todo.md`，完成后及时更新状态。
-- **在做完所有任务后再停止。** 任务顺序：先做大重构，再做小细节。
-
-## Git Workflow
-
-- Main branch: `main`
-- Feature branches: `feature/<name>`
-- Fix branches: `fix/<name>`
-- Commit messages: Conventional Commits (feat:, fix:, docs:, refactor:, etc.)
-- Each logical change = one commit
-- 后续如果需要开多个 subagent 顺序修复问题，每个 subagent 必须在不同的 git 分支里进行修改，避免相互污染工作区与上下文。
-- **任何修改工作开始前，必须先创建新的 git 分支**（`feature/<name>` 或 `fix/<name>`），不得直接在 `main` 上修改。
-
-## Testing
-
-- Extension: Use VSCode Extension Testing framework
-- Webview: Use Vitest + React Testing Library
-- API Client: Mock-based unit tests
-
-## Common Patterns
-
-### Adding a New Command
-
-1. Define command ID in package.json contributes.commands
-2. Create handler in src/commands/
-3. Register in src/commands/index.ts
-4. Add keyboard shortcut if appropriate
-
-### Adding a New Webview Message Type
-
-1. Define type in src/types/messages.ts
-2. Add handler in the relevant provider (src/providers/)
-3. Add sender in the webview component
-4. Test bidirectional communication
-
-### Adding a New Setting
-
-1. Add to package.json contributes.configuration
-2. Add to settings webview UI
-3. Add change handler if needed
-4. Document in README.md
-
-## Known Constraints
+## ⚠️ Known Constraints
 
 - WebviewView cannot be programmatically placed in auxiliary sidebar (user must drag)
-- Webview has no direct filesystem access (must go through extension)
+- Webview has no direct filesystem access (must go through Extension Host)
 - SSE connection must handle reconnection gracefully
-- Windows process management requires special handling (taskkill /T)
+- Windows process management requires `taskkill /T`
 
-## Dependencies
+## More Information
 
-- `@opencode-ai/sdk` - Official OpenCode SDK
-- `vscode` - VSCode Extension API (devDependency)
-- React 18+ - Webview UI framework
-- Zustand - State management
-- Shiki - Syntax highlighting
-- KaTeX - Math rendering
-- marked - Markdown parsing
-
-## Performance Considerations
-
-- Use virtual scrolling for long message lists
-- Debounce SSE updates to webview at ~60fps
-- Lazy-load Shiki languages
-- Use requestAnimationFrame for streaming text updates
-- Keep webview alive with retainContextWhenHidden for active sessions
-
-*如果有需要 你可以在23452端口找到一个opencode实例来进行只读的操作 用于确认api返回内容*
-*在发现api返回和文档不同时 更新文档*
+See `README.md` for:
+- Full feature list and current status
+- Installation, build, and dev commands
+- Detailed architecture with component responsibilities
+- Common development patterns (adding commands/message types/settings)
+- Dependency list and performance notes
+- Release and CI/CD workflow

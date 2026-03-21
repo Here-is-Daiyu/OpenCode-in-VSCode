@@ -147,6 +147,18 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
   }
 
   /**
+   * Count active/busy sessions, optionally excluding a specific session.
+   */
+  getActiveSessionCount(excludeSessionId?: string): number {
+    let count = 0;
+    for (const [id, status] of Object.entries(this.sessionStatuses)) {
+      if (id === excludeSessionId) continue;
+      if (status.status === 'active' || status.status === 'retry') count++;
+    }
+    return count;
+  }
+
+  /**
    * Fetch sessions from the server and refresh the tree.
    */
   async refresh(): Promise<void> {

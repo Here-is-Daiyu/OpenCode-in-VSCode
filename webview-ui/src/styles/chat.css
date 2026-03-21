@@ -196,6 +196,7 @@ textarea {
  * ==================================================================== */
 
 .chat-messages {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
@@ -1927,4 +1928,303 @@ textarea {
 .token-bar__pct {
   color: inherit;
   font-variant-numeric: tabular-nums;
+}
+
+/* ====================================================================
+ * Mention Menu (@-mention file search)
+ * ==================================================================== */
+
+.mention-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 60;
+  max-height: var(--mention-menu-max-height, 260px);
+  overflow-y: auto;
+  border: 1px solid var(--border-weak-base);
+  border-radius: var(--radius-lg);
+  background: var(--surface-raised-stronger-non-alpha);
+  box-shadow: var(--shadow-md);
+  scrollbar-width: thin;
+  animation: mentionMenuIn 0.1s ease-out;
+}
+
+@keyframes mentionMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mention-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: var(--font-size-small);
+  overflow: hidden;
+  transition: background-color 0.1s ease;
+}
+
+.mention-menu__item:first-child {
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+}
+
+.mention-menu__item:last-child {
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+}
+
+.mention-menu__item:only-child {
+  border-radius: var(--radius-lg);
+}
+
+.mention-menu__item--active {
+  background: var(--surface-base-hover);
+}
+
+.mention-menu__icon {
+  flex-shrink: 0;
+  font-size: 0.875rem;
+}
+
+.mention-menu__name {
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  color: var(--text-strong);
+}
+
+.mention-menu__path {
+  flex: 1;
+  text-align: right;
+  color: var(--text-weaker);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+}
+
+.mention-menu__loading,
+.mention-menu__empty {
+  padding: 12px 10px;
+  text-align: center;
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.mention-menu__spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border-weak-base);
+  border-top-color: var(--text-strong);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.mention-menu__footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-top: 1px solid var(--border-weak-base);
+  color: var(--text-weak);
+  font-size: var(--font-size-small);
+  line-height: 1;
+  user-select: none;
+}
+
+.mention-menu__footer kbd {
+  display: inline-block;
+  padding: 1px 4px;
+  border-radius: 3px;
+  background: var(--surface-base-hover);
+  font-family: var(--font-family-mono);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.mention-menu__footer-sep {
+  margin: 0 2px;
+  opacity: 0.5;
+}
+
+/* ====================================================================
+ * Outline Index — fisheye navigation
+ * ==================================================================== */
+
+.outline-index {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 4px 4px 4px 0;
+  user-select: none;
+}
+
+.outline-index__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  cursor: pointer;
+  margin: 4px 0;
+}
+
+.outline-index__tick {
+  width: 8px;
+  height: 2.5px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+  background-color: var(--border-weak-base);
+  transition: none;
+}
+
+.outline-index__label {
+  position: absolute;
+  right: 100%;
+  margin-right: 10px;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-weak);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateX(10px);
+  visibility: hidden;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ====================================================================
+ * Active Sessions Badge
+ * ==================================================================== */
+
+.chat-header__active-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--icon-interactive-base) 18%, transparent);
+  color: var(--text-interactive-base);
+  font-size: 11px;
+  font-weight: var(--font-weight-medium);
+  line-height: 1;
+  white-space: nowrap;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.chat-header__active-badge .codicon {
+  font-size: 12px;
+}
+
+/* ====================================================================
+ * Notification Toasts
+ * ==================================================================== */
+
+.notification-toast-container {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  pointer-events: none;
+  max-width: 320px;
+}
+
+.notification-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-weak-base);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  pointer-events: auto;
+  animation: toast-enter 0.2s ease-out;
+  min-width: 200px;
+}
+
+.notification-toast--exiting {
+  animation: toast-exit 0.2s ease-in forwards;
+}
+
+.notification-toast__icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.notification-toast--completed .notification-toast__icon { color: #3fb950; }
+.notification-toast--error .notification-toast__icon { color: var(--vscode-errorForeground, #f44747); }
+.notification-toast--permission .notification-toast__icon { color: var(--accent-primary); }
+.notification-toast--info .notification-toast__icon { color: var(--text-weak); }
+
+.notification-toast__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.notification-toast__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.notification-toast__body {
+  font-size: 11px;
+  color: var(--text-weak);
+  line-height: 1.4;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.notification-toast__dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-weaker);
+  cursor: pointer;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.notification-toast:hover .notification-toast__dismiss {
+  opacity: 1;
+}
+
+@keyframes toast-enter {
+  from { opacity: 0; transform: translateX(20px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes toast-exit {
+  from { opacity: 1; transform: translateX(0); }
+  to { opacity: 0; transform: translateX(20px); }
 }

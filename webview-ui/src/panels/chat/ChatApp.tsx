@@ -19,6 +19,9 @@ import { PermissionCard } from '../../components/PermissionCard';
 import { QuestionCard } from '../../components/QuestionCard';
 import { MessageErrorBoundary } from '../../components/ErrorBoundary';
 import { VirtualizedMessageList } from '../../components/VirtualizedMessageList';
+import { OutlineIndex } from '../../components/OutlineIndex';
+import { NotificationToastContainer } from '../../components/NotificationToast';
+import { useNotificationStore } from '../../stores/notificationStore';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
 
 /** Distance from bottom (px) within which we consider the user "at bottom" */
@@ -121,6 +124,7 @@ export function ChatApp() {
   const isStreaming = useChatStore((s) => s.isStreaming);
   const pendingPermission = useChatStore((s) => s.pendingPermission);
   const pendingQuestion = useChatStore((s) => s.pendingQuestion);
+  const activeSessionCount = useChatStore((s) => s.activeSessionCount);
 
   // Store actions
   const setConnected = useChatStore((s) => s.setConnected);
@@ -378,6 +382,9 @@ export function ChatApp() {
 
           case 'session:status':
             applyOrBufferSessionMessage(message);
+            if (message.data.status.status === 'error') {
+              useNotificationStore.getState().push('error', 'Session Error', message.data.status.error || 'An error occurred');
+            }
             break;
 
           case 'message:updated':
@@ -398,6 +405,7 @@ export function ChatApp() {
 
           case 'permission:asked':
             setPermission(message.data);
+            useNotificationStore.getState().push('permission', 'Permission Required', message.data.description || 'A tool is requesting permission');
             break;
 
           case 'question:asked':
@@ -465,6 +473,10 @@ export function ChatApp() {
             }
             break;
           }
+
+          case 'activeSessions:updated':
+            useChatStore.getState().setActiveSessionCount(message.data.count);
+            break;
         }
       } catch (err) {
         console.error('[ChatApp] Error handling extension message:', message.type, err);
@@ -493,6 +505,20 @@ export function ChatApp() {
   }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────
+
+  const scrollToMessageId = useCallback(
+    (messageId: string) => {
+      const container = messagesRef.current;
+      if (!container) return;
+      const el = container.querySelector<HTMLElement>(
+        `[data-message-id="${CSS.escape(messageId)}"]`
+      );
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    },
+    []
+  );
 
   const handleNewSession = useCallback(() => {
     postMessage({ type: 'session:create' });
@@ -549,6 +575,12 @@ export function ChatApp() {
           </span>
         </div>
         <div className="chat-header__actions">
+          {activeSessionCount > 0 && (
+            <span className="chat-header__active-badge" title={`${activeSessionCount} other active session${activeSessionCount > 1 ? 's' : ''}`}>
+              <span className="codicon codicon-pulse"></span>
+              {activeSessionCount}
+            </span>
+          )}
           <span className="chat-header__status-text">{getStatusText()}</span>
           <button
             className="chat-header__new-btn"
@@ -561,6 +593,9 @@ export function ChatApp() {
           </button>
         </div>
       </div>
+
+      {/* Notification toasts */}
+      <NotificationToastContainer />
 
       {/* Error banner */}
       {error && (
@@ -650,6 +685,7 @@ export function ChatApp() {
             {/* Scroll anchor */}
             <div ref={bottomRef} className="chat-scroll-anchor" />
           </div>
+          <OutlineIndex messages={messages} onScrollToMessageId={scrollToMessageId} />
         </div>
       )}
 

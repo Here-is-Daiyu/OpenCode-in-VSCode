@@ -511,6 +511,13 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', busy);
       ctx.statusBarManager.setBusy(busy);
 
+      // Send active session count (excluding current session) to webview
+      const activeCount = ctx.sessionProvider.getActiveSessionCount(ctx.activeSessionId);
+      ctx.chatProvider.postMessageToWebview({
+        type: 'activeSessions:updated',
+        data: { count: activeCount },
+      });
+
       break;
     }
 
