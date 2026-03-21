@@ -416,12 +416,22 @@ export function ChatApp() {
             }
             break;
 
-          case 'theme:changed':
-          case 'todos:updated':
+          case 'theme:changed': {
+            // Suppress CSS transitions during theme switch to prevent flash
+            document.documentElement.classList.add('theme-transitioning');
+            requestAnimationFrame(() => {
+              requestAnimationFrame(() => {
+                document.documentElement.classList.remove('theme-transitioning');
+              });
+            });
             break;
+          }
 
           case 'agents:updated':
             useChatStore.getState().setAgents(message.data);
+            break;
+
+          case 'todos:updated':
             break;
 
           case 'config:updated':

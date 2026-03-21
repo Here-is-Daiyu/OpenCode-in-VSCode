@@ -79,4 +79,5 @@ export type ExtensionToSettingsMessage =
   | { type: 'settings:updated'; data: { section: string; key: string; value: unknown } }
   | { type: 'providers:loaded'; data: { providers: Provider[]; connected: string[] } }
   | { type: 'mcp:status'; data: Record<string, MCPStatus> }
+  | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } }
   | { type: 'error'; data: { message: string } };

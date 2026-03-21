@@ -155,6 +155,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       };
       chatProvider.postMessage(themeMessage);
       editorPanelProvider.broadcastMessage(themeMessage);
+      settingsProvider.postMessage({
+        type: 'theme:changed',
+        data: { kind },
+      });
       logger?.debug(`Theme changed to ${kind} (kind=${theme.kind})`);
     })
   );
