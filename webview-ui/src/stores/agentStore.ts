@@ -30,6 +30,6 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   getSelectedAgent: () => {
     const { agents, selectedAgentId } = get();
     if (!selectedAgentId) return undefined;
-    return agents.find((a) => a.id === selectedAgentId || a.name === selectedAgentId);
+    return agents.find((a) => a.name === selectedAgentId);
   },
 }));

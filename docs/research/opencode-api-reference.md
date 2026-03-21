@@ -1,5 +1,7 @@
 # OpenCode API Reference
 
+> Verified against live OpenCode server v1.2.26 at port 23452 on 2026-03-21
+
 > Note: This document is compiled from corresponding official public documentation and publicly available project materials. Copyright in the original source materials belongs to the respective official owners.
 
 Complete API reference for OpenCode's server, SDK, configuration, and event system.
@@ -56,13 +58,13 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 |--------|------|------|----------|
 | GET | `/config` | — | `Config` |
 | PATCH | `/config` | partial config | `Config` |
-| GET | `/config/providers` | — | `{ providers: Provider[], default: { [key]: string } }` |
+| GET | `/config/providers` | — | `{ providers: Provider[], default: Record<string, string> }` — **NOTE:** uses `providers` key (not `all` like `/provider`) |
 
 ### Provider
 
 | Method | Path | Body | Response |
 |--------|------|------|----------|
-| GET | `/provider` | — | `{ all: Provider[], default: {}, connected: string[] }` |
+| GET | `/provider` | — | `{ all: Provider[], default: Record<string, string>, connected: string[] }` |
 | GET | `/provider/auth` | — | `{ [providerID]: ProviderAuthMethod[] }` |
 | POST | `/provider/{id}/oauth/authorize` | — | `ProviderAuthAuthorization` |
 | POST | `/provider/{id}/oauth/callback` | — | `boolean` |
@@ -122,7 +124,7 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 
 | Method | Path | Query | Response |
 |--------|------|-------|----------|
-| GET | `/experimental/tool/ids` | — | `ToolIDs` |
+| GET | `/experimental/tool/ids` | — | `string[]` |
 | GET | `/experimental/tool` | `?provider=` | `ToolList` |
 
 ### LSP / Formatters / MCP
@@ -180,6 +182,15 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 
 Events are received via `GET /global/event` as a Server-Sent Events stream. Each event is a JSON object with a `type` field (dot-notation format) and a `properties` field. The global endpoint wraps events in `{ directory, payload: { type, properties } }`.
 
+> **Important:** The `server.connected` event has **no `directory` field** (it is a global event). All other events include a `directory` field indicating which project they belong to.
+
+> **SSE wire format example:**
+> ```
+> data: {"payload":{"type":"server.connected","properties":{}}}
+>
+> data: {"directory":"C:\\Users\\...","payload":{"type":"message.part.delta","properties":{"sessionID":"...","messageID":"...","partID":"...","field":"text","delta":"some text"}}}
+> ```
+
 > **Note:** The OpenAPI spec schema names use PascalCase (e.g., `EventSessionCreated`), but the actual `type` field sent on the wire uses **dot-notation** (e.g., `session.created`). The PascalCase names are TypeScript type names only.
 
 ### Session Events
@@ -202,7 +213,7 @@ Events are received via `GET /global/event` as a Server-Sent Events stream. Each
 | `message.updated` | `EventMessageUpdated` | `{ info: Message }` |
 | `message.removed` | `EventMessageRemoved` | `{ messageID: string, sessionID: string }` |
 | `message.part.updated` | `EventMessagePartUpdated` | `{ part: Part }` |
-| `message.part.delta` | `EventMessagePartDelta` | `{ sessionID, messageID, partID, delta }` |
+| `message.part.delta` | `EventMessagePartDelta` | `{ sessionID, messageID, partID, field, delta }` — `field` indicates which part field is being updated (e.g., `"text"`) |
 | `message.part.removed` | `EventMessagePartRemoved` | `{ partID: string, sessionID: string, messageID: string }` |
 
 ### Permission Events
@@ -452,7 +463,7 @@ type Session = {
   time: { created: number; updated: number; compacting?: number; archived?: number }
   // NOTE: All `time` fields are epoch MILLISECONDS (not seconds).
   // Example observed value: 1772332788695 (≈ year 2026 in ms)
-  permission?: PermissionRuleset
+  permission?: PermissionRule[]   // Array of permission rules (NOT a map)
   revert?: { messageID: string; partID?: string; snapshot?: string; diff?: string }
 }
 ```
@@ -493,6 +504,213 @@ type AssistantMessage = {
 
 ```typescript
 type Part = TextPart | FilePart | ToolPart | ReasoningPart | SubtaskPart | StepStartPart | StepFinishPart | SnapshotPart | PatchPart | AgentPart | RetryPart | CompactionPart
+```
+
+### PermissionRule
+
+```typescript
+type PermissionRule = {
+  permission: string        // e.g. "todowrite", "bash", "edit"
+  action: "allow" | "deny" | "ask"
+  pattern: string           // e.g. "*"
+}
+```
+
+### SessionStatus
+
+```typescript
+type SessionStatus = {
+  type: "idle" | "busy" | string
+}
+// GET /session/status returns Record<string, SessionStatus>
+// e.g. { "ses_xxx": { "type": "busy" } }
+```
+
+### Provider
+
+```typescript
+type Provider = {
+  id: string                    // e.g. "fireai"
+  name: string                  // e.g. "Fire AI"
+  source: "custom" | "config"   // origin of provider definition
+  env: string[]                 // required env var names, e.g. ["OPENAI_API_KEY"]
+  options: {                    // provider-specific options
+    baseURL?: string
+    apiKey?: string             // SENSITIVE — only present for connected providers
+  }
+  models: Record<string, Model> // modelId -> Model
+  key?: string                  // API key (only present for connected providers) - SENSITIVE
+}
+```
+
+### Model
+
+```typescript
+type Model = {
+  id: string                    // e.g. "gpt-5.2"
+  providerID: string            // parent provider ID
+  name: string                  // human-readable name, e.g. "GPT 5.2"
+  family: string                // model family, e.g. "llama", "" if unset
+  api: {
+    id: string                  // same as model id
+    url?: string                // custom API URL
+    npm: string                 // SDK package, e.g. "@ai-sdk/openai"
+  }
+  status: "active"              // observed value
+  headers: Record<string, string>  // usually empty {}
+  options: Record<string, any>     // model-specific options, e.g. { useResponsesApi: true }
+  cost: {
+    input: number
+    output: number
+    cache: { read: number; write: number }
+  }
+  limit: {
+    context: number
+    output: number
+    input?: number              // optional, observed on some models
+  }
+  capabilities: {
+    temperature?: boolean
+    reasoning: boolean
+    attachment: boolean
+    toolcall: boolean
+    input: { text: boolean; audio: boolean; image: boolean; video: boolean; pdf: boolean }
+    output: { text: boolean; audio: boolean; image: boolean; video: boolean; pdf: boolean }
+    interleaved: boolean | { field: string }  // can be { field: "reasoning_content" }
+  }
+  release_date: string          // ISO date or ""
+  variants: Record<string, {    // model variants with thinking configs
+    reasoningEffort?: string
+    reasoningSummary?: string
+    include?: string[]
+    thinking?: { type: "enabled" | "adaptive"; budgetTokens?: number }
+    effort?: string
+  }>
+}
+```
+
+### Agent
+
+```typescript
+type Agent = {
+  name: string              // e.g. "build", "plan", "coder", "explore"
+  description: string       // human-readable description
+  options: Record<string, any>  // e.g. { thinking: { type: "enabled" } }
+  permission: PermissionRule[]  // array of permission rules
+  mode: "primary" | "subagent"
+  native: boolean
+  prompt?: string           // system prompt (can be very long)
+  model?: { providerID: string; modelID: string }  // only on some agents
+  hidden?: boolean
+  temperature?: number
+}
+// Observed agents: build, plan, general, explore, compaction, title, summary, reviewer, digest, coder
+```
+
+### Path
+
+```typescript
+type Path = {
+  home: string              // e.g. "C:\\Users\\YZM-一只猫"
+  state: string             // e.g. "C:\\Users\\YZM-一只猫\\.local\\state\\opencode"
+  config: string            // e.g. "C:\\Users\\YZM-一只猫\\.config\\opencode"
+  worktree: string          // e.g. "/"
+  directory: string         // e.g. "C:\\Users\\YZM-一只猫"
+}
+```
+
+### VcsInfo
+
+```typescript
+type VcsInfo = {
+  sha?: string
+  branch?: string
+}
+// Returns empty object {} when no VCS is detected.
+```
+
+### Project
+
+```typescript
+type Project = {
+  id: string                // e.g. "global" or hash
+  worktree: string
+  vcs?: string              // e.g. "git" — absent for global project
+  icon?: { color: string }  // e.g. { color: "orange" }
+  time: { created: number; updated: number }  // epoch milliseconds
+  sandboxes: any[]          // observed as empty array
+}
+```
+
+### LSPStatus
+
+```typescript
+type LSPStatus = {
+  id: string                // e.g. "gopls"
+  name: string              // e.g. "gopls"
+  root: string              // root directory, "" if not set
+  status: string            // observed: "connected"
+}
+```
+
+### FormatterStatus
+
+```typescript
+type FormatterStatus = {
+  name: string              // e.g. "gofmt", "zig"
+  extensions: string[]      // e.g. [".go"], [".zig", ".zon"]
+  enabled: boolean
+}
+```
+
+### MCPStatus
+
+```typescript
+type MCPStatus = {
+  status: "connected" | "disabled" | "failed" | "needs_auth" | "needs_client_registration"
+  error?: string            // present when status is "failed" or "needs_auth"
+}
+// GET /mcp returns Record<string, MCPStatus>
+// e.g. { "chrome-devtools": { "status": "connected" } }
+```
+
+### Command
+
+```typescript
+type Command = {
+  name: string
+  description: string
+  source: "command" | "skill"
+  template: string
+  subtask?: boolean
+  hints: string[]
+}
+```
+
+### ProviderAuthMethod
+
+```typescript
+type ProviderAuthMethod = {
+  type: "oauth" | "api"
+  label: string             // e.g. "ChatGPT Pro/Plus (browser)", "Manually enter API Key"
+}
+// GET /provider/auth returns Record<string, ProviderAuthMethod[]>
+```
+
+### Config
+
+```typescript
+type Config = {
+  $schema: string
+  disabled_providers: string[]
+  agent: Record<string, AgentConfig>      // agent name -> agent-specific config overrides
+  provider: Record<string, ProviderConfig>  // provider configs from config file
+  mcp: Record<string, MCPConfig>          // MCP server configs
+  mode: Record<string, any>
+  plugin: any[]
+  command: Record<string, any>
+  username: string
+}
 ```
 
 ---

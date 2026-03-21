@@ -410,14 +410,18 @@ export class StatusTreeProvider
       ];
     }
 
-    return Object.entries(this.mcpStatus).map(([name, status]) => {
+    return Object.entries(this.mcpStatus).map(([name, mcpEntry]) => {
+      const errorMsg = 'error' in mcpEntry ? mcpEntry.error : undefined;
+      const tooltipLines = [`${name}: ${mcpEntry.status}`];
+      if (errorMsg) { tooltipLines.push(`Error: ${errorMsg}`); }
+
       return new StatusTreeItem(name, {
-        description: status.status,
+        description: mcpEntry.status,
         icon: new vscode.ThemeIcon(
           'server',
-          mcpStatusColor(status.status),
+          mcpStatusColor(mcpEntry.status),
         ),
-        tooltip: `${name}: ${status.status}`,
+        tooltip: tooltipLines.join('\n'),
         contextValue: 'mcpServer',
       });
     });
@@ -435,18 +439,17 @@ export class StatusTreeProvider
     }
 
     return this.lspStatus.map((lsp) => {
-      const langs = lsp.languages?.join(', ') ?? '';
       return new StatusTreeItem(lsp.name, {
-        description: langs || lsp.status,
+        description: lsp.status,
         icon: new vscode.ThemeIcon(
           'symbol-class',
-          lsp.status === 'running'
+          lsp.status === 'connected'
             ? new vscode.ThemeColor('testing.iconPassed')
             : lsp.status === 'error'
               ? new vscode.ThemeColor('testing.iconFailed')
               : undefined,
         ),
-        tooltip: `${lsp.name}\nStatus: ${lsp.status}${langs ? `\nLanguages: ${langs}` : ''}`,
+        tooltip: `${lsp.name}\nStatus: ${lsp.status}${lsp.root ? `\nRoot: ${lsp.root}` : ''}`,
         contextValue: 'lspServer',
       });
     });
@@ -522,10 +525,13 @@ function mcpStatusColor(
   switch (status) {
     case 'connected':
       return new vscode.ThemeColor('testing.iconPassed');
-    case 'connecting':
-      return new vscode.ThemeColor('charts.yellow');
-    case 'error':
+    case 'disabled':
+      return undefined;
+    case 'failed':
+    case 'needs_auth':
       return new vscode.ThemeColor('testing.iconFailed');
+    case 'needs_client_registration':
+      return new vscode.ThemeColor('charts.yellow');
     default:
       return undefined;
   }

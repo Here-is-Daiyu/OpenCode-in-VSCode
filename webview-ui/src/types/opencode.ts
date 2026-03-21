@@ -40,9 +40,15 @@ export interface RevertInfo {
   diff?: string;
 }
 
+/** Internal normalized session status (after mapping from API's `type` field). */
 export interface SessionStatus {
   status: 'idle' | 'active' | 'error' | 'compacting' | 'retry';
   error?: string;
+}
+
+/** Raw session status as returned by `GET /session/status`. */
+export interface RawSessionStatus {
+  type: 'busy' | 'idle';
 }
 
 // Message types
@@ -319,9 +325,16 @@ export interface CustomCommand {
 
 // Agent types
 export interface Agent {
-  id: string;
   name: string;
   description?: string;
+  options?: Record<string, unknown>;
+  permission?: PermissionRule[];
+  mode: 'primary' | 'subagent';
+  native: boolean;
+  prompt?: string;
+  model?: string;
+  hidden?: boolean;
+  temperature?: number;
 }
 
 // File types
@@ -360,9 +373,12 @@ export interface Question {
 // MCP Status
 // Note: The MCP endpoint (`GET /mcp`) returns `Record<string, MCPStatus>` where
 // each key is the server name and the value only contains `status`.
-export interface MCPStatus {
-  status: 'connected' | 'connecting' | 'disconnected' | 'error';
-}
+export type MCPStatus =
+  | { status: 'connected' }
+  | { status: 'disabled' }
+  | { status: 'failed'; error: string }
+  | { status: 'needs_auth'; error: string }
+  | { status: 'needs_client_registration' };
 
 // Provider info response from `GET /provider`
 // (distinct from the configured-only response from `GET /config/providers`)
@@ -381,9 +397,10 @@ export interface FormatterStatus {
 
 // LSP Status
 export interface LSPStatus {
+  id: string;
   name: string;
-  status: 'running' | 'stopped' | 'error';
-  languages?: string[];
+  root: string;
+  status: 'connected' | 'stopped' | 'error';
 }
 
 // Path info response from `GET /path`

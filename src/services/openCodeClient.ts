@@ -263,12 +263,13 @@ export class OpenCodeClient {
    */
   subscribeToEvents(
     callback: (event: ServerEvent) => void,
+    options?: { onReconnected?: () => void },
   ): AbortController {
     const controller = new AbortController();
     const urls = [`${this.baseUrl}/global/event`, `${this.baseUrl}/event`];
 
     // Run asynchronously — intentionally not awaited
-    void this.consumeSSE(urls, controller.signal, callback);
+    void this.consumeSSE(urls, controller.signal, callback, options?.onReconnected);
 
     return controller;
   }
@@ -712,8 +713,10 @@ export class OpenCodeClient {
     urls: readonly string[],
     signal: AbortSignal,
     callback: (event: ServerEvent) => void,
+    onReconnected?: () => void,
   ): Promise<void> {
     let urlIndex = 0;
+    let hasConnectedBefore = false;
 
     while (!signal.aborted) {
       const url = urls[urlIndex] ?? urls[0];
@@ -749,6 +752,17 @@ export class OpenCodeClient {
         }
 
         this.logger?.debug('SSE connection established');
+
+        // Trigger reconnection callback if this is a reconnection (not first connect)
+        if (hasConnectedBefore && onReconnected) {
+          this.logger?.info('SSE reconnected — triggering data refresh');
+          try {
+            onReconnected();
+          } catch (err) {
+            this.logger?.warn('onReconnected callback error:', err instanceof Error ? err.message : String(err));
+          }
+        }
+        hasConnectedBefore = true;
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();

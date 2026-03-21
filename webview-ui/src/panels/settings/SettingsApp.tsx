@@ -198,14 +198,9 @@ export function SettingsApp() {
       <div className="settings-shell">
         <header className="settings-header">
           <div className="settings-header__main">
-            <span className="settings-header__eyebrow">OpenCode control center</span>
             <div className="settings-header__title-row">
               <div>
                 <h1 className="settings-header__title">Settings</h1>
-                <p className="settings-header__description">
-                  Unified workspace preferences for the VS Code extension and the
-                  OpenCode runtime.
-                </p>
               </div>
 
               <div className="settings-header__meta">
@@ -258,13 +253,8 @@ export function SettingsApp() {
             <section className="settings-panel">
               <div className="settings-panel__header">
                 <div>
-                  <span className="settings-panel__eyebrow">{activeTab.label}</span>
                   <h2 className="settings-panel__title">{activeTab.label}</h2>
                   <p className="settings-panel__description">{activeTab.description}</p>
-                </div>
-
-                <div className="settings-panel__status">
-                  Changes sync back to the extension automatically.
                 </div>
               </div>
 
@@ -272,7 +262,9 @@ export function SettingsApp() {
                 renderTab()
               ) : (
                 <div className="empty-state">
-                  <div className="empty-state__icon">✦</div>
+                  <div className="empty-state__icon">
+                    <span className="codicon codicon-loading codicon-modifier-spin" />
+                  </div>
                   <div className="empty-state__text">Loading settings…</div>
                 </div>
               )}

@@ -21,6 +21,7 @@ function getLanguage(block: HTMLPreElement): string {
 }
 
 function decorate(root: HTMLDivElement): void {
+  // Wrap code blocks
   const blocks = Array.from(root.querySelectorAll('pre'));
   for (const block of blocks) {
     if (block.dataset.markdownFallback === 'true') {
@@ -51,6 +52,20 @@ function decorate(root: HTMLDivElement): void {
     button.title = 'Copy code';
     button.textContent = 'Copy';
     wrapper.appendChild(button);
+  }
+
+  // Wrap tables in overflow container
+  const tables = Array.from(root.querySelectorAll('table'));
+  for (const table of tables) {
+    const parent = table.parentElement;
+    if (!parent || parent.classList.contains('table-wrapper')) {
+      continue;
+    }
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'table-wrapper';
+    parent.replaceChild(wrapper, table);
+    wrapper.appendChild(table);
   }
 }
 

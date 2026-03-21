@@ -166,3 +166,6 @@ Key points:
 - Lazy-load Shiki languages
 - Use requestAnimationFrame for streaming text updates
 - Keep webview alive with retainContextWhenHidden for active sessions
+
+*如果有需要 你可以在23452端口找到一个opencode实例来进行只读的操作 用于确认api返回内容*
+*在发现api返回和文档不同时 更新文档*

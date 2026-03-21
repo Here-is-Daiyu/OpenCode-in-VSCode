@@ -25,7 +25,7 @@ export function AgentSelector() {
   const triggerRef = useRef<HTMLButtonElement>(null);
 
   // Derive current agent label
-  const currentAgent = agents.find((a) => a.id === selectedAgent);
+  const currentAgent = agents.find((a) => a.name === selectedAgent);
   const displayName = currentAgent ? capitalize(currentAgent.name) : selectedAgent ? capitalize(selectedAgent) : 'Agent';
 
   // Close on click outside
@@ -114,14 +114,14 @@ export function AgentSelector() {
       {isOpen && (
         <div className="agent-selector__dropdown" role="listbox">
           {agents.map((agent) => {
-            const isSelected = agent.id === selectedAgent;
+            const isSelected = agent.name === selectedAgent;
             return (
               <div
-                key={agent.id}
+                key={agent.name}
                 className={`agent-selector__item${isSelected ? ' agent-selector__item--selected' : ''}`}
                 role="option"
                 aria-selected={isSelected}
-                onClick={() => handleSelect(agent.id)}
+                onClick={() => handleSelect(agent.name)}
               >
                 <span className="agent-selector__item-name">{capitalize(agent.name)}</span>
                 {agent.description && (

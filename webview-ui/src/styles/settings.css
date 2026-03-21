@@ -77,8 +77,8 @@ textarea {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  padding: 16px;
 }
 
 /* =====================================================================
@@ -88,7 +88,7 @@ textarea {
 .settings-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   padding: 16px;
   border: 1px solid var(--border-weak-base);
   border-radius: 12px;
@@ -101,8 +101,6 @@ textarea {
   gap: 8px;
 }
 
-.settings-header__eyebrow,
-.settings-panel__eyebrow,
 .setting-select__group-label,
 .msg-tool__section-label {
   color: var(--text-weaker);
@@ -127,7 +125,6 @@ textarea {
   letter-spacing: -0.03em;
 }
 
-.settings-header__description,
 .settings-panel__description {
   margin: 4px 0 0;
   max-width: 56ch;
@@ -177,8 +174,7 @@ textarea {
 .model-group__status,
 .model-option__badge,
 .command-card__badge,
-.mcp-card__type,
-.settings-panel__status {
+.mcp-card__type {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -221,7 +217,7 @@ textarea {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(190px, 220px) minmax(0, 1fr);
-  gap: 12px;
+  gap: 8px;
 }
 
 .settings-sidebar,
@@ -243,7 +239,7 @@ textarea {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   padding: 8px;
   border: 1px solid var(--border-weak-base);
   border-radius: 12px;
@@ -256,8 +252,8 @@ textarea {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 8px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
@@ -278,15 +274,15 @@ textarea {
 }
 
 .settings-tabs__icon {
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--surface-base);
-  color: var(--text-strong);
-  font-size: 15px;
+  color: var(--text-weak);
+  font-size: 16px;
 }
 
 .settings-tabs__tab--active .settings-tabs__icon {
@@ -319,7 +315,7 @@ textarea {
 
 .settings-tabs__chevron {
   color: var(--text-weaker);
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* =====================================================================
@@ -327,10 +323,9 @@ textarea {
    ===================================================================== */
 
 .settings-panel {
-  min-height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   padding: 16px;
   border: 1px solid var(--border-weak-base);
   border-radius: 12px;
@@ -341,8 +336,9 @@ textarea {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 4px;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border-weaker-base);
 }
 
 .settings-panel__title {
@@ -353,12 +349,6 @@ textarea {
   letter-spacing: -0.02em;
 }
 
-.settings-panel__status {
-  color: var(--text-weak);
-  background: var(--surface-base);
-  border-color: var(--border-weak-base);
-}
-
 /* =====================================================================
    Error Banner
    ===================================================================== */
@@ -366,8 +356,8 @@ textarea {
 .settings-error {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
+  gap: 8px;
+  padding: 8px 12px;
   border: 1px solid var(--border-critical-base);
   border-radius: 8px;
   color: var(--text-on-critical-base);
@@ -404,8 +394,8 @@ textarea {
 .setting-group {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 14px;
+  gap: 8px;
+  padding: 16px;
   border: 1px solid var(--border-weak-base);
   border-radius: 12px;
   background: var(--surface-raised-base);
@@ -433,7 +423,7 @@ textarea {
 .command-form__fields {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 /* =====================================================================
@@ -444,7 +434,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px 14px;
+  padding: 12px;
   border: 1px solid var(--border-weaker-base);
   border-radius: 8px;
   background: var(--surface-base);
@@ -1207,21 +1197,21 @@ textarea {
 .command-card,
 .mcp-form,
 .command-form {
-  padding: 14px;
+  padding: 16px;
 }
 
 .mcp-card,
 .command-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .mcp-card__header,
 .command-card__header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1485,19 +1475,19 @@ textarea {
   border-radius: 12px;
   border: 1px solid var(--border-weak-base);
   background: var(--surface-raised-base);
-  padding: 14px;
+  padding: 16px;
 }
 
 .provider-card {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .provider-card__header {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
@@ -1734,7 +1724,6 @@ textarea {
   }
 
   .settings-header__meta,
-  .settings-panel__status,
   .permission-rule__control,
   .mcp-card__actions,
   .command-card__actions {

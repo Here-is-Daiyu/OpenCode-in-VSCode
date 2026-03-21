@@ -337,10 +337,10 @@ async function selectAgent(ctx: CommandContext): Promise<void> {
     }
 
     const items: (vscode.QuickPickItem & { _agentId: string })[] = agents.map(agent => ({
-      label: agent.name || agent.id,
-      description: agent.id,
+      label: agent.name,
+      description: agent.mode,
       detail: agent.description,
-      _agentId: agent.id,
+      _agentId: agent.name,
     }));
 
     const pick = await vscode.window.showQuickPick(items, {

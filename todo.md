@@ -34,9 +34,44 @@
 
 ---
 
+## 进行中
+
+| # | 功能 | 分支 | 状态 | 备注 |
+|---|------|------|------|------|
+| 22 | API 类型修正 + MCP/Provider/Model 修复 | fix/mcp-providers-models-and-ui | 🔄 待合并 | MCPStatus 联合类型、LSPStatus id/root、Agent name 主键、SSE 重连刷新 |
+| 23 | Settings 页面视觉重构 V2 | feature/settings-redesign-v2 | 🔄 进行中 | 从 fix 分支衍生，纯 CSS + Codicons 重构 |
+
+**详细内容 (fix/mcp-providers-models-and-ui):**
+- ✅ API 文档更新 (docs/research/opencode-api-reference.md) — 对照 live server 验证所有端点
+- ✅ MCPStatus 改为 5 种状态的 discriminated union (connected/disabled/failed/needs_auth/needs_client_registration)
+- ✅ LSPStatus: 添加 id/root 字段，'running' → 'connected'，移除 languages
+- ✅ Agent 类型: 移除 id，以 name 为主键，添加 mode/native/prompt/model/hidden/temperature/permission/options
+- ✅ 所有下游消费者修复 (commands/index.ts, agentStore.ts, AgentSelector.tsx, ModelsTab.tsx)
+- ✅ StatusTreeProvider 显示逻辑更新 (mcpStatusColor, getMCPChildren, getLSPChildren)
+- ✅ Chat 输入框高度优化 (min-height 48→36px, textarea 32→24px)
+- ✅ Markdown 表格窄屏适配 (移除 display:block, 改用 table-wrapper overflow-x)
+- ✅ SSE 重连自动数据刷新 (onReconnected 回调 + handleSSEReconnect + 并发防护)
+- ✅ 双端编译通过 (tsc --noEmit + vite build)
+
+**详细内容 (feature/settings-redesign-v2):**
+- ✅ `@vscode/codicons` 安装并在 settings webview 中导入
+- ✅ Unicode 图标 → Codicons (plug, comment-discussion, sparkle, extensions, shield)
+- ✅ Chevron `›` → `codicon codicon-chevron-right`
+- ✅ Settings header 简化: 移除 eyebrow、描述段落、panel eyebrow、status pill
+- ✅ 空状态 loading 图标: Unicode `✦` → `codicon codicon-loading codicon-modifier-spin`
+- ✅ CSS 间距标准化到 8px 网格 (17+ 处修改)
+- ✅ `.settings-panel` 移除 `min-height: 100%`
+- ✅ Panel header 添加 `border-bottom` 分隔线
+- ✅ 孤立 CSS 规则清理
+- ✅ IntegrationsTab.tsx (1045→75行) 拆分为 3 个子模块:
+  - `integrations/MCPSection.tsx` — MCP 服务器卡片 + 添加表单
+  - `integrations/CommandsSection.tsx` — 自定义命令卡片 + 添加/编辑表单
+  - `integrations/ProvidersSection.tsx` — 自定义 Provider 卡片 + 添加/编辑表单
+- ✅ 双端编译通过 (tsc --noEmit + vite build)
+
 ## 待完成
 
-暂无。所有计划功能已完成。
+暂无新功能计划。
 
 ---
 
@@ -56,3 +91,5 @@
 | `feature/agent-validation` | ✅ 已合并 |
 | `feature/final-polish` | ✅ 已合并 |
 | `feature/slash-command-enhancement` | ✅ 已合并 |
+| `fix/mcp-providers-models-and-ui` | 🔄 待合并 |
+| `feature/settings-redesign-v2` | 🔄 进行中 |

@@ -311,14 +311,44 @@ async function startEventStream(ctx: CommandContext): Promise<void> {
 
     sseStreamActive = true;
 
-    sseAbort = ctx.client.subscribeToEvents((event: ServerEvent) => {
-      routeSSEEvent(ctx, event);
-    });
+    sseAbort = ctx.client.subscribeToEvents(
+      (event: ServerEvent) => {
+        routeSSEEvent(ctx, event);
+      },
+      {
+        onReconnected: () => {
+          ctx.logger.info('SSE reconnected — refreshing all data');
+          void handleSSEReconnect(ctx);
+        },
+      },
+    );
 
     ctx.logger.debug('SSE event stream started');
   } catch (err) {
     sseStreamActive = false;
     ctx.logger.error('Failed to start SSE event stream', err);
+  }
+}
+
+/**
+ * Called when the SSE stream reconnects after a disconnect.
+ * Re-fetches all data to ensure the UI reflects the current server state.
+ * Guarded against concurrent calls from rapid reconnections.
+ */
+let sseReconnectRefreshing = false;
+async function handleSSEReconnect(ctx: CommandContext): Promise<void> {
+  if (sseReconnectRefreshing) {
+    ctx.logger.debug('SSE reconnect refresh already in progress — skipping');
+    return;
+  }
+  sseReconnectRefreshing = true;
+  try {
+    await loadInitialData(ctx);
+    ctx.logger.info('SSE reconnect data refresh completed');
+  } catch (err) {
+    ctx.logger.error('Failed to refresh data after SSE reconnect', err);
+  } finally {
+    sseReconnectRefreshing = false;
   }
 }
 

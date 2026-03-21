@@ -251,8 +251,8 @@ export function ModelsTab({
                 ? [
                     { value: '', label: 'Default' },
                     ...agents.map((a) => ({
-                      value: a.name || a.id,
-                      label: a.name || a.id,
+                      value: a.name,
+                      label: a.name,
                     })),
                   ]
                 : [
