@@ -14,6 +14,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { SubtaskPart as SubtaskPartType } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
+import { hasDisplayText, toDisplayText } from '../../../utils/renderText';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -22,9 +23,9 @@ import { postMessage } from '../../../utils/vscodeApi';
 type SubtaskStatus = 'running' | 'completed' | 'idle';
 
 function inferStatus(part: SubtaskPartType): SubtaskStatus {
-  if (part.output != null && part.output !== '') return 'completed';
+  if (hasDisplayText(part.output, 'subtask.output.status')) return 'completed';
   // If there's input but no output yet, assume running
-  if (part.input) return 'running';
+  if (hasDisplayText(part.input, 'subtask.input.status')) return 'running';
   return 'idle';
 }
 
@@ -85,12 +86,14 @@ export const SubtaskPartComponent = React.memo(function SubtaskPartComponent({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
   const status = inferStatus(part);
+  const input = toDisplayText(part.input, 'subtask.input');
+  const output = toDisplayText(part.output, 'subtask.output');
 
   useEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }
-  }, [expanded, part.input, part.output]);
+  }, [expanded, input, output]);
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
 
@@ -127,7 +130,7 @@ export const SubtaskPartComponent = React.memo(function SubtaskPartComponent({
     postMessage({ type: 'session:switch', data: { id: part.sessionID } });
   }, [part.sessionID]);
 
-  const preview = truncateText(part.input, 60);
+  const preview = truncateText(input, 60);
 
   return (
     <div className={`msg-subtask msg-subtask--${status}`}>
@@ -153,7 +156,7 @@ export const SubtaskPartComponent = React.memo(function SubtaskPartComponent({
 
         {/* Input preview (collapsed only, hidden when expanded) */}
         {!expanded && preview && (
-          <span className="msg-subtask__preview" title={part.input}>
+          <span className="msg-subtask__preview" title={input}>
             {preview}
           </span>
         )}
@@ -189,14 +192,14 @@ export const SubtaskPartComponent = React.memo(function SubtaskPartComponent({
           {/* Input section */}
           <div className="msg-subtask__section">
             <div className="msg-subtask__section-label">Input</div>
-            <div className="msg-subtask__section-text">{part.input}</div>
+            <div className="msg-subtask__section-text">{input}</div>
           </div>
 
           {/* Output section */}
-          {part.output != null && part.output.trim() !== '' && (
+          {output.trim() !== '' && (
             <div className="msg-subtask__section">
               <div className="msg-subtask__section-label">Output</div>
-              <div className="msg-subtask__section-text">{part.output}</div>
+              <div className="msg-subtask__section-text">{output}</div>
             </div>
           )}
 

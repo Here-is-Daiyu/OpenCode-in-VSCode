@@ -201,3 +201,17 @@ Scroll behavior uses **CSS `overflow-anchor`** for stable scrolling:
 | Tool grouping | Implement context tool grouping in our ToolCard component |
 | CSS custom properties tokens | Map to `--vscode-*` CSS variables for theme integration |
 | overflow-anchor scrolling | Implement same pattern in our chat scroll container |
+
+---
+
+## Continue-Inspired Layout Principles (Reference Only)
+
+> Reference-based design notes from visual inspection only. No Continue source code was copied.
+
+- Keep the top bar quiet: title + connection/session status only. Avoid repeating model/provider badges in multiple places.
+- Put assistant identity in the message footer so provider/model metadata stays available without competing with the message body.
+- Group composer controls into a compact secondary row inside the composer shell (model, agent, context usage, shortcuts) instead of scattering them around the viewport.
+- Favor readable typography over heavy chrome: narrow content column, muted borders, clear spacing rhythm, and stronger emphasis on the text itself.
+- Preserve scroll position when the user is reading older content. Only auto-follow streaming output while the user is already at the bottom.
+
+These principles directly informed our VS Code adaptation: footer-only assistant model labels, a tighter composer meta row, and conservative auto-follow scroll behavior.

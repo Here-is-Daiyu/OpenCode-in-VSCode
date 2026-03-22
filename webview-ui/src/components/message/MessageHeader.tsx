@@ -17,7 +17,7 @@ interface MessageHeaderProps {
 // Provider icon detection based on model/provider ID
 // ---------------------------------------------------------------------------
 
-function getProviderInfo(modelID: string, providerID: string): { name: string; icon: React.ReactNode } {
+export function getProviderInfo(modelID: string, providerID: string): { name: string; icon: React.ReactNode } {
   const combined = `${providerID} ${modelID}`.toLowerCase();
 
   if (/claude|anthropic/.test(combined)) {
@@ -99,7 +99,7 @@ export const MessageHeader = React.memo(function MessageHeader({
     );
   }
 
-  // Assistant: provider icon + provider name + model name
+  // Assistant: icon only — model/provider identity lives in the footer.
   const assistantInfo = info as AssistantMessage;
   const modelID = assistantInfo.modelID ?? '';
   const providerID = assistantInfo.providerID ?? '';
@@ -113,12 +113,7 @@ export const MessageHeader = React.memo(function MessageHeader({
         </span>
       </div>
       <div className="msg-part-row__content msg-header-row__content">
-        {/* Role text hidden — kept for accessibility / screen readers */}
         <span className="msg-header__role">Assistant</span>
-        <span className="msg-header__provider-name">{provider.name}</span>
-        {modelID && (
-          <span className="msg-header__model-name">{modelID}</span>
-        )}
       </div>
     </div>
   );

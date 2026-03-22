@@ -82,6 +82,15 @@ export class StatusBarManager implements vscode.Disposable {
   }
 
   /**
+   * Show that model selection is currently automatic.
+   */
+  setModelAuto(): void {
+    this.modelItem.text = '$(symbol-enum) auto';
+    this.modelItem.tooltip = 'Model: automatic (no explicit model configured)\nClick to change';
+    this.modelItem.show();
+  }
+
+  /**
    * Update token usage display.
    */
   setTokenUsage(tokens: TokenUsage): void {

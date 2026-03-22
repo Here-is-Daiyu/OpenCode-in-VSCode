@@ -5,7 +5,8 @@
 
 import React, { useCallback, useMemo, useState } from 'react';
 import type { AssistantMessage, Part } from '../../types/opencode';
-import { toSafeDateFromEpoch } from './MessageHeader';
+import { getProviderInfo, toSafeDateFromEpoch } from './MessageHeader';
+import { toDisplayText } from '../../utils/renderText';
 
 interface MessageFooterProps {
   parts: Part[];
@@ -35,10 +36,29 @@ export const MessageFooter = React.memo(function MessageFooter({
   info,
 }: MessageFooterProps) {
   const [copied, setCopied] = useState(false);
+  const modelTitle = useMemo(() => {
+    const modelID = typeof info.modelID === 'string' ? info.modelID.trim() : '';
+    const providerID = typeof info.providerID === 'string' ? info.providerID.trim() : '';
+    return providerID && modelID
+      ? `Model: ${providerID}/${modelID}`
+      : modelID || providerID || undefined;
+  }, [info.modelID, info.providerID]);
+
+  const modelLabel = useMemo(() => {
+    const modelID = typeof info.modelID === 'string' ? info.modelID.trim() : '';
+    const providerID = typeof info.providerID === 'string' ? info.providerID.trim() : '';
+    if (!modelID && !providerID) {
+      return undefined;
+    }
+
+    const provider = getProviderInfo(modelID, providerID);
+    return providerID && modelID ? `${provider.name} · ${modelID}` : modelID || provider.name;
+  }, [info.modelID, info.providerID]);
+
   const textContent = useMemo(
     () => parts
       .filter((p) => p.type === 'text')
-      .map((p) => (p.type === 'text' ? p.text : ''))
+      .map((p) => (p.type === 'text' ? toDisplayText(p.text, 'message.text.footer') : ''))
       .join('\n\n')
       .trim(),
     [parts],
@@ -81,39 +101,47 @@ export const MessageFooter = React.memo(function MessageFooter({
   }, [textContent]);
 
   const hasStats = duration != null || totalTokens != null || info.cost > 0;
+  const hasMeta = Boolean(modelLabel) || hasStats;
 
-  if (!textContent && !hasStats) return null;
+  if (!textContent && !hasMeta) return null;
 
   return (
     <div className="msg-footer">
-      {/* Stats — left side */}
-      {hasStats && (
-        <div className="msg-footer__stats">
-          {duration != null && (
-            <span className="msg-footer__stat" title="Turn duration">
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 0 11zM8.5 4H7v5l4.28 2.54.75-1.23L8.5 8.31V4z" />
-              </svg>
-              {formatDuration(duration)}
+      {hasMeta && (
+        <div className="msg-footer__meta">
+          {modelLabel && (
+            <span className="msg-footer__model" title={modelTitle}>
+              {modelLabel}
             </span>
           )}
-          {totalTokens != null && (
-            <span className="msg-footer__stat" title="Total tokens">
-              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                <path d="M5.5 3l-4 9h1.5l1-2.25h4L9 12h1.5l-4-9h-1zm-.75 5.25L6 5.25l1.25 3H4.75zM11 3v9h1.5V3H11z" />
-              </svg>
-              {totalTokens.toLocaleString()}
-            </span>
-          )}
-          {info.cost > 0 && (
-            <span className="msg-footer__stat" title="Cost">
-              {formatCost(info.cost)}
-            </span>
+          {hasStats && (
+            <div className="msg-footer__stats">
+              {duration != null && (
+                <span className="msg-footer__stat" title="Turn duration">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 12.5A5.5 5.5 0 1 1 8 2.5a5.5 5.5 0 0 1 0 11zM8.5 4H7v5l4.28 2.54.75-1.23L8.5 8.31V4z" />
+                  </svg>
+                  {formatDuration(duration)}
+                </span>
+              )}
+              {totalTokens != null && (
+                <span className="msg-footer__stat" title="Total tokens">
+                  <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                    <path d="M5.5 3l-4 9h1.5l1-2.25h4L9 12h1.5l-4-9h-1zm-.75 5.25L6 5.25l1.25 3H4.75zM11 3v9h1.5V3H11z" />
+                  </svg>
+                  {totalTokens.toLocaleString()}
+                </span>
+              )}
+              {info.cost > 0 && (
+                <span className="msg-footer__stat" title="Cost">
+                  {formatCost(info.cost)}
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}
 
-      {/* Copy button — right side */}
       {textContent && (
         <button
           className="msg-footer__copy"

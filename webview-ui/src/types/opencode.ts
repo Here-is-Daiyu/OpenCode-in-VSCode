@@ -284,8 +284,9 @@ export interface ProviderConfig {
 }
 
 export interface OpenCodeConfig {
-  model?: string;
-  agent?: string;
+  model?: string | null;
+  agent?: string | Record<string, unknown> | null;
+  default_agent?: string | null;
   theme?: 'dark' | 'light' | 'system';
   permission?: PermissionRuleset;
   mcp?: Record<string, MCPServerConfig>;

@@ -1,8 +1,15 @@
 # OpenCode for VSCode - TODO
 
-> 最后更新: 2026-03-21
-> 当前分支: `main` (所有 feature 已合并)
+> 最后更新: 2026-03-22
+> 当前分支: `feature/gap-features`
 > VSIX 大小: 待打包
+
+### 2026-03-22 修复记录
+
+- ✅ Status 面板修复：注入 client/logger、开启自动刷新、模型/Agent 读取与 live config 对齐（`default_agent`、`model = null` → `auto`）
+- ✅ Chat UI 修复：assistant 仅在 footer 显示模型/Provider、滚动跟随更稳、composer 间距收紧、异常字符串渲染加保护与日志
+- ✅ Settings 页修复：改为共享 webview shell 载入样式资源，模型/Agent 配置读写改正，页面头部摘要补齐
+- ✅ 验证流程：typecheck / build / reviewer
 
 ---
 

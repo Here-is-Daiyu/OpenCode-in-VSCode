@@ -10,6 +10,7 @@
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { RetryPart } from '../../../types/opencode';
 import { useElapsedTime } from '../../../hooks/useElapsedTime';
+import { hasDisplayText, toDisplayText } from '../../../utils/renderText';
 
 // ---------------------------------------------------------------------------
 // Icon
@@ -50,15 +51,16 @@ export const RetryPartView = React.memo(function RetryPartView({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
   const elapsed = useElapsedTime(!!isStreaming);
+  const reason = toDisplayText(part.reason, 'retry.reason');
 
   useEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }
-  }, [expanded, part.reason]);
+  }, [expanded, reason]);
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
-  const hasReason = part.reason.trim().length > 0;
+  const hasReason = hasDisplayText(part.reason, 'retry.reason.visible');
 
   return (
     <div className="msg-retry">
@@ -102,7 +104,7 @@ export const RetryPartView = React.memo(function RetryPartView({
           }}
         >
           <div ref={bodyRef} className="msg-retry__reason">
-            <pre className="msg-retry__reason-text">{part.reason}</pre>
+            <pre className="msg-retry__reason-text">{reason}</pre>
           </div>
         </div>
       )}

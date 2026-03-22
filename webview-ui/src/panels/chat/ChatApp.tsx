@@ -23,6 +23,7 @@ import { OutlineIndex } from '../../components/OutlineIndex';
 import { NotificationToastContainer } from '../../components/NotificationToast';
 import { useNotificationStore } from '../../stores/notificationStore';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
+import { getConfiguredAgent } from '../../utils/opencodeConfig';
 
 /** Distance from bottom (px) within which we consider the user "at bottom" */
 const AT_BOTTOM_THRESHOLD = 150;
@@ -108,6 +109,7 @@ export function ChatApp() {
   // Refs for scroll management
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const atBottomRef = useRef(true);
   const prevMessageCountRef = useRef(0);
   const pendingHistoryPrependScrollRef = useRef<{
     previousScrollHeight: number;
@@ -258,12 +260,16 @@ export function ChatApp() {
 
   /** Scroll to the bottom of the messages container */
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    atBottomRef.current = true;
+    setAtBottom(true);
     bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
   }, []);
 
   // Track scroll position to update atBottom state
   const handleScroll = useCallback(() => {
-    setAtBottom(checkAtBottom());
+    const next = checkAtBottom();
+    atBottomRef.current = next;
+    setAtBottom(prev => (prev === next ? prev : next));
   }, [checkAtBottom]);
 
   useLayoutEffect(() => {
@@ -294,36 +300,26 @@ export function ChatApp() {
   useLayoutEffect(() => {
     if (skipNextAutoScrollRef.current) {
       skipNextAutoScrollRef.current = false;
+      prevMessageCountRef.current = messages.length;
       return;
     }
 
     const newCount = messages.length;
-    const isNewMessage = newCount > prevMessageCountRef.current;
     prevMessageCountRef.current = newCount;
 
-    if (atBottom || isNewMessage) {
-      // Use instant scroll for initial load / session switch, smooth for streaming
-      scrollToBottom(isNewMessage ? 'instant' : 'smooth');
+    if (!newCount || !atBottomRef.current) {
+      return;
     }
-  }, [messages, atBottom, scrollToBottom]);
 
-  // Also auto-scroll when streaming content updates (part changes)
-  useEffect(() => {
-    if (isStreaming && atBottom) {
-      // Use requestAnimationFrame for smooth follow during streaming
-      const raf = requestAnimationFrame(() => {
-        scrollToBottom('instant');
-      });
-      return () => cancelAnimationFrame(raf);
-    }
-  }, [isStreaming, atBottom, messages, scrollToBottom]);
+    scrollToBottom('instant');
+  }, [messages, scrollToBottom]);
 
   // Scroll to bottom when permission or question cards appear
   useEffect(() => {
-    if ((pendingPermission || pendingQuestion) && atBottom) {
+    if ((pendingPermission || pendingQuestion) && atBottomRef.current) {
       scrollToBottom('smooth');
     }
-  }, [pendingPermission, pendingQuestion, atBottom, scrollToBottom]);
+  }, [pendingPermission, pendingQuestion, scrollToBottom]);
 
   // ── Extension message handler ─────────────────────────────────────────
 
@@ -340,6 +336,7 @@ export function ChatApp() {
           case 'session:loaded':
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
+            atBottomRef.current = true;
             setAtBottom(true);
             prevMessageCountRef.current = 0; // reset so auto-scroll triggers
             setSession(message.data.session, message.data.messages);
@@ -353,6 +350,7 @@ export function ChatApp() {
           case 'session:created':
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
+            atBottomRef.current = true;
             setAtBottom(true);
             prevMessageCountRef.current = 0;
             setSession(message.data, []);
@@ -375,6 +373,7 @@ export function ChatApp() {
           case 'session:cleared':
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
+            atBottomRef.current = true;
             setAtBottom(true);
             bufferedSessionMessagesRef.current.clear();
             clearSession();
@@ -445,7 +444,7 @@ export function ChatApp() {
 
           case 'config:updated':
             useModelStore.getState().setConfig(message.data);
-            useAgentStore.getState().setSelectedAgent(message.data.agent);
+            useAgentStore.getState().setSelectedAgent(getConfiguredAgent(message.data));
             break;
 
           case 'providers:updated':
@@ -644,7 +643,6 @@ export function ChatApp() {
           className="chat-messages"
           ref={messagesRef}
           onScroll={handleScroll}
-          key={currentSession?.id ?? 'no-session'}
         >
           <div className="chat-messages__inner">
             {messages.length >= VIRTUALIZE_THRESHOLD ? (

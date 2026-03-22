@@ -6,7 +6,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useChatStore } from '../stores/chatStore';
+import { useAgentStore } from '../stores/agentStore';
 import { postMessage } from '../utils/vscodeApi';
 
 /** Capitalize the first letter of a string */
@@ -16,9 +16,9 @@ function capitalize(str: string): string {
 }
 
 export function AgentSelector() {
-  const agents = useChatStore((s) => s.agents);
-  const selectedAgent = useChatStore((s) => s.selectedAgent);
-  const setSelectedAgent = useChatStore((s) => s.setSelectedAgent);
+  const agents = useAgentStore((s) => s.agents);
+  const selectedAgent = useAgentStore((s) => s.selectedAgentId);
+  const setSelectedAgent = useAgentStore((s) => s.setSelectedAgent);
 
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -29,7 +29,11 @@ export function AgentSelector() {
 
   // Derive current agent label
   const currentAgent = agents.find((a) => a.name === selectedAgent);
-  const displayName = currentAgent ? capitalize(currentAgent.name) : selectedAgent ? capitalize(selectedAgent) : 'Agent';
+  const displayName = currentAgent
+    ? capitalize(currentAgent.name)
+    : selectedAgent
+      ? capitalize(selectedAgent)
+      : 'Agent';
 
   // Close on click outside
   useEffect(() => {

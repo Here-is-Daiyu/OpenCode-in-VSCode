@@ -10,6 +10,7 @@
 import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import type { PatchPart } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
+import { hasDisplayText, toDisplayText } from '../../../utils/renderText';
 
 // ---------------------------------------------------------------------------
 // Icon
@@ -67,12 +68,13 @@ export const PatchPartView = React.memo(function PatchPartView({
   const [expanded, setExpanded] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
+  const content = toDisplayText(part.content, 'patch.content');
 
   useEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }
-  }, [expanded, part.content]);
+  }, [content, expanded]);
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
 
@@ -95,9 +97,9 @@ export const PatchPartView = React.memo(function PatchPartView({
     [part.path],
   );
 
-  const diffLines = useMemo(() => parseDiffLines(part.content), [part.content]);
+  const diffLines = useMemo(() => parseDiffLines(content), [content]);
   const baseName = getBaseName(part.path);
-  const hasContent = part.content.trim().length > 0;
+  const hasContent = hasDisplayText(part.content, 'patch.content.visible');
 
   return (
     <div className="msg-patch">

@@ -17,6 +17,7 @@ import {
   getCapabilityTags,
   type ModelGroup,
 } from '../utils/modelUtils';
+import { getConfiguredModel } from '../utils/opencodeConfig';
 
 /** Abbreviate provider name to 2-3 chars */
 function providerAbbr(name: string): string {
@@ -51,6 +52,7 @@ export function ModelSelector() {
 
   const currentModel = getCurrentModel();
   const availableModels = getAvailableModels();
+  const configuredModel = getConfiguredModel(config);
 
   // Grouped models (when no filter) or filtered flat list
   const { groups, flatItems } = useMemo(() => {
@@ -203,9 +205,12 @@ export function ModelSelector() {
 
   const displayName = currentModel
     ? `${currentModel.providerName} / ${currentModel.modelName}`
-    : config.model ?? 'No model';
+    : configuredModel ?? 'Auto';
 
-  const abbr = currentModel ? providerAbbr(currentModel.providerName) : '??';
+  const fallbackProvider = configuredModel?.split('/')[0] ?? 'AI';
+  const abbr = currentModel
+    ? providerAbbr(currentModel.providerName)
+    : providerAbbr(fallbackProvider);
 
   /** Render a single model option row */
   const renderOption = (m: ResolvedModel, flatIndex: number) => {

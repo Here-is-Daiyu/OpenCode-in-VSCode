@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as crypto from 'crypto';
 import type {
   SettingsToExtensionMessage,
   ExtensionToSettingsMessage,
@@ -7,6 +6,7 @@ import type {
 import type { OpenCodeConfig } from '../types/opencode';
 import { OpenCodeClient } from '../services/openCodeClient';
 import { Logger } from '../services/logger';
+import { buildWebviewHtmlShell, getWebviewTheme } from '../utils/webviewHtml';
 
 /**
  * Provides the Settings WebviewPanel (opens in the editor area).
@@ -151,6 +151,7 @@ export class SettingsViewProvider {
 
   /** Send all settings when the webview is ready. */
   private async handleReady(): Promise<void> {
+    this.logger?.debug('Settings webview ready — loading settings, providers, and MCP status');
     await this.handleSettingsGet();
     await this.sendProviders();
     await this.sendMCPStatus();
@@ -363,8 +364,8 @@ export class SettingsViewProvider {
         type: 'providers:loaded',
         data: { providers: resp.all, connected: resp.connected },
       });
-    } catch {
-      // best-effort
+    } catch (err) {
+      this.logger?.debug('Failed to fetch providers for settings panel', err);
     }
   }
 
@@ -375,8 +376,8 @@ export class SettingsViewProvider {
     try {
       const status = await this.client.getMCPStatus();
       this.postMessage({ type: 'mcp:status', data: status });
-    } catch {
-      // best-effort
+    } catch (err) {
+      this.logger?.debug('Failed to fetch MCP status for settings panel', err);
     } finally {
       this.mcpStatusInFlight = false;
     }
@@ -403,70 +404,13 @@ export class SettingsViewProvider {
   // ---------------------------------------------------------------------------
 
   private getHtmlForWebview(webview: vscode.Webview): string {
-    const nonce = crypto.randomBytes(16).toString('base64');
-
-    const scriptUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this.extensionUri, 'out', 'webview', 'assets', 'settings.js'),
-    );
-
-    const themeKind = vscode.window.activeColorTheme.kind;
-    const theme =
-      themeKind === vscode.ColorThemeKind.Light
-        ? 'light'
-        : themeKind === vscode.ColorThemeKind.HighContrast ||
-            themeKind === vscode.ColorThemeKind.HighContrastLight
-          ? 'highContrast'
-          : 'dark';
-
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy"
-    content="default-src 'none';
-      style-src ${webview.cspSource} 'unsafe-inline';
-      script-src 'nonce-${nonce}';
-      img-src ${webview.cspSource} data: https:;
-      font-src ${webview.cspSource};
-      connect-src ${webview.cspSource};" />
-  <title>OpenCode Settings</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      height: 100%;
-      overflow: hidden;
-      background-color: var(--vscode-editor-background);
-      color: var(--vscode-editor-foreground);
-      font-family: var(--vscode-font-family);
-      font-size: var(--vscode-font-size);
-    }
-    #root {
-      height: 100%;
-      display: flex;
-      flex-direction: column;
-    }
-    .loading-placeholder {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: var(--vscode-descriptionForeground);
-      font-size: 12px;
-    }
-  </style>
-</head>
-<body>
-  <div id="root">
-    <div class="loading-placeholder">Loading OpenCode Settings...</div>
-  </div>
-
-  <script nonce="${nonce}">
-    window.__OPENCODE_INITIAL__ = { theme: "${theme}" };
-  </script>
-  <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
-</body>
-</html>`;
+    return buildWebviewHtmlShell({
+      webview,
+      extensionUri: this.extensionUri,
+      initialData: { theme: getWebviewTheme() },
+      loadingText: 'Loading OpenCode Settings...',
+      scriptName: 'settings.js',
+      title: 'OpenCode Settings',
+    });
   }
 }

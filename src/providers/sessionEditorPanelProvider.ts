@@ -55,6 +55,7 @@ export class SessionEditorPanelProvider {
   private client?: OpenCodeClient;
   private logger?: Logger;
   private modelPrefs?: ModelPreferencesService;
+  private modelPrefsBaseUrlLogged = false;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -576,12 +577,23 @@ export class SessionEditorPanelProvider {
   private async ensureModelPrefs(): Promise<ModelPreferencesService | undefined> {
     if (this.modelPrefs) { return this.modelPrefs; }
     if (!this.client) { return undefined; }
+
+    const baseUrl = this.client.getBaseUrl().trim();
+    if (!baseUrl) {
+      if (!this.modelPrefsBaseUrlLogged) {
+        this.modelPrefsBaseUrlLogged = true;
+        this.logger?.debug('Skipping editor model preferences init until client base URL is ready');
+      }
+      return undefined;
+    }
+
     try {
       const pathInfo = await this.client.getPathInfo();
       this.modelPrefs = new ModelPreferencesService(pathInfo.state, this.logger);
+      this.modelPrefsBaseUrlLogged = false;
       return this.modelPrefs;
     } catch (err) {
-      this.logger?.warn('Failed to initialize model preferences', err);
+      this.logger?.warn(`Failed to initialize editor model preferences from ${baseUrl}/path`, err);
       return undefined;
     }
   }

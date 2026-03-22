@@ -9,59 +9,63 @@ export interface WebviewHtmlOptions {
   initialSessionId?: string;
 }
 
-/**
- * Generate the HTML content for an OpenCode webview.
- *
- * This is a shared utility used by both the sidebar ChatViewProvider and
- * the SessionEditorPanelProvider so that the same React app, CSP policy,
- * and initial-data contract are reused consistently.
- */
-export function getWebviewHtml(options: WebviewHtmlOptions): string {
-  const { webview, extensionUri, viewMode, initialSessionId } = options;
+export interface WebviewHtmlShellOptions {
+  webview: vscode.Webview;
+  extensionUri: vscode.Uri;
+  initialData: Record<string, string>;
+  loadingText: string;
+  scriptName: string;
+  title: string;
+}
+
+export function getWebviewTheme(): 'light' | 'dark' | 'highContrast' {
+  const themeKind = vscode.window.activeColorTheme.kind;
+  return themeKind === vscode.ColorThemeKind.Light
+    ? 'light'
+    : themeKind === vscode.ColorThemeKind.HighContrast
+        || themeKind === vscode.ColorThemeKind.HighContrastLight
+      ? 'highContrast'
+      : 'dark';
+}
+
+function getCssLinkTags(
+  webview: vscode.Webview,
+  extensionUri: vscode.Uri,
+): string {
+  const assetsDir = vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'assets');
+  try {
+    return fs.readdirSync(assetsDir.fsPath)
+      .filter(file => file.endsWith('.css'))
+      .map(file => {
+        const cssUri = webview.asWebviewUri(
+          vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'assets', file)
+        );
+        return `<link rel="stylesheet" href="${cssUri}" />`;
+      })
+      .join('\n  ');
+  } catch (err) {
+    console.warn('Failed to find CSS assets:', err);
+    return '';
+  }
+}
+
+export function buildWebviewHtmlShell(options: WebviewHtmlShellOptions): string {
+  const {
+    webview,
+    extensionUri,
+    initialData,
+    loadingText,
+    scriptName,
+    title,
+  } = options;
 
   // Generate a nonce for CSP
   const nonce = crypto.randomBytes(16).toString('base64');
 
-  // Get the URI for the built React app
   const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'assets', 'chat.js')
+    vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'assets', scriptName)
   );
-
-  // Find CSS files in the assets directory
-  const assetsDir = vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'assets');
-  let cssLinkTags = '';
-  try {
-    const assetFiles = fs.readdirSync(assetsDir.fsPath);
-    const cssFiles = assetFiles.filter(f => f.endsWith('.css'));
-    cssLinkTags = cssFiles.map(cssFile => {
-      const cssUri = webview.asWebviewUri(
-        vscode.Uri.joinPath(extensionUri, 'out', 'webview', 'assets', cssFile)
-      );
-      return `<link rel="stylesheet" href="${cssUri}" />`;
-    }).join('\n  ');
-  } catch (err) {
-    // CSS files not found — not critical, inline styles in JS will still work
-    console.warn('Failed to find CSS assets:', err);
-  }
-
-  // Detect the current color theme
-  const themeKind = vscode.window.activeColorTheme.kind;
-  const theme =
-    themeKind === vscode.ColorThemeKind.Light
-      ? 'light'
-      : themeKind === vscode.ColorThemeKind.HighContrast ||
-          themeKind === vscode.ColorThemeKind.HighContrastLight
-        ? 'highContrast'
-        : 'dark';
-
-  // Build the initial data object, omitting undefined fields
-  const initialData: Record<string, string> = {
-    theme,
-    viewMode,
-  };
-  if (initialSessionId) {
-    initialData.initialSessionId = initialSessionId;
-  }
+  const cssLinkTags = getCssLinkTags(webview, extensionUri);
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -75,7 +79,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
       img-src ${webview.cspSource} data: https:;
       font-src ${webview.cspSource} data:;
       connect-src ${webview.cspSource};" />
-  <title>OpenCode Chat</title>
+  <title>${title}</title>
   <style>
     /* Base styles to prevent FOUC */
     html, body {
@@ -107,7 +111,7 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
 </head>
 <body>
   <div id="root">
-    <div class="loading-placeholder">Loading OpenCode Chat...</div>
+    <div class="loading-placeholder">${loadingText}</div>
   </div>
 
   <script nonce="${nonce}">
@@ -117,4 +121,32 @@ export function getWebviewHtml(options: WebviewHtmlOptions): string {
   <script nonce="${nonce}" type="module" src="${scriptUri}"></script>
 </body>
 </html>`;
+}
+
+/**
+ * Generate the HTML content for an OpenCode webview.
+ *
+ * This is a shared utility used by both the sidebar ChatViewProvider and
+ * the SessionEditorPanelProvider so that the same React app, CSP policy,
+ * and initial-data contract are reused consistently.
+ */
+export function getWebviewHtml(options: WebviewHtmlOptions): string {
+  const { webview, extensionUri, viewMode, initialSessionId } = options;
+  const initialData: Record<string, string> = {
+    theme: getWebviewTheme(),
+    viewMode,
+  };
+
+  if (initialSessionId) {
+    initialData.initialSessionId = initialSessionId;
+  }
+
+  return buildWebviewHtmlShell({
+    webview,
+    extensionUri,
+    initialData,
+    loadingText: 'Loading OpenCode Chat...',
+    scriptName: 'chat.js',
+    title: 'OpenCode Chat',
+  });
 }

@@ -7,6 +7,7 @@
 
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import type { CompactionPart } from '../../../types/opencode';
+import { hasDisplayText, toDisplayText } from '../../../utils/renderText';
 
 // ---------------------------------------------------------------------------
 // Icon
@@ -43,12 +44,13 @@ export const CompactionPartView = React.memo(function CompactionPartView({
   const [expanded, setExpanded] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
+  const summary = toDisplayText(part.summary, 'compaction.summary');
 
   useEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }
-  }, [expanded, part.summary]);
+  }, [expanded, summary]);
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
 
@@ -62,7 +64,7 @@ export const CompactionPartView = React.memo(function CompactionPartView({
     [toggle],
   );
 
-  const hasSummary = part.summary.trim().length > 0;
+  const hasSummary = hasDisplayText(part.summary, 'compaction.summary.visible');
 
   return (
     <div className="msg-compaction">
@@ -97,7 +99,7 @@ export const CompactionPartView = React.memo(function CompactionPartView({
           }}
         >
           <div ref={bodyRef} className="msg-compaction__body">
-            <div className="msg-compaction__summary">{part.summary}</div>
+            <div className="msg-compaction__summary">{summary}</div>
           </div>
         </div>
       )}

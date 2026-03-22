@@ -20,6 +20,7 @@ import type {
   OpenCodeConfig,
   Todo,
 } from './types/opencode';
+import { getConfiguredModel } from './utils/opencodeConfig';
 
 // ---------------------------------------------------------------------------
 // Module-level references for deactivate()
@@ -62,6 +63,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   chatProvider.setLogger(logger);
   const sessionProvider = new SessionTreeProvider(eventBus);
   const statusProvider = new StatusTreeProvider(eventBus);
+  statusProvider.setClient(client);
+  statusProvider.setLogger(logger);
+  statusProvider.startAutoRefresh();
   const settingsProvider = new SettingsViewProvider(context.extensionUri);
   settingsProvider.setClient(client);
   settingsProvider.setLogger(logger);
@@ -72,6 +76,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   editorPanelProviderRef = editorPanelProvider;
 
   context.subscriptions.push(
+    statusProvider,
     vscode.window.registerWebviewViewProvider(
       ChatViewProvider.viewType,
       chatProvider,
@@ -266,11 +271,14 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
 
     // Load config (model info)
     const config = await ctx.client.getConfig();
-    if (config.model) {
-      const parts = config.model.split('/');
+    const model = getConfiguredModel(config);
+    if (model) {
+      const parts = model.split('/');
       if (parts.length === 2) {
         ctx.statusBarManager.setModel(parts[0], parts[1]);
       }
+    } else {
+      ctx.statusBarManager.setModelAuto();
     }
 
     // Send config to chat webview so it knows the current model/agent on startup
@@ -685,12 +693,16 @@ function subscribeToEvents(ctx: CommandContext): void {
   // Config update — update model in status bar
   eventUnsubscribers.push(
     ctx.eventBus.on('config:updated', (config) => {
-      if (config.model) {
-        const parts = config.model.split('/');
+      const model = getConfiguredModel(config);
+      if (model) {
+        const parts = model.split('/');
         if (parts.length === 2) {
           ctx.statusBarManager.setModel(parts[0], parts[1]);
         }
+        return;
       }
+
+      ctx.statusBarManager.setModelAuto();
     })
   );
 }

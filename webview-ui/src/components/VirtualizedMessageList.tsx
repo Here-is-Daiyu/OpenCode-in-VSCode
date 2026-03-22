@@ -13,6 +13,18 @@ import type { MessageWithParts } from '../types/opencode';
 import { MessageBubble } from './message/MessageBubble';
 import { MessageErrorBoundary } from './ErrorBoundary';
 
+const getFallbackMessageId = (message: MessageWithParts | undefined, index: number): string => {
+  const role = message?.info?.role ?? 'unknown';
+  const createdAt = message?.info?.time?.created ?? 'unknown';
+  const partsCount = message?.parts?.length ?? 0;
+  const firstPartType = message?.parts?.[0]?.type ?? 'none';
+
+  return `message-fallback-${role}-${createdAt}-${partsCount}-${firstPartType}-${index}`;
+};
+
+const getMessageItemId = (message: MessageWithParts | undefined, index: number): string =>
+  message?.info?.id || getFallbackMessageId(message, index);
+
 interface VirtualizedMessageListProps {
   messages: MessageWithParts[];
   scrollElementRef: React.RefObject<HTMLDivElement | null>;
@@ -25,6 +37,7 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollElementRef.current,
+    getItemKey: (index) => getMessageItemId(messages[index], index),
     estimateSize: (index) => {
       const msg = messages[index];
       // User messages are typically shorter
@@ -49,9 +62,18 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
     >
       {virtualItems.map((virtualItem) => {
         const msg = messages[virtualItem.index];
+        if (!msg?.info) {
+          return null;
+        }
+
+        const messageId = getMessageItemId(msg, virtualItem.index);
+        const safeMessage = msg.info.id === messageId
+          ? msg
+          : { ...msg, info: { ...msg.info, id: messageId } };
+
         return (
           <div
-            key={msg.info.id}
+            key={virtualItem.key}
             data-index={virtualItem.index}
             ref={virtualizer.measureElement}
             style={{
@@ -62,8 +84,8 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
               transform: `translateY(${virtualItem.start}px)`,
             }}
           >
-            <MessageErrorBoundary messageId={msg.info.id} message={msg}>
-              <MessageBubble message={msg} />
+            <MessageErrorBoundary messageId={messageId} message={safeMessage}>
+              <MessageBubble message={safeMessage} />
             </MessageErrorBoundary>
           </div>
         );

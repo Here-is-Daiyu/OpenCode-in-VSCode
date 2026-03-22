@@ -32,6 +32,7 @@ import { PatchPartView } from './parts/PatchPartView';
 import { AgentPartView } from './parts/AgentPartView';
 import { RetryPartView } from './parts/RetryPartView';
 import { CompactionPartView } from './parts/CompactionPartView';
+import { hasDisplayText, toDisplayText } from '../../utils/renderText';
 
 interface MessageContentProps {
   parts: Part[];
@@ -55,10 +56,6 @@ type RenderChunk =
   | { kind: 'agent-marker'; id: string; part: AgentPart }
   | { kind: 'retry'; id: string; part: RetryPart }
   | { kind: 'compaction'; id: string; part: CompactionPart };
-
-function getPartText(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
 
 /**
  * Groups consecutive context-tool parts into ContextToolGroup chunks,
@@ -113,23 +110,23 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
   for (const part of parts) {
     switch (part.type) {
       case 'text':
-        if (!getPartText(part.text).trim()) {
+        if (!hasDisplayText(part.text, 'message.text')) {
           break;
         }
         flushReasoning();
         flushContext();
         if (!textId) textId = part.id;
-        textBuffer += (textBuffer ? '\n\n' : '') + getPartText(part.text);
+        textBuffer += (textBuffer ? '\n\n' : '') + toDisplayText(part.text, 'message.text');
         break;
 
       case 'reasoning':
-        if (!getPartText(part.text).trim()) {
+        if (!hasDisplayText(part.text, 'message.reasoning')) {
           break;
         }
         flushText();
         flushContext();
         if (!reasoningId) reasoningId = part.id;
-        reasoningBuffer += getPartText(part.text);
+        reasoningBuffer += toDisplayText(part.text, 'message.reasoning');
         break;
 
       case 'tool': {

@@ -9,6 +9,8 @@ import type {
 } from '../types/opencode';
 import type { EventBus } from '../services/eventBus';
 import type { OpenCodeClient } from '../services/openCodeClient';
+import type { Logger } from '../services/logger';
+import { getConfiguredAgent, getConfiguredModel } from '../utils/opencodeConfig';
 
 // ---------------------------------------------------------------------------
 //  Section identifiers
@@ -71,6 +73,7 @@ export class StatusTreeProvider
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
   private client?: OpenCodeClient;
+  private logger?: Logger;
   private serverInfo: { connected: boolean; version?: string; url?: string } = {
     connected: false,
   };
@@ -113,6 +116,10 @@ export class StatusTreeProvider
     this.client = client;
   }
 
+  setLogger(logger: Logger): void {
+    this.logger = logger;
+  }
+
   setServerInfo(info: { connected: boolean; version?: string; url?: string }): void {
     this.serverInfo = info;
     this._onDidChangeTreeData.fire(undefined);
@@ -138,22 +145,44 @@ export class StatusTreeProvider
    */
   async refresh(): Promise<void> {
     if (this.client && this.serverInfo.connected) {
-      try {
-        const [config, providerInfo, mcp, lsp, formatter] = await Promise.allSettled([
-          this.client.getConfig(),
-          this.client.getProviderInfo(),
-          this.client.getMCPStatus(),
-          this.client.getLSPStatus(),
-          this.client.getFormatterStatus(),
-        ]);
+      const results = await Promise.allSettled([
+        this.client.getConfig(),
+        this.client.getProviderInfo(),
+        this.client.getMCPStatus(),
+        this.client.getLSPStatus(),
+        this.client.getFormatterStatus(),
+      ]);
 
-        if (config.status === 'fulfilled') { this.config = config.value; }
-        if (providerInfo.status === 'fulfilled') { this.providersData = providerInfo.value; }
-        if (mcp.status === 'fulfilled') { this.mcpStatus = mcp.value; }
-        if (lsp.status === 'fulfilled') { this.lspStatus = lsp.value; }
-        if (formatter.status === 'fulfilled') { this.formatterStatus = formatter.value; }
-      } catch {
-        // Swallow — keep stale data
+      const [config, providerInfo, mcp, lsp, formatter] = results;
+
+      if (config.status === 'fulfilled') {
+        this.config = config.value;
+      } else {
+        this.logger?.debug('Status refresh failed for /config', config.reason);
+      }
+
+      if (providerInfo.status === 'fulfilled') {
+        this.providersData = providerInfo.value;
+      } else {
+        this.logger?.debug('Status refresh failed for /provider', providerInfo.reason);
+      }
+
+      if (mcp.status === 'fulfilled') {
+        this.mcpStatus = mcp.value;
+      } else {
+        this.logger?.debug('Status refresh failed for /mcp', mcp.reason);
+      }
+
+      if (lsp.status === 'fulfilled') {
+        this.lspStatus = lsp.value;
+      } else {
+        this.logger?.debug('Status refresh failed for /lsp', lsp.reason);
+      }
+
+      if (formatter.status === 'fulfilled') {
+        this.formatterStatus = formatter.value;
+      } else {
+        this.logger?.debug('Status refresh failed for /formatter', formatter.reason);
       }
     }
     this._onDidChangeTreeData.fire(undefined);
@@ -209,6 +238,7 @@ export class StatusTreeProvider
 
   private getRootSections(): StatusTreeItem[] {
     const items: StatusTreeItem[] = [];
+    const modelLabel = this.getModelLabel();
 
     // 1. Server — show endpoint URL in description when connected
     const serverDesc = this.serverInfo.connected
@@ -231,7 +261,7 @@ export class StatusTreeProvider
     // 2. Model
     items.push(
       new StatusTreeItem('Model', {
-        description: this.config?.model ?? 'default',
+        description: modelLabel,
         collapsibleState: vscode.TreeItemCollapsibleState.Collapsed,
         icon: new vscode.ThemeIcon('symbol-enum'),
         sectionKey: 'model',
@@ -334,20 +364,36 @@ export class StatusTreeProvider
     const items: StatusTreeItem[] = [];
 
     items.push(
-      new StatusTreeItem('Current', {
-        description: this.config?.model ?? 'default',
+      new StatusTreeItem('Configured', {
+        description: this.getModelLabel(),
         icon: new vscode.ThemeIcon('symbol-enum'),
       }),
     );
 
     items.push(
       new StatusTreeItem('Agent', {
-        description: this.config?.agent ?? 'default',
+        description: this.getAgentLabel(),
         icon: new vscode.ThemeIcon('robot'),
       }),
     );
 
     return items;
+  }
+
+  private getAgentLabel(): string {
+    if (!this.config) {
+      return 'unavailable';
+    }
+
+    return getConfiguredAgent(this.config) ?? 'build';
+  }
+
+  private getModelLabel(): string {
+    if (!this.config) {
+      return 'unavailable';
+    }
+
+    return getConfiguredModel(this.config) ?? 'auto';
   }
 
   // -- Provider children -----------------------------------------------------

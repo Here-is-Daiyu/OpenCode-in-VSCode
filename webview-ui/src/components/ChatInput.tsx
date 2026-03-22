@@ -504,7 +504,6 @@ export function ChatInput() {
     <div className="chat-input" onDrop={handleDrop} onDragOver={handleDragOver}>
       <div className="chat-input__inner">
         <div className="chat-input__dock">
-          <ModelSelector />
           <SlashCommandMenu
             ref={slashMenuRef}
             commands={filteredCommands}
@@ -593,6 +592,20 @@ export function ChatInput() {
                 </button>
               </div>
             </div>
+            <div className="chat-input__meta">
+              <div className="chat-input__toolbar">
+                <div className="chat-input__selectors">
+                  <ModelSelector />
+                  <AgentSelector />
+                </div>
+
+                <div className="chat-input__hint">
+                  <span>Enter to send · Shift+Enter for new line · ↑↓ for history</span>
+                </div>
+              </div>
+
+              <TokenUsageBar />
+            </div>
           </div>
 
           {attachedImages.length > 0 && (
@@ -616,15 +629,6 @@ export function ChatInput() {
             </div>
           )}
         </div>
-
-        <div className="chat-input__toolbar">
-          <AgentSelector />
-        </div>
-
-        <div className="chat-input__hint">
-          <span>Enter to send · Shift+Enter for new line · ↑↓ for history</span>
-        </div>
-        <TokenUsageBar />
       </div>
     </div>
   );

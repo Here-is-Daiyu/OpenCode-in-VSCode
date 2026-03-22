@@ -77,6 +77,7 @@ textarea {
  * ==================================================================== */
 
 .chat-app {
+  --chat-scroll-bottom-offset: 112px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -250,7 +251,7 @@ textarea {
 .chat-scroll-bottom {
   position: absolute;
   left: 50%;
-  bottom: 108px;
+  bottom: var(--chat-scroll-bottom-offset);
   z-index: 15;
   width: 30px;
   height: 30px;
@@ -433,9 +434,9 @@ textarea {
   position: relative;
   z-index: 10;
   flex-shrink: 0;
-  padding: 0 0 12px;
+  padding: 0 0 10px;
   background:
-    linear-gradient(180deg, transparent 0, color-mix(in srgb, var(--background-base) 92%, transparent) 20px, var(--background-base) 100%);
+    linear-gradient(180deg, transparent 0, color-mix(in srgb, var(--background-base) 92%, transparent) 16px, var(--background-base) 100%);
 }
 
 .chat-input__inner {
@@ -449,12 +450,13 @@ textarea {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0;
+  gap: 6px;
 }
 
 .chat-input__shell {
   position: relative;
   z-index: 1;
+  border: 1px solid var(--border-weaker-base);
   border-radius: var(--radius-lg);
   background: var(--surface-raised-stronger-non-alpha);
   box-shadow: var(--shadow-xs-border-base);
@@ -464,9 +466,9 @@ textarea {
 .chat-input__row {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 10px;
   min-height: 36px;
-  padding: 8px 10px;
+  padding: 8px 10px 6px;
 }
 
 .chat-input__shell:focus-within {
@@ -671,15 +673,41 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 0;
-  min-height: 28px;
+  gap: 8px;
+  padding: 6px 2px 0;
+  min-height: 0;
+  flex-wrap: wrap;
+}
+
+.chat-input__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 8px 8px;
+  border-top: 1px solid var(--border-weaker-base);
+  background: color-mix(in srgb, var(--surface-raised-base) 74%, transparent);
+}
+
+.chat-input__selectors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .chat-input__hint {
-  padding: 8px 4px 0;
+  margin-left: auto;
+  padding: 0;
   color: var(--text-weaker);
-  font-size: var(--font-size-small);
+  font-size: 11px;
+  line-height: 1.45;
   user-select: none;
+}
+
+.chat-input__hint span {
+  display: block;
 }
 
 /* ====================================================================
@@ -1136,6 +1164,10 @@ textarea {
  * ==================================================================== */
 
 @media (max-width: 640px) {
+  .chat-app {
+    --chat-scroll-bottom-offset: 136px;
+  }
+
   .chat-header {
     padding-inline: 10px;
   }
@@ -1144,8 +1176,13 @@ textarea {
     display: none;
   }
 
-  .chat-scroll-bottom {
-    bottom: 100px;
+  .chat-input__selectors {
+    width: 100%;
+  }
+
+  .chat-input__hint {
+    margin-left: 0;
+    flex-basis: 100%;
   }
 
   .permission-card__actions {
@@ -1159,7 +1196,7 @@ textarea {
 
 .model-selector {
   position: relative;
-  padding: 0 4px 6px;
+  padding: 0;
 }
 
 .model-selector__display {
@@ -1167,12 +1204,12 @@ textarea {
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  height: 28px;
+  height: 26px;
   padding: 0 8px;
-  border: 1px solid transparent;
+  border: 1px solid var(--border-weaker-base);
   border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-weak);
+  background: color-mix(in srgb, var(--surface-base) 84%, transparent);
+  color: var(--text-base);
   font-family: var(--font-family-sans);
   font-size: var(--font-size-small);
   cursor: pointer;
@@ -1184,8 +1221,8 @@ textarea {
 }
 
 .model-selector__display:hover {
-  background: var(--button-ghost-hover);
-  color: var(--text-base);
+  background: var(--surface-base-hover);
+  color: var(--text-strong);
 }
 
 .model-selector__display:focus-visible {
@@ -1623,7 +1660,8 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 4px 0;
+  min-height: 18px;
+  padding: 0 2px 0;
 }
 
 .token-bar__track {
@@ -1656,7 +1694,7 @@ textarea {
 .token-bar__label {
   flex-shrink: 0;
   color: var(--text-weaker);
-  font-size: 11px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1733,12 +1771,12 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  height: 28px;
-  padding: 4px 8px;
-  border: 1px solid transparent;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-weaker-base);
   border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-weak);
+  background: color-mix(in srgb, var(--surface-base) 84%, transparent);
+  color: var(--text-base);
   font-family: var(--font-family-sans);
   font-size: var(--font-size-small);
   cursor: pointer;
@@ -1750,8 +1788,8 @@ textarea {
 }
 
 .agent-selector__trigger:hover {
-  background: var(--button-ghost-hover);
-  color: var(--text-base);
+  background: var(--surface-base-hover);
+  color: var(--text-strong);
 }
 
 .agent-selector__trigger:focus-visible {

@@ -12,6 +12,7 @@ import { SettingGroup } from '../../../components/settings/SettingGroup';
 import { Dropdown } from '../../../components/settings/Dropdown';
 import { Toggle } from '../../../components/settings/Toggle';
 import { useAgentStore } from '../../../stores/agentStore';
+import { getConfiguredAgent, getConfiguredModel } from '../../../utils/opencodeConfig';
 
 interface ModelsTabProps {
   config: OpenCodeConfig;
@@ -34,7 +35,8 @@ export function ModelsTab({
   onUpdateConfig,
 }: ModelsTabProps) {
   // Current model is stored as "providerId/modelId"
-  const currentModel = config.model ?? '';
+  const currentModel = getConfiguredModel(config) ?? '';
+  const usingAutoModel = !currentModel;
 
   // Parse the current model reference
   const [currentProviderID, currentModelID] = useMemo(() => {
@@ -61,14 +63,21 @@ export function ModelsTab({
     [onUpdateConfig],
   );
 
-  // Agent selection — we don't have a separate agents list in props,
-  // so we use config.agent and allow the user to set it as a string.
+  const clearModelSelection = useCallback(() => {
+    onUpdateConfig({ model: null });
+  }, [onUpdateConfig]);
+
   const agents = useAgentStore((s) => s.agents);
+  const currentAgent = getConfiguredAgent(config) ?? '';
   const handleAgentChange = useCallback(
     (value: string) => {
-      onUpdateConfig({ agent: value || undefined });
+      onUpdateConfig({ default_agent: value || null });
     },
     [onUpdateConfig],
+  );
+
+  const hasCurrentModelBadges = Boolean(
+    currentModelObj?.capabilities?.reasoning || currentModelObj?.capabilities?.attachment,
   );
 
   // Disabled-providers toggle
@@ -102,35 +111,57 @@ export function ModelsTab({
   return (
     <div className="model-tab">
       {/* ---- Current Model Summary ---- */}
-      {currentModel && (
-        <SettingGroup
-          title="Current Model"
-          description="The model currently used for conversations."
-        >
-          <div className="model-current-summary">
-            <div className="model-current-summary__name">
-              {currentModelObj?.name || currentModelID || 'Unknown'}
-            </div>
-            <div className="model-current-summary__provider">
-              Provider: <strong>{currentProviderID}</strong>
-              {connectedProviders.includes(currentProviderID) ? (
-                <span className="model-group__status model-group__status--connected">
-                  Connected
+      <SettingGroup
+        title="Current Model"
+        description="The model currently used for conversations."
+      >
+        <div className={`model-current-summary${usingAutoModel ? ' model-current-summary--auto' : ''}`}>
+          <div className="model-current-summary__name">
+            {usingAutoModel
+              ? 'Automatic model selection'
+              : currentModelObj?.name || currentModelID || 'Unknown'}
+          </div>
+          <div className="model-current-summary__provider">
+            {usingAutoModel ? (
+              <>
+                Model: <strong>Auto</strong>
+                <span
+                  className={`model-group__status model-group__status--${connectedProviders.length > 0 ? 'connected' : 'disconnected'}`}
+                >
+                  {connectedProviders.length > 0
+                    ? `${connectedProviders.length} provider${connectedProviders.length === 1 ? '' : 's'} connected`
+                    : 'No connected providers'}
                 </span>
-              ) : (
-                <span className="model-group__status model-group__status--disconnected">
-                  Disconnected
-                </span>
-              )}
-            </div>
-            {currentModelObj?.limit && (
-              <div className="model-current-summary__limits">
-                Context: {formatLimit(currentModelObj.limit.context)} tokens
-                {currentModelObj.limit.output > 0 &&
-                  ` · Output: ${formatLimit(currentModelObj.limit.output)} tokens`}
-              </div>
+              </>
+            ) : (
+              <>
+                Provider: <strong>{currentProviderID}</strong>
+                {connectedProviders.includes(currentProviderID) ? (
+                  <span className="model-group__status model-group__status--connected">
+                    Connected
+                  </span>
+                ) : (
+                  <span className="model-group__status model-group__status--disconnected">
+                    Disconnected
+                  </span>
+                )}
+              </>
             )}
+          </div>
+          {usingAutoModel ? (
+            <div className="model-current-summary__limits">
+              OpenCode will pick the server default model until you pin one explicitly.
+            </div>
+          ) : currentModelObj?.limit ? (
+            <div className="model-current-summary__limits">
+              Context: {formatLimit(currentModelObj.limit.context)} tokens
+              {currentModelObj.limit.output > 0 &&
+                ` · Output: ${formatLimit(currentModelObj.limit.output)} tokens`}
+            </div>
+          ) : null}
+          {(usingAutoModel || hasCurrentModelBadges) && (
             <div className="model-current-summary__badges">
+              {usingAutoModel && <span className="model-option__badge">Auto</span>}
               {currentModelObj?.capabilities?.reasoning && (
                 <span className="model-option__badge">Reasoning</span>
               )}
@@ -138,25 +169,56 @@ export function ModelsTab({
                 <span className="model-option__badge">Attachments</span>
               )}
             </div>
-          </div>
-        </SettingGroup>
-      )}
+          )}
+        </div>
+      </SettingGroup>
 
       {/* ---- Model Selection ---- */}
       <SettingGroup
         title="Select Model"
         description="Choose a model from your configured providers. Connected providers are shown first."
       >
-        {providers.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state__text">
-              No providers available. Make sure the OpenCode server is running and has
-              providers configured.
+        <div className="model-selection">
+          <div
+            className={[
+              'model-option',
+              'model-option--system',
+              usingAutoModel && 'model-option--selected',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            onClick={clearModelSelection}
+            role="button"
+            tabIndex={0}
+            aria-selected={usingAutoModel}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                clearModelSelection();
+              }
+            }}
+          >
+            <div className="model-option__body">
+              <span className="model-option__name">Automatic selection</span>
+              <span className="model-option__hint">
+                Use the server default model when you do not want to pin a provider/model
+                pair.
+              </span>
             </div>
+            <span className="model-option__badges">
+              <span className="model-option__badge">Auto</span>
+            </span>
           </div>
-        ) : (
-          <div className="model-selection">
-            {sortedProviders.map((provider) => {
+
+          {providers.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state__text">
+                No providers available. Make sure the OpenCode server is running and has
+                providers configured.
+              </div>
+            </div>
+          ) : (
+            sortedProviders.map((provider) => {
               const isConnected = connectedProviders.includes(provider.id);
               return (
                 <div key={provider.id} className="model-group">
@@ -232,9 +294,9 @@ export function ModelsTab({
                   </div>
                 </div>
               );
-            })}
-          </div>
-        )}
+            })
+          )}
+        </div>
       </SettingGroup>
 
       {/* ---- Agent Selection ---- */}
@@ -243,26 +305,26 @@ export function ModelsTab({
         description="Choose the agent mode. Leave empty for the default agent."
       >
         <Dropdown
-            label="Agent mode"
-            description="The agent determines which tools and system prompt are used."
-            value={config.agent ?? ''}
-            options={
-              agents.length > 0
-                ? [
-                    { value: '', label: 'Default' },
-                    ...agents.map((a) => ({
-                      value: a.name,
-                      label: a.name,
-                    })),
-                  ]
-                : [
-                    { value: '', label: 'Default' },
-                    { value: 'code', label: 'Code' },
-                    { value: 'task', label: 'Task' },
-                  ]
-            }
-            onChange={handleAgentChange}
-          />
+          label="Agent mode"
+          description="The agent determines which tools and system prompt are used."
+          value={currentAgent}
+          options={
+            agents.length > 0
+              ? [
+                  { value: '', label: 'Default' },
+                  ...agents.map((a) => ({
+                    value: a.name,
+                    label: a.name,
+                  })),
+                ]
+              : [
+                  { value: '', label: 'Default' },
+                  { value: 'code', label: 'Code' },
+                  { value: 'task', label: 'Task' },
+                ]
+          }
+          onChange={handleAgentChange}
+        />
       </SettingGroup>
 
       {/* ---- Provider Availability ---- */}

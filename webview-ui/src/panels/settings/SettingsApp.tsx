@@ -5,7 +5,7 @@
  * via postMessage to read/write VSCode settings and OpenCode server config.
  */
 
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
 import { getVsCodeApi } from '../../utils/vscodeApi';
 import { SettingsTabs, getSettingsTabDef } from '../../components/settings/SettingsTabs';
@@ -15,6 +15,7 @@ import { ModelsTab } from './tabs/ModelsTab';
 import { IntegrationsTab } from './tabs/IntegrationsTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
 import type { ExtensionToSettingsMessage } from '../../types/messages';
+import { getConfiguredAgent, getConfiguredModel } from '../../utils/opencodeConfig';
 import '../../styles/settings.css';
 
 // Debounce timer for auto-save
@@ -28,6 +29,37 @@ export function SettingsApp() {
   const store = useSettingsStore();
   const initialised = useRef(false);
   const activeTab = getSettingsTabDef(store.activeTab);
+  const settingsSummary = useMemo(() => {
+    const providerCount = store.providers.length;
+    const mcpCount = Object.keys(store.mcpStatus).length;
+
+    return [
+      {
+        label: 'Model',
+        value: getConfiguredModel(store.opencodeConfig) ?? 'Auto',
+      },
+      {
+        label: 'Agent',
+        value: getConfiguredAgent(store.opencodeConfig) ?? 'Default',
+      },
+      {
+        label: 'Providers',
+        value: providerCount > 0
+          ? `${store.connectedProviders.length}/${providerCount} connected`
+          : store.loaded
+            ? 'None detected'
+            : 'Loading…',
+      },
+      {
+        label: 'MCP',
+        value: mcpCount > 0
+          ? `${mcpCount} configured`
+          : store.loaded
+            ? 'None configured'
+            : 'Loading…',
+      },
+    ];
+  }, [store.connectedProviders.length, store.loaded, store.mcpStatus, store.opencodeConfig, store.providers.length]);
 
   // ------------------------------------------------------------------
   //  Listen for messages from extension host
@@ -199,8 +231,22 @@ export function SettingsApp() {
         <header className="settings-header">
           <div className="settings-header__main">
             <div className="settings-header__title-row">
-              <div>
+              <div className="settings-header__heading">
                 <h1 className="settings-header__title">Settings</h1>
+                <p className="settings-header__description">
+                  Edit VS Code preferences and OpenCode server configuration from one
+                  place.
+                </p>
+                <div className="settings-header__summary">
+                  {settingsSummary.map((item) => (
+                    <div key={item.label} className="settings-header__summary-item">
+                      <span className="settings-header__summary-label">{item.label}</span>
+                      <span className="settings-header__summary-value" title={item.value}>
+                        {item.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               <div className="settings-header__meta">
@@ -209,7 +255,7 @@ export function SettingsApp() {
                   onClick={() => postMessage({ type: 'settings:openConfigFile' })}
                   title="Open opencode.json in editor"
                 >
-                  Open Config File
+                  Open opencode.json
                 </button>
                 {store.saveIndicator && (
                   <span className="settings-header__indicator settings-header__indicator--saved">

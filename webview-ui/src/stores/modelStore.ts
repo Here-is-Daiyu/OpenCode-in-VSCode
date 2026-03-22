@@ -7,6 +7,7 @@
 
 import { create } from 'zustand';
 import type { OpenCodeConfig, Provider, ProviderModel } from '../types/opencode';
+import { getConfiguredModel } from '../utils/opencodeConfig';
 
 export interface ResolvedModel {
   providerID: string;
@@ -59,13 +60,14 @@ export const useModelStore = create<ModelState>((set, get) => ({
 
   getCurrentModel: () => {
     const { config, providers } = get();
-    if (!config?.model) return null;
+    const configuredModel = getConfiguredModel(config);
+    if (!configuredModel) return null;
 
-    const slashIndex = config.model.indexOf('/');
+    const slashIndex = configuredModel.indexOf('/');
     if (slashIndex === -1) return null;
 
-    const providerID = config.model.slice(0, slashIndex);
-    const modelID = config.model.slice(slashIndex + 1);
+    const providerID = configuredModel.slice(0, slashIndex);
+    const modelID = configuredModel.slice(slashIndex + 1);
 
     const provider = providers.find((p) => p.id === providerID);
     if (!provider) return null;
