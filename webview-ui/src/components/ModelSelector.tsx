@@ -53,6 +53,7 @@ export function ModelSelector() {
   const currentModel = getCurrentModel();
   const availableModels = getAvailableModels();
   const configuredModel = getConfiguredModel(config);
+  const currentModelKey = currentModel ? `${currentModel.providerID}/${currentModel.modelID}` : null;
 
   // Grouped models (when no filter) or filtered flat list
   const { groups, flatItems } = useMemo(() => {
@@ -77,7 +78,6 @@ export function ModelSelector() {
       }
     }
     return { groups: grouped, flatItems: flat };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [availableModels, currentModel, filter, modelPrefs]);
 
   // Variant list for current model
@@ -88,13 +88,12 @@ export function ModelSelector() {
 
   // Restore persisted variant when model or prefs change
   useEffect(() => {
-    if (!currentModel || !modelPrefs) return;
-    const key = `${currentModel.providerID}/${currentModel.modelID}`;
-    const saved = modelPrefs.variant?.[key];
+    if (!currentModelKey || !modelPrefs) return;
+    const saved = modelPrefs.variant?.[currentModelKey];
     if (saved && variants.includes(saved)) {
       setSelectedVariant(saved);
     }
-  }, [currentModel?.providerID, currentModel?.modelID, modelPrefs, variants, setSelectedVariant]);
+  }, [currentModelKey, modelPrefs, variants, setSelectedVariant]);
 
   // Clamp highlight index when list changes
   useEffect(() => {

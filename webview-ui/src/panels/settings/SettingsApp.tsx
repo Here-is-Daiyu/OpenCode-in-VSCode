@@ -14,14 +14,15 @@ import { ChatTab } from './tabs/ChatTab';
 import { ModelsTab } from './tabs/ModelsTab';
 import { IntegrationsTab } from './tabs/IntegrationsTab';
 import { PermissionsTab } from './tabs/PermissionsTab';
-import type { ExtensionToSettingsMessage } from '../../types/messages';
+import type { ExtensionToSettingsMessage, SettingsToExtensionMessage } from '../../types/messages';
+import type { MCPServerConfig, OpenCodeConfig } from '../../types/opencode';
 import { getConfiguredAgent, getConfiguredModel } from '../../utils/opencodeConfig';
 import '../../styles/settings.css';
 
 // Debounce timer for auto-save
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 
-function postMessage(message: unknown): void {
+function postMessage(message: SettingsToExtensionMessage): void {
   getVsCodeApi().postMessage(message);
 }
 
@@ -69,19 +70,21 @@ export function SettingsApp() {
       const msg = event.data as ExtensionToSettingsMessage;
       if (!msg || typeof msg !== 'object' || !('type' in msg)) return;
 
+      const settingsStore = useSettingsStore.getState();
+
       switch (msg.type) {
         case 'settings:loaded':
-          store.loadAll(msg.data);
+          settingsStore.loadAll(msg.data);
           break;
         case 'settings:updated':
-          store.setVSCodeSetting(msg.data.key, msg.data.value);
-          store.flashSaved();
+          settingsStore.setVSCodeSetting(msg.data.key, msg.data.value);
+          settingsStore.flashSaved();
           break;
         case 'providers:loaded':
-          store.setProviders(msg.data.providers, msg.data.connected);
+          settingsStore.setProviders(msg.data.providers, msg.data.connected);
           break;
         case 'mcp:status':
-          store.setMCPStatus(msg.data);
+          settingsStore.setMCPStatus(msg.data);
           break;
         case 'theme:changed': {
           // Suppress CSS transitions during theme switch to prevent flash
@@ -94,7 +97,7 @@ export function SettingsApp() {
           break;
         }
         case 'error':
-          store.setError(msg.data.message);
+          settingsStore.setError(msg.data.message);
           break;
       }
     };
@@ -133,7 +136,7 @@ export function SettingsApp() {
   }, []);
 
   /** Update OpenCode server config (debounced 500ms). */
-  const updateOpenCodeConfig = useCallback((partial: Record<string, unknown>) => {
+  const updateOpenCodeConfig = useCallback((partial: Partial<OpenCodeConfig>) => {
     useSettingsStore.getState().setOpenCodeConfig(partial);
 
     clearTimeout(saveTimer);
@@ -146,7 +149,7 @@ export function SettingsApp() {
   }, []);
 
   /** Add MCP server (immediate). */
-  const addMCPServer = useCallback((name: string, config: unknown) => {
+  const addMCPServer = useCallback((name: string, config: MCPServerConfig) => {
     postMessage({ type: 'settings:mcp:add', data: { name, config } });
   }, []);
 
@@ -160,11 +163,15 @@ export function SettingsApp() {
     postMessage({ type: 'settings:mcp:toggle', data: { name, enabled } });
   }, []);
 
+  const openKeyboardShortcuts = useCallback(() => {
+    postMessage({ type: 'settings:openKeyboardShortcuts' });
+  }, []);
+
   // ------------------------------------------------------------------
   //  Tab change
   // ------------------------------------------------------------------
   const handleTabChange = useCallback((tab: SettingsTab) => {
-    store.setActiveTab(tab);
+    useSettingsStore.getState().setActiveTab(tab);
   }, []);
 
   // ------------------------------------------------------------------
@@ -184,6 +191,7 @@ export function SettingsApp() {
           <ChatTab
             settings={store.vscodeSettings}
             onUpdate={updateVSCodeSetting}
+            onOpenKeyboardShortcuts={openKeyboardShortcuts}
           />
         );
       case 'models':
@@ -251,6 +259,7 @@ export function SettingsApp() {
 
               <div className="settings-header__meta">
                 <button
+                  type="button"
                   className="settings-header-button"
                   onClick={() => postMessage({ type: 'settings:openConfigFile' })}
                   title="Open opencode.json in editor"

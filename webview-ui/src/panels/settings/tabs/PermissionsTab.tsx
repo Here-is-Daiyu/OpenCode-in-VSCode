@@ -63,11 +63,14 @@ interface PermissionsTabProps {
 
 export function PermissionsTab({
   config,
-  settings,
+  settings: _settings,
   onUpdateConfig,
   onUpdateSetting,
 }: PermissionsTabProps) {
-  const permission = config.permission ?? {};
+  const permission = useMemo(
+    () => config.permission ?? {},
+    [config.permission],
+  );
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   // ---- Permission rule handlers ----

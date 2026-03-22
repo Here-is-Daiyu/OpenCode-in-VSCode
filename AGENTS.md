@@ -12,6 +12,7 @@ VSCode extension that connects to the `opencode serve` backend via REST API + SS
 ### Live Instance
 
 A running opencode instance is available at `http://127.0.0.1:23452`:
+
 - **Read-only** — use it to verify actual API responses (GET requests, SSE event formats)
 - Cross-validate against `docs/` documentation
 - **Do NOT** perform write operations (POST prompt, etc.)
@@ -21,9 +22,10 @@ A running opencode instance is available at `http://127.0.0.1:23452`:
 | Directory | Content | License | Usage |
 |-----------|---------|---------|-------|
 | `vendor/opencode-official/` | OpenCode CLI/Server official source | MIT | Freely reference for API behavior investigation |
+| `vendor/continue/` | Continue VS Code extension + GUI source | Apache-2.0 | Freely reference command/keybinding/webview integration patterns; still prefer borrowing ideas over large code copies |
 | `vendor/OpenCodeUI/` | Community OpenCode Desktop WebUI | **GPL-3.0** | **Read for understanding only — do NOT copy/paste any source code** (GPL virality is incompatible with this project's MIT license) |
 
-Both directories are `.gitignore`d and not committed to this repository.
+All three directories are `.gitignore`d and not committed to this repository.
 
 ### Research Documentation (docs/)
 
@@ -36,10 +38,12 @@ Both directories are `.gitignore`d and not committed to this repository.
 | `vscode-extension-api.md` | WebviewView API, TreeView, Configuration, editor integration, postMessage patterns |
 | `feature-gap-analysis.md` | Feature gap analysis, implementation roadmap |
 | `opencode-server-official.md` | opencode server internals analysis |
+| `openchamber-feature-reference.md` | OpenChamber feature/reference notes for extension ideas |
 | `opencode-tui-tips.md` | TUI interaction patterns reference |
 | `vscode-settings-ui-research.md` | Settings UI implementation research |
 
 **Fixed order for troubleshooting API issues:**
+
 1. Check `docs/research/opencode-api-reference.md` first
 2. Cross-reference with `vendor/opencode-official/` source to confirm actual structure
 3. Only then probe the live instance at `127.0.0.1:23452`
@@ -60,7 +64,7 @@ Extension Host (src/)          Webview (webview-ui/src/)
 ```
 
 - **Type safety:** Extension ↔ Webview messages MUST be typed in `src/types/messages.ts`. API responses MUST have TypeScript interfaces. Use discriminated unions. No unvalidated `any`.
-- **Build:** Extension uses esbuild, Webview uses Vite.
+- **Build:** Extension uses esbuild via `scripts/esbuild.mjs`, Webview uses Vite.
 - **State management:** Webview side uses Zustand.
 
 ## Key Directories
@@ -73,6 +77,7 @@ src/
   managers/             — SessionManager, StatusBarManager
   services/             — OpenCodeClient, ServerManager, EventBus, etc.
   types/                — Message types, event types, API types
+scripts/                — Build/asset helper scripts
 webview-ui/src/
   panels/chat/          — Chat panel (ChatApp.tsx)
   panels/settings/      — Settings panel (SettingsApp.tsx)
@@ -113,6 +118,7 @@ webview-ui/src/
 ## More Information
 
 See `README.md` for:
+
 - Full feature list and current status
 - Installation, build, and dev commands
 - Detailed architecture with component responsibilities

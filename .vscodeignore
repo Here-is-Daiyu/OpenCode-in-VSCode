@@ -2,6 +2,7 @@
 .vscode/**
 .git/**
 .github/**
+.artifacts/**
 src/**
 webview-ui/src/**
 webview-ui/node_modules/**
@@ -10,17 +11,16 @@ webview-ui/package-lock.json
 webview-ui/tsconfig.json
 webview-ui/vite.config.ts
 docs/**
-docsresearch/**
 node_modules/**
 vendor/**
 .gitignore
 tsconfig.json
-esbuild.mjs
-generate-icon.js
+eslint.config.mjs
+scripts/**
 **/*.map
 
 # Development docs & scratch files (not for users)
 AGENTS.md
-todo.txt
+todo.md
 bug.txt
 nul

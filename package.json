@@ -155,6 +155,11 @@
         "category": "OpenCode"
       },
       {
+        "command": "opencode.insertEditorCodeToChat",
+        "title": "Insert Current Editor Code into Chat",
+        "category": "OpenCode"
+      },
+      {
         "command": "opencode.explainCode",
         "title": "Explain Code",
         "category": "OpenCode"
@@ -267,6 +272,10 @@
           "group": "2_context"
         },
         {
+          "command": "opencode.insertEditorCodeToChat",
+          "group": "2_context"
+        },
+        {
           "command": "opencode.addFileToPrompt",
           "group": "2_context"
         }
@@ -306,6 +315,12 @@
         "key": "ctrl+shift+e",
         "mac": "cmd+shift+e",
         "when": "opencode.serverConnected"
+      },
+      {
+        "command": "opencode.insertEditorCodeToChat",
+        "key": "ctrl+alt+shift+c",
+        "mac": "cmd+alt+shift+c",
+        "when": "editorTextFocus && !editorReadonly && opencode.serverConnected"
       }
     ],
     "configuration": {
@@ -378,25 +393,30 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run build",
-    "build": "node esbuild.mjs --production && npm run build:webview",
-    "build:extension": "node esbuild.mjs --production",
+    "build": "node scripts/esbuild.mjs --production && npm run build:webview",
+    "build:extension": "node scripts/esbuild.mjs --production",
     "build:webview": "cd webview-ui && npx vite build",
-    "dev": "concurrently \"node esbuild.mjs --watch\" \"cd webview-ui && npx vite build --watch\"",
-    "dev:extension": "node esbuild.mjs --watch",
+    "dev": "concurrently \"node scripts/esbuild.mjs --watch\" \"cd webview-ui && npx vite build --watch\"",
+    "dev:extension": "node scripts/esbuild.mjs --watch",
     "dev:webview": "cd webview-ui && npx vite build --watch",
-    "lint": "eslint src/ webview-ui/src/",
+    "lint": "eslint \"src/**/*.ts\" \"webview-ui/src/**/*.{ts,tsx}\"",
     "typecheck": "tsc --noEmit && cd webview-ui && npx tsc --noEmit",
     "package": "npx @vscode/vsce package",
     "test": "node --experimental-vm-modules node_modules/vitest/vitest.mjs run"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.1",
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.94.0",
     "concurrently": "^9.0.0",
     "esbuild": "^0.25.0",
     "eslint": "^9.0.0",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.4.0",
     "sharp": "^0.34.5",
-    "typescript": "^5.8.0"
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.46.2"
   },
   "dependencies": {
     "@opencode-ai/sdk": "^1.2.15"

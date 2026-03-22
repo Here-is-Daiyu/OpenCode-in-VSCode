@@ -142,6 +142,10 @@ export class SettingsViewProvider {
       case 'settings:openConfigFile':
         vscode.commands.executeCommand('opencode.openConfigFile');
         break;
+
+      case 'settings:openKeyboardShortcuts':
+        await vscode.commands.executeCommand('workbench.action.openGlobalKeybindings');
+        break;
     }
   }
 

@@ -2,7 +2,7 @@
  * Internal event types for the extension's event bus
  */
 
-import type { Session, MessageWithParts, SessionStatus, Part, PermissionRequest, Question, Todo, OpenCodeConfig, Provider } from './opencode';
+import type { Session, MessageWithParts, SessionStatus, Part, PermissionRequest, Question, Todo, OpenCodeConfig } from './opencode';
 
 export type EventType =
   | 'server:connected'

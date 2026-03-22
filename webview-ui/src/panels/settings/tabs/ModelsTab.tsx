@@ -81,7 +81,10 @@ export function ModelsTab({
   );
 
   // Disabled-providers toggle
-  const disabledProviders = config.disabled_providers ?? [];
+  const disabledProviders = useMemo(
+    () => config.disabled_providers ?? [],
+    [config.disabled_providers],
+  );
 
   const handleToggleProvider = useCallback(
     (providerId: string, enabled: boolean) => {

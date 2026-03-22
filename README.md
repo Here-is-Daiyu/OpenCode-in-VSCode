@@ -60,6 +60,8 @@ npm ci --prefix webview-ui
 | `npm run typecheck` | Type-check both extension and webview code |
 | `npm run package` | Package into `.vsix` |
 
+Root build helpers live in `scripts/` (`esbuild.mjs` for extension bundling/watch mode, `generate-icon.js` for icon asset generation).
+
 To debug locally:
 
 1. Open this repo in VS Code
@@ -119,6 +121,10 @@ src/
     opencode.ts                   — OpenCode API response types
   utils/
     webviewHtml.ts                — Webview HTML generation with nonce CSP
+
+scripts/
+  esbuild.mjs                     — Extension bundling/watch entry
+  generate-icon.js                — Icon asset generation helper
 
 webview-ui/src/
   panels/
@@ -252,6 +258,7 @@ The `docs/research/` directory contains accumulated research notes:
 | `vscode-extension-api.md` | WebviewView API, TreeView, Configuration, postMessage patterns |
 | `feature-gap-analysis.md` | Feature gap analysis and implementation roadmap |
 | `opencode-server-official.md` | Server internals analysis |
+| `openchamber-feature-reference.md` | OpenChamber feature/reference notes for extension ideas |
 | `opencode-tui-tips.md` | TUI interaction patterns reference |
 | `vscode-settings-ui-research.md` | Settings UI implementation research |
 

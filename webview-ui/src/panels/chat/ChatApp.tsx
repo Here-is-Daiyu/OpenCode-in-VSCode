@@ -28,6 +28,13 @@ import { getConfiguredAgent } from '../../utils/opencodeConfig';
 /** Distance from bottom (px) within which we consider the user "at bottom" */
 const AT_BOTTOM_THRESHOLD = 150;
 
+/** Hard stop for unusably narrow chat panels */
+const MIN_CHAT_PANEL_WIDTH = 320;
+
+/** Layout breakpoints for adaptive column sizing */
+const COMPACT_CHAT_PANEL_WIDTH = 520;
+const ROOMY_CHAT_PANEL_WIDTH = 960;
+
 /** Message count at which we switch to virtualized rendering */
 const VIRTUALIZE_THRESHOLD = 40;
 
@@ -99,14 +106,16 @@ function getSessionScopedMessageSessionID(message: SessionScopedWebviewMessage):
 export function ChatApp() {
   const [error, setError] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [panelWidth, setPanelWidth] = useState(0);
 
   // Read viewMode from initial data injected by the extension host
   const initialData = (window as unknown as Record<string, unknown>).__OPENCODE_INITIAL__ as
     | Record<string, string>
     | undefined;
-  const viewMode = initialData?.viewMode || 'sidebar';
+  const _viewMode = initialData?.viewMode || 'sidebar';
 
   // Refs for scroll management
+  const appRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -143,6 +152,7 @@ export function ChatApp() {
   const setQuestion = useChatStore((s) => s.setQuestion);
   const rollbackOptimisticMessage = useChatStore((s) => s.rollbackOptimisticMessage);
   const confirmOptimisticMessage = useChatStore((s) => s.confirmOptimisticMessage);
+  const queueInputInsertion = useChatStore((s) => s.queueInputInsertion);
 
   const applySessionScopedMessage = useCallback(
     (message: SessionScopedWebviewMessage) => {
@@ -473,6 +483,10 @@ export function ChatApp() {
             break;
           }
 
+          case 'chat:insertText':
+            queueInputInsertion(message.data.text, message.data.focus);
+            break;
+
           case 'activeSessions:updated':
             useChatStore.getState().setActiveSessionCount(message.data.count);
             break;
@@ -493,6 +507,7 @@ export function ChatApp() {
       setQuestion,
       rollbackOptimisticMessage,
       confirmOptimisticMessage,
+      queueInputInsertion,
     ]
   );
 
@@ -501,6 +516,28 @@ export function ChatApp() {
   // Send ready signal to extension on mount
   useEffect(() => {
     postMessage({ type: 'ready' });
+  }, []);
+
+  useLayoutEffect(() => {
+    const app = appRef.current;
+    if (!app) {
+      return;
+    }
+
+    const updateWidth = (nextWidth: number) => {
+      const roundedWidth = Math.round(nextWidth);
+      setPanelWidth((prev) => (prev === roundedWidth ? prev : roundedWidth));
+    };
+
+    updateWidth(app.clientWidth);
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      updateWidth(entry?.contentRect.width ?? app.clientWidth);
+    });
+
+    observer.observe(app);
+    return () => observer.disconnect();
   }, []);
 
   // ── Handlers ──────────────────────────────────────────────────────────
@@ -543,11 +580,19 @@ export function ChatApp() {
     return 'Connected';
   };
 
+  const chatAppClassName = [
+    'chat-app',
+    panelWidth > 0 && panelWidth < COMPACT_CHAT_PANEL_WIDTH ? 'chat-app--compact' : '',
+    panelWidth >= ROOMY_CHAT_PANEL_WIDTH ? 'chat-app--roomy' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   // ── Connecting state ──────────────────────────────────────────────────
 
   if (!connected) {
     return (
-      <div className="chat-app">
+      <div ref={appRef} className={chatAppClassName}>
         <div className="chat-connecting">
           <div className="chat-connecting__spinner" />
           <div className="chat-connecting__text">Connecting to OpenCode server...</div>
@@ -560,9 +605,10 @@ export function ChatApp() {
 
   const hasMessages = messages.length > 0;
   const showScrollButton = hasMessages && !atBottom;
+  const isTooNarrow = panelWidth > 0 && panelWidth < MIN_CHAT_PANEL_WIDTH;
 
   return (
-    <div className="chat-app">
+    <div ref={appRef} className={chatAppClassName}>
       {/* Header */}
       <div className="chat-header">
         <div className="chat-header__left">
@@ -606,102 +652,114 @@ export function ChatApp() {
         </div>
       )}
 
-      {/* Messages area */}
-      {!hasMessages ? (
-        <div className="chat-messages chat-messages--empty">
-          <div className="chat-messages__inner chat-messages__inner--empty">
-            <div className="chat-welcome">
-              <div className="chat-welcome__icon">
-                {/* Stylized bot icon */}
-                <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                  <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
-                  <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
-                  <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
-                  <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
-                  <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
-                  <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
-                </svg>
-              </div>
-              <div className="chat-welcome__title">Start a conversation</div>
-              <div className="chat-welcome__subtitle">
-                Ask questions, write code, or get help with your project.
-              </div>
-              <div className="chat-welcome__hints">
-                <span className="chat-welcome__hint">
-                  <kbd>@</kbd> reference files
-                </span>
-                <span className="chat-welcome__hint-sep">·</span>
-                <span className="chat-welcome__hint">
-                  <kbd>/</kbd> commands
-                </span>
-              </div>
-            </div>
-          </div>
+      {isTooNarrow ? (
+        <div className="chat-panel-too-narrow">
+          <div className="chat-panel-too-narrow__title">Panel too narrow</div>
+          <div className="chat-panel-too-narrow__text">Widen this chat panel to continue.</div>
         </div>
       ) : (
-        <div
-          className="chat-messages"
-          ref={messagesRef}
-          onScroll={handleScroll}
-        >
-          <div className="chat-messages__inner">
-            {messages.length >= VIRTUALIZE_THRESHOLD ? (
-              <VirtualizedMessageList
-                messages={messages}
-                scrollElementRef={messagesRef}
-              />
-            ) : (
-              messages.map((msg) => (
-                <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
-                  <MessageBubble message={msg} />
-                </MessageErrorBoundary>
-              ))
-            )}
-
-            {/* Permission request card */}
-            {pendingPermission && (
-              <PermissionCard permission={pendingPermission} />
-            )}
-
-            {/* Question card */}
-            {pendingQuestion && (
-              <QuestionCard question={pendingQuestion} />
-            )}
-
-            {/* Streaming indicator */}
-            {isStreaming && (
-              <div className="chat-streaming-indicator">
-                <div className="chat-streaming-indicator__dots">
-                  <span className="chat-streaming-indicator__dot" />
-                  <span className="chat-streaming-indicator__dot" />
-                  <span className="chat-streaming-indicator__dot" />
+        <div className="chat-body">
+          <div className="chat-message-stage">
+            {/* Messages area */}
+            {!hasMessages ? (
+              <div className="chat-messages chat-messages--empty">
+                <div className="chat-messages__inner chat-messages__inner--empty">
+                  <div className="chat-welcome">
+                    <div className="chat-welcome__icon">
+                      {/* Stylized bot icon */}
+                      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                        <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                        <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                        <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                        <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
+                        <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                        <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
+                      </svg>
+                    </div>
+                    <div className="chat-welcome__title">Start a conversation</div>
+                    <div className="chat-welcome__subtitle">
+                      Ask questions, write code, or get help with your project.
+                    </div>
+                    <div className="chat-welcome__hints">
+                      <span className="chat-welcome__hint">
+                        <kbd>@</kbd> reference files
+                      </span>
+                      <span className="chat-welcome__hint-sep">·</span>
+                      <span className="chat-welcome__hint">
+                        <kbd>/</kbd> commands
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <span>Generating...</span>
+              </div>
+            ) : (
+              <div
+                className="chat-messages"
+                ref={messagesRef}
+                onScroll={handleScroll}
+              >
+                <div className="chat-messages__inner">
+                  {messages.length >= VIRTUALIZE_THRESHOLD ? (
+                    <VirtualizedMessageList
+                      messages={messages}
+                      scrollElementRef={messagesRef}
+                    />
+                  ) : (
+                    messages.map((msg) => (
+                      <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
+                        <MessageBubble message={msg} />
+                      </MessageErrorBoundary>
+                    ))
+                  )}
+
+                  {/* Permission request card */}
+                  {pendingPermission && (
+                    <PermissionCard permission={pendingPermission} />
+                  )}
+
+                  {/* Question card */}
+                  {pendingQuestion && (
+                    <QuestionCard question={pendingQuestion} />
+                  )}
+
+                  {/* Streaming indicator */}
+                  {isStreaming && (
+                    <div className="chat-streaming-indicator">
+                      <div className="chat-streaming-indicator__dots">
+                        <span className="chat-streaming-indicator__dot" />
+                        <span className="chat-streaming-indicator__dot" />
+                        <span className="chat-streaming-indicator__dot" />
+                      </div>
+                      <span>Generating...</span>
+                    </div>
+                  )}
+
+                  {/* Scroll anchor */}
+                  <div ref={bottomRef} className="chat-scroll-anchor" />
+                </div>
+                <OutlineIndex messages={messages} onScrollToMessageId={scrollToMessageId} />
               </div>
             )}
 
-            {/* Scroll anchor */}
-            <div ref={bottomRef} className="chat-scroll-anchor" />
+            {showScrollButton && (
+              <button
+                className="chat-scroll-bottom"
+                onClick={() => scrollToBottom('smooth')}
+                title="Scroll to bottom"
+                aria-label="Scroll to bottom"
+                type="button"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
+                </svg>
+              </button>
+            )}
           </div>
-          <OutlineIndex messages={messages} onScrollToMessageId={scrollToMessageId} />
+
+          {/* Input */}
+          <ChatInput />
         </div>
       )}
-
-      {/* Scroll-to-bottom button */}
-      {showScrollButton && (
-        <button
-          className="chat-scroll-bottom"
-          onClick={() => scrollToBottom('smooth')}
-          title="Scroll to bottom"
-        >
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
-          </svg>
-        </button>
-      )}
-
-      {/* Input */}
-      <ChatInput />
     </div>
   );
 }

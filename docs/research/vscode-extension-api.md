@@ -136,6 +136,36 @@ class SessionTreeProvider implements vscode.TreeDataProvider<SessionItem> {
 
 ---
 
+## Commands, Keybindings, and Webview Injection Patterns
+
+### Static Keybindings Surface in Keyboard Shortcuts
+
+- VS Code commands become re-bindable through the built-in **Keyboard Shortcuts** UI when they are declared in `package.json` under `contributes.commands` and `contributes.keybindings`.
+- This is a static contribution model: extensions do **not** create truly active keyboard shortcuts at runtime from arbitrary settings strings.
+- Practical product guidance: expose a command, provide a sensible default shortcut, and tell users to rebind it via Keyboard Shortcuts instead of promising a dynamic shortcut setting.
+
+### Continue Reference Architecture (`vendor/continue/`, Apache-2.0)
+
+Key reference files:
+
+- `vendor/continue/extensions/vscode/package.json`
+- `vendor/continue/extensions/vscode/src/commands.ts`
+- `vendor/continue/extensions/vscode/src/util/addCode.ts`
+- `vendor/continue/gui/src/components/mainInput/TipTapEditor/useMainEditorWebviewListeners.ts`
+
+Observed pattern:
+
+- Continue registers static commands like `continue.focusContinueInputWithoutClear` and binds defaults in `contributes.keybindings` (`Ctrl/Cmd+Shift+L`, etc.). Users rebind them through VS Code's Keyboard Shortcuts UI.
+- The extension command focuses the Continue webview, waits for readiness, gathers code from the active editor (`addHighlightedCodeToContext` / `addCodeToContextFromRange`), and sends a structured payload through a typed webview protocol message (`highlightedCode`).
+- The webview listener receives that payload and inserts content into the chat/editor UI, then focuses the input. Auto-send is controlled separately through an explicit `shouldRun` flag rather than being implied by the insert action itself.
+
+Implementation takeaway for this project:
+
+- Mirror the same shape: **command + static default keybinding + typed extension→webview message**.
+- If a customization hint is needed, point users to Keyboard Shortcuts for rebinding. Do not add a fake settings field that claims to dynamically activate a shortcut.
+
+---
+
 ## Configuration API
 
 ### Reading Configuration

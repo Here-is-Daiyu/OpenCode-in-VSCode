@@ -10,7 +10,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ToolPart } from '../../../types/opencode';
 import type { ToolCallPartProps } from './ToolCallPart';
 import { getToolName, toRecord, stringifyValue } from './ToolCallPart';
 import { postMessage } from '../../../utils/vscodeApi';

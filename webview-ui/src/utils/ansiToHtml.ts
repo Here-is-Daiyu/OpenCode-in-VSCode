@@ -213,7 +213,7 @@ function applySgr(params: number[], state: AnsiState): void {
 // ---------------------------------------------------------------------------
 
 // Regex to detect ANSI escape sequences (for fast-path check)
-const ANSI_RE = /\x1b\[/;
+const ANSI_RE = new RegExp(String.raw`\u001b\[`);
 
 /**
  * Returns `true` if the text contains at least one ANSI escape sequence.
@@ -241,7 +241,7 @@ export function ansiToHtml(text: string): string {
 
   // Match: ESC[ followed by optional digits/semicolons, terminated by a letter
   // We capture everything between ESC[ and the final letter.
-  const seqRe = /\x1b\[([\d;]*)([A-Za-z])/g;
+  const seqRe = new RegExp(String.raw`\u001b\[([\d;]*)([A-Za-z])`, 'g');
 
   let lastIndex = 0;
   let match: RegExpExecArray | null;

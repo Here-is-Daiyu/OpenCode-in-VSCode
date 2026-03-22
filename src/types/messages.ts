@@ -3,7 +3,7 @@
  * These are the typed messages sent via postMessage
  */
 
-import type { Session, MessageWithParts, OpenCodeConfig, Provider, Agent, Todo, PermissionRequest, Question, TokenUsage, MCPStatus, SessionStatus } from './opencode';
+import type { Session, MessageWithParts, OpenCodeConfig, Provider, Agent, Todo, PermissionRequest, Question, MCPStatus, SessionStatus } from './opencode';
 
 // Extension → Webview messages
 export type ExtensionToWebviewMessage =
@@ -32,6 +32,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'selection:added'; data: { path: string; name: string; content: string; startLine: number; endLine: number } }
   | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } }
   | { type: 'chat:autoSend'; data: { text: string } }
+  | { type: 'chat:insertText'; data: { text: string; focus?: boolean } }
   | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } }
   | { type: 'mention:results'; data: { query: string; results: Array<{ name: string; path: string; type: 'file' | 'folder' }> } }
   | { type: 'activeSessions:updated'; data: { count: number } };
@@ -74,6 +75,7 @@ export type SettingsToExtensionMessage =
   | { type: 'settings:mcp:remove'; data: { name: string } }
   | { type: 'settings:mcp:toggle'; data: { name: string; enabled: boolean } }
   | { type: 'settings:openConfigFile' }
+  | { type: 'settings:openKeyboardShortcuts' }
   | { type: 'ready' };
 
 // Settings panel messages (Extension → Webview)

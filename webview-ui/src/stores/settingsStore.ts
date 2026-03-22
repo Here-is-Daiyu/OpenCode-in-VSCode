@@ -10,9 +10,6 @@ import type {
   OpenCodeConfig,
   Provider,
   MCPStatus,
-  MCPServerConfig,
-  CustomCommand,
-  PermissionRuleset,
 } from '../types/opencode';
 
 // ---------------------------------------------------------------------------

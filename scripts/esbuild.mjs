@@ -1,13 +1,17 @@
 import * as esbuild from 'esbuild';
+import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'url';
 
 const production = process.argv.includes('--production');
 const watch = process.argv.includes('--watch');
+const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** @type {import('esbuild').BuildOptions} */
 const extensionConfig = {
-  entryPoints: ['./src/extension.ts'],
+  absWorkingDir: ROOT_DIR,
+  entryPoints: [resolve(ROOT_DIR, 'src/extension.ts')],
   bundle: true,
-  outfile: './out/extension.js',
+  outfile: resolve(ROOT_DIR, 'out/extension.js'),
   external: ['vscode'],
   format: 'cjs',
   platform: 'node',

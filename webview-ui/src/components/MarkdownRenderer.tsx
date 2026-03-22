@@ -110,11 +110,13 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
   const [loading, setLoading] = useState(() => !isReady());
 
   useEffect(() => {
+    const timeouts = timeoutsRef.current;
+
     return () => {
-      for (const timeout of timeoutsRef.current.values()) {
+      for (const timeout of timeouts.values()) {
         window.clearTimeout(timeout);
       }
-      timeoutsRef.current.clear();
+      timeouts.clear();
     };
   }, []);
 

@@ -63,6 +63,42 @@ function requireSession(ctx: CommandContext): string | undefined {
   return ctx.activeSessionId;
 }
 
+function getCodeRange(editor: vscode.TextEditor): vscode.Range {
+  if (!editor.selection.isEmpty) {
+    return new vscode.Range(editor.selection.start, editor.selection.end);
+  }
+
+  return editor.document.lineAt(editor.selection.active.line).range;
+}
+
+function getLineRange(range: vscode.Range): { startLine: number; endLine: number } {
+  const startLine = range.start.line + 1;
+  const endLine =
+    range.end.line > range.start.line && range.end.character === 0
+      ? range.end.line
+      : range.end.line + 1;
+
+  return {
+    startLine,
+    endLine: Math.max(startLine, endLine),
+  };
+}
+
+function getFenceLanguage(filePath: string): string {
+  return path.extname(filePath).replace(/^\./, '').toLowerCase();
+}
+
+function buildChatCodeInsertText(editor: vscode.TextEditor): string {
+  const range = getCodeRange(editor);
+  const code = editor.document.getText(range).replace(/\n+$/u, '');
+  const { startLine, endLine } = getLineRange(range);
+  const relativePath = vscode.workspace.asRelativePath(editor.document.uri, false);
+  const lineRange = startLine === endLine ? `${startLine}` : `${startLine}-${endLine}`;
+  const language = getFenceLanguage(editor.document.fileName);
+
+  return `Source: \`${relativePath}:${lineRange}\`\n\`\`\`${language}\n${code}\n\`\`\``;
+}
+
 // ---------------------------------------------------------------------------
 // Command implementations
 // ---------------------------------------------------------------------------
@@ -408,6 +444,24 @@ async function addSelectionToPrompt(ctx: CommandContext): Promise<void> {
   vscode.window.showInformationMessage(`Added selection from ${fileName} to prompt.`);
 }
 
+async function insertEditorCodeToChat(ctx: CommandContext): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showWarningMessage('No active editor. Open a file first.');
+    return;
+  }
+
+  const range = getCodeRange(editor);
+  const { startLine, endLine } = getLineRange(range);
+
+  await ctx.chatProvider.revealAndInsertText(buildChatCodeInsertText(editor));
+  ctx.logger.debug(
+    `Inserted editor code into chat: ${editor.document.uri.fsPath}:${startLine}-${endLine}`
+  );
+}
+
 function openTerminal(ctx: CommandContext): void {
   const terminal = vscode.window.createTerminal({
     name: 'OpenCode',
@@ -621,6 +675,7 @@ export function registerCommands(
     ['opencode.openSettings', () => openSettings(ctx)],
     ['opencode.addFileToPrompt', () => addFileToPrompt(ctx)],
     ['opencode.addSelectionToPrompt', () => addSelectionToPrompt(ctx)],
+    ['opencode.insertEditorCodeToChat', () => insertEditorCodeToChat(ctx)],
     ['opencode.explainCode', () => explainCode(ctx)],
     ['opencode.improveCode', () => improveCode(ctx)],
     ['opencode.openTerminal', () => openTerminal(ctx)],

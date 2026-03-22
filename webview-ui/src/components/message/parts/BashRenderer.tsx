@@ -10,7 +10,6 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { ToolPart } from '../../../types/opencode';
 import type { ToolCallPartProps } from './ToolCallPart';
 import { toRecord, stringifyValue, formatDuration } from './ToolCallPart';
 import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';

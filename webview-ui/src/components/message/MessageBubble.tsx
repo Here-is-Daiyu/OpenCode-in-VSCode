@@ -4,7 +4,7 @@
  * Simplified orchestrator that delegates to:
  *  - MessageHeader (role icon, provider/model info)
  *  - MessageContent (part dispatcher)
- *  - MessageFooter (minimal copy affordance)
+ *  - MessageFooter (completed-turn meta)
  *
  * Assistant messages use a flat transparent container (no bubble).
  * Modeled on the official OpenCode web UI's conversation flow.
@@ -122,7 +122,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 
       {/* Footer for completed assistant messages */}
       {!isUser && !showStreamingEffects && (
-        <MessageFooter parts={parts} info={info as AssistantMessage} />
+        <MessageFooter info={info as AssistantMessage} />
       )}
     </div>
   );

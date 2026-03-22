@@ -17,6 +17,7 @@ type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:st
 type SessionLoadedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:loaded' }>;
 type SessionHistoryPrependedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:historyPrepended' }>;
 type SessionCreatedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:created' }>;
+type ChatInsertTextMessage = Extract<ExtensionToWebviewMessage, { type: 'chat:insertText' }>;
 
 const DEFAULT_IMAGE_MIME = 'image/png';
 const DATA_URL_PREFIX = /^data:/i;
@@ -37,6 +38,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private logger?: Logger;
   private modelPrefs?: ModelPreferencesService;
   private modelPrefsBaseUrlLogged = false;
+  private ready = false;
+  private queuedInsertMessages: ChatInsertTextMessage['data'][] = [];
 
   // Cache latest state so it can be re-sent when the webview becomes ready/visible.
   private lastServerStatus?: ServerStatusMessage['data'];
@@ -58,6 +61,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken
   ): void {
     this.view = webviewView;
+    this.ready = false;
 
     webviewView.webview.options = {
       enableScripts: true,
@@ -90,6 +94,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     // Cleanup on dispose
     webviewView.onDidDispose(() => {
       this.view = undefined;
+      this.ready = false;
       this.disposables.forEach((d) => d.dispose());
       this.disposables = [];
     });
@@ -189,7 +194,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * Load a session into the webview with its messages
    */
-  setSession(sessionID: string, messages: MessageWithParts[]): void {
+  setSession(sessionID: string, _messages: MessageWithParts[]): void {
     this.currentSessionID = sessionID;
     // The actual session object will be sent via postMessage from the extension
     // This method tracks which session is active on the provider side
@@ -223,6 +228,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       type: 'chat:autoSend',
       data: { text: prompt },
     });
+  }
+
+  async revealAndInsertText(text: string): Promise<void> {
+    this.queuedInsertMessages.push({ text, focus: true });
+    await vscode.commands.executeCommand(`${ChatViewProvider.viewType}.focus`);
+    this.view?.show?.(true);
+    this.flushQueuedInsertMessages();
   }
 
   /**
@@ -438,6 +450,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * Called when the webview sends the 'ready' message
    */
   private onWebviewReady(): void {
+    this.ready = true;
+
     // Send latest known connection + session state.
     this.postMessage({
       type: 'server:status',
@@ -453,6 +467,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     // Send model preferences
     this.sendModelPrefs();
+    this.flushQueuedInsertMessages();
   }
 
   /**
@@ -472,6 +487,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         type: 'session:loaded',
         data: this.lastSessionLoaded,
       });
+    }
+
+    this.flushQueuedInsertMessages();
+  }
+
+  private flushQueuedInsertMessages(): void {
+    if (!this.ready || !this.view || this.queuedInsertMessages.length === 0) {
+      return;
+    }
+
+    const queued = [...this.queuedInsertMessages];
+    this.queuedInsertMessages = [];
+
+    for (const [index, data] of queued.entries()) {
+      const delivered = this.postMessage({
+        type: 'chat:insertText',
+        data,
+      });
+
+      if (!delivered) {
+        this.queuedInsertMessages = [...queued.slice(index), ...this.queuedInsertMessages];
+        return;
+      }
     }
   }
 

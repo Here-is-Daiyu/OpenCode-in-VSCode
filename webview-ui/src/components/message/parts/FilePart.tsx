@@ -59,10 +59,41 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
     }
   }, [canOpenFile, part.filename]);
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!canOpenFile) {
+        return;
+      }
+
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        handleClick();
+      }
+    },
+    [canOpenFile, handleClick],
+  );
+
+  if (isImage) {
+    return (
+      <div className="msg-file msg-file--image" title={fileName}>
+        {part.url ? (
+          <img className="msg-file__image" src={part.url} alt={fileName} loading="lazy" />
+        ) : (
+          <span className="msg-file__image-fallback" aria-label={fileName}>
+            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+              <path d="M14 1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm0 13H2V2h12v12zM4 11l2-3 1.5 2L10 7l3 4H4z" />
+            </svg>
+          </span>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div
-      className="msg-file"
+      className={`msg-file${canOpenFile ? ' msg-file--clickable' : ''}`}
       onClick={canOpenFile ? handleClick : undefined}
+      onKeyDown={canOpenFile ? handleKeyDown : undefined}
       role={canOpenFile ? 'button' : undefined}
       tabIndex={canOpenFile ? 0 : undefined}
     >
@@ -78,9 +109,6 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
         )}
       </span>
       <span className="msg-file__name" title={part.filename ?? fileName}>{fileName}</span>
-      {isImage && part.url && (
-        <img className="msg-file__preview" src={part.url} alt={fileName} loading="lazy" />
-      )}
     </div>
   );
 });

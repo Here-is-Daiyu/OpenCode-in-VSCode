@@ -202,6 +202,23 @@
 
 ---
 
+## Prompt Input Internals — Image Markers and Prompt Parts
+
+> Sources:
+> - `vendor/opencode-official/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
+> - `vendor/opencode-official/packages/opencode/src/session/prompt.ts`
+>
+> Last synced: 2026-03-22
+
+- The TUI does **not** treat `[Image N]` as plain user text. `pasteImage()` inserts the visible marker, immediately creates a virtual extmark over that span, and appends a `file` prompt part whose `source.text` stores `{ start, end, value }` for the marker.
+- Prompt state keeps both `prompt.parts` and an `extmarkToPartIndex` map. `syncExtmarksWithPromptParts()` rebuilds the part list from surviving extmarks, so deleting an extmark also deletes the linked image/file part.
+- The same mechanism is used for other virtual prompt tokens (for example pasted text placeholders and agent mentions): the visible token is a UI marker, while the real payload lives in prompt parts.
+- On submit, the TUI expands only pasted **text** parts inline into the outgoing text body. Non-text parts (including image/file parts) are sent separately after the final text part; the marker survives only as source metadata, not as the actual attachment payload.
+- `pasteImage()` numbers markers from the current count of image file parts (`[Image 1]`, `[Image 2]`, ...). Because the part/extmark link is positional, the important behavior is stable marker-to-part identity within the current prompt, not aggressive live renumbering.
+- Implementation takeaway for textarea-based UIs: keep stable marker metadata per attachment, remove attachments when their marker disappears from the input, and avoid silently reordering or renumbering markers while the user edits.
+
+---
+
 ## Raw Tips List (Original Order)
 
 For reference, below is the complete list in original array order (1-indexed):

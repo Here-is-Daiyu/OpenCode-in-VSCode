@@ -1,4 +1,4 @@
-// generate-icon.js — Generate a 128x128 PNG icon for the OpenCode VSCode extension
+// scripts/generate-icon.js — Generate a 128x128 PNG icon for the OpenCode VSCode extension
 // Uses sharp to render an enhanced SVG with gradient background
 
 const sharp = require('sharp');
@@ -45,7 +45,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${S
 </svg>`;
 
 async function main() {
-  const outPath = path.join(__dirname, 'media', 'icon.png');
+  const outPath = path.join(__dirname, '..', 'media', 'icon.png');
   await sharp(Buffer.from(svg))
     .resize(SIZE, SIZE)
     .png()

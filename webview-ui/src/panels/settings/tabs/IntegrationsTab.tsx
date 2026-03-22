@@ -40,7 +40,7 @@ interface IntegrationsTabProps {
 export function IntegrationsTab({
   config,
   providers,
-  connectedProviders,
+  connectedProviders: _connectedProviders,
   mcpStatus,
   onUpdateConfig,
   onMCPAdd,

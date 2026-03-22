@@ -77,7 +77,9 @@ textarea {
  * ==================================================================== */
 
 .chat-app {
-  --chat-scroll-bottom-offset: 112px;
+  --chat-assistant-max-width: 40rem;
+  --chat-user-max-width: 66ch;
+  --chat-scroll-button-offset: 16px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -85,6 +87,34 @@ textarea {
   height: 100%;
   background: var(--background-base);
   color: var(--text-base);
+}
+
+.chat-app--compact {
+  --chat-column-padding: 12px;
+  --chat-column-max-width: 100%;
+  --chat-assistant-max-width: 100%;
+  --chat-user-max-width: 100%;
+}
+
+.chat-app--roomy {
+  --chat-column-max-width: 58rem;
+  --chat-assistant-max-width: 46rem;
+  --chat-user-max-width: 72ch;
+}
+
+.chat-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-message-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 /* ====================================================================
@@ -250,11 +280,11 @@ textarea {
 
 .chat-scroll-bottom {
   position: absolute;
-  left: 50%;
-  bottom: var(--chat-scroll-bottom-offset);
+  right: calc(var(--chat-column-padding) + 2px);
+  bottom: var(--chat-scroll-button-offset);
   z-index: 15;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -265,17 +295,50 @@ textarea {
   color: var(--icon-base);
   box-shadow: var(--shadow-xs-border-base);
   cursor: pointer;
-  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(6px);
   transition:
+    opacity 0.15s ease,
     transform 0.15s ease,
     box-shadow 0.15s ease,
     color 0.15s ease;
 }
 
+.chat-message-stage:hover .chat-scroll-bottom,
+.chat-message-stage:focus-within .chat-scroll-bottom {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
 .chat-scroll-bottom:hover {
   color: var(--icon-strong-base);
   box-shadow: var(--shadow-xs-border-hover);
-  transform: translateX(-50%) translateY(-1px);
+  transform: translateY(-1px);
+}
+
+.chat-panel-too-narrow {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px 20px;
+  text-align: center;
+  color: var(--text-weak);
+}
+
+.chat-panel-too-narrow__title {
+  color: var(--text-strong);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-medium);
+}
+
+.chat-panel-too-narrow__text {
+  max-width: 20rem;
 }
 
 /* ====================================================================
@@ -486,6 +549,7 @@ textarea {
   min-height: 24px;
   max-height: 220px;
   resize: none;
+  overflow-y: hidden;
   padding: 4px 0;
   border: none;
   background: transparent;
@@ -494,6 +558,10 @@ textarea {
   font-size: var(--font-size-base);
   line-height: var(--line-height-large);
   outline: none;
+}
+
+.chat-input__textarea--expanded {
+  overflow-y: auto;
 }
 
 .chat-input__textarea::placeholder {
@@ -506,7 +574,6 @@ textarea {
 }
 
 /* Buttons */
-.chat-input__attach-btn,
 .chat-input__send-btn,
 .chat-input__stop-btn,
 .permission-card__btn,
@@ -522,7 +589,6 @@ textarea {
     opacity 0.15s ease;
 }
 
-.chat-input__attach-btn,
 .chat-input__send-btn,
 .chat-input__stop-btn {
   width: 32px;
@@ -534,18 +600,6 @@ textarea {
   cursor: pointer;
 }
 
-.chat-input__attach-btn {
-  flex: 0 0 auto;
-  background: transparent;
-  color: var(--icon-base);
-}
-
-.chat-input__attach-btn:hover:not(:disabled) {
-  background: var(--button-ghost-hover);
-  color: var(--icon-strong-base);
-}
-
-.chat-input__attach-btn:disabled,
 .chat-input__send-btn:disabled,
 .permission-card__btn:disabled,
 .question-card__submit-btn:disabled {
@@ -598,7 +652,6 @@ textarea {
 }
 
 /* Focus rings */
-.chat-input__attach-btn:focus-visible,
 .chat-input__send-btn:focus-visible,
 .chat-input__stop-btn:focus-visible,
 .permission-card__btn:focus-visible,
@@ -672,7 +725,7 @@ textarea {
 .chat-input__toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 6px 2px 0;
   min-height: 0;
@@ -695,19 +748,6 @@ textarea {
   flex: 1 1 auto;
   min-width: 0;
   flex-wrap: wrap;
-}
-
-.chat-input__hint {
-  margin-left: auto;
-  padding: 0;
-  color: var(--text-weaker);
-  font-size: 11px;
-  line-height: 1.45;
-  user-select: none;
-}
-
-.chat-input__hint span {
-  display: block;
 }
 
 /* ====================================================================
@@ -1164,10 +1204,6 @@ textarea {
  * ==================================================================== */
 
 @media (max-width: 640px) {
-  .chat-app {
-    --chat-scroll-bottom-offset: 136px;
-  }
-
   .chat-header {
     padding-inline: 10px;
   }
@@ -1178,11 +1214,6 @@ textarea {
 
   .chat-input__selectors {
     width: 100%;
-  }
-
-  .chat-input__hint {
-    margin-left: 0;
-    flex-basis: 100%;
   }
 
   .permission-card__actions {

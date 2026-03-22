@@ -43,6 +43,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } }
   | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } }
   | { type: 'chat:autoSend'; data: { text: string } }
+  | { type: 'chat:insertText'; data: { text: string; focus?: boolean } }
   | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } }
   | { type: 'mention:results'; data: { query: string; results: Array<{ name: string; path: string; type: 'file' | 'folder' }> } }
   | { type: 'activeSessions:updated'; data: { count: number } };
@@ -85,6 +86,7 @@ export type SettingsToExtensionMessage =
   | { type: 'settings:mcp:remove'; data: { name: string } }
   | { type: 'settings:mcp:toggle'; data: { name: string; enabled: boolean } }
   | { type: 'settings:openConfigFile' }
+  | { type: 'settings:openKeyboardShortcuts' }
   | { type: 'ready' };
 
 // Settings panel messages (Extension → Webview)

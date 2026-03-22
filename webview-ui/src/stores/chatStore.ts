@@ -21,6 +21,19 @@ type ChatSessionStatusInput = ChatSessionStatus | 'busy' | undefined;
 
 type BufferedRealtimeParts = Record<string, Part[]>;
 
+export interface ChatImageAttachment {
+  id: string;
+  marker: string;
+  markerNumber: number;
+  dataUrl: string;
+}
+
+export interface PendingInputInsertion {
+  id: string;
+  text: string;
+  focus: boolean;
+}
+
 const DEFAULT_OPTIMISTIC_IMAGE_MIME = 'image/png';
 const DATA_URL_MIME_PATTERN = /^data:([^;,]+)(?:;[^,]*)?,/i;
 
@@ -318,11 +331,13 @@ export interface ChatState {
   // UI
   inputText: string;
   isStreaming: boolean;
-  attachedImages: string[];
+  attachedImages: ChatImageAttachment[];
+  pendingInputInsertions: PendingInputInsertion[];
 
   // Optimistic message tracking for rollback
   optimisticMessageID?: string;
   savedInputText?: string;
+  savedAttachedImages?: ChatImageAttachment[];
   bufferedRealtimeParts: BufferedRealtimeParts;
 
   // Agents
@@ -356,9 +371,12 @@ export interface ChatState {
   removeMessage: (messageID: string) => void;
   setInputText: (text: string) => void;
   setStreaming: (streaming: boolean) => void;
-  addImage: (base64: string) => void;
-  removeImage: (index: number) => void;
+  addImage: (image: ChatImageAttachment) => void;
+  removeImage: (id: string) => void;
+  removeImages: (ids: string[]) => void;
   clearImages: () => void;
+  queueInputInsertion: (text: string, focus?: boolean) => void;
+  consumeInputInsertion: (id: string) => void;
   setPermission: (permission?: PermissionRequest) => void;
   setQuestion: (question?: Question) => void;
   setAgents: (agents: Agent[]) => void;
@@ -380,8 +398,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   inputText: '',
   isStreaming: false,
   attachedImages: [],
+  pendingInputInsertions: [],
   optimisticMessageID: undefined,
   savedInputText: undefined,
+  savedAttachedImages: undefined,
   bufferedRealtimeParts: {},
   agents: [],
   selectedAgent: '',
@@ -425,6 +445,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       pendingQuestion: undefined,
       optimisticMessageID: undefined,
       savedInputText: undefined,
+      savedAttachedImages: undefined,
     }),
 
   setSessionStatus: (status) => {
@@ -608,17 +629,48 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   setStreaming: (streaming) => set({ isStreaming: streaming }),
 
-  addImage: (base64) =>
+  addImage: (image) =>
     set((state) => ({
-      attachedImages: [...state.attachedImages, base64],
+      attachedImages: state.attachedImages.some((existing) => existing.id === image.id)
+        ? state.attachedImages
+        : [...state.attachedImages, image],
     })),
 
-  removeImage: (index) =>
+  removeImage: (id) =>
     set((state) => ({
-      attachedImages: state.attachedImages.filter((_, i) => i !== index),
+      attachedImages: state.attachedImages.filter((image) => image.id !== id),
     })),
+
+  removeImages: (ids) =>
+    set((state) => {
+      if (ids.length === 0) {
+        return state;
+      }
+
+      const idSet = new Set(ids);
+      return {
+        attachedImages: state.attachedImages.filter((image) => !idSet.has(image.id)),
+      };
+    }),
 
   clearImages: () => set({ attachedImages: [] }),
+
+  queueInputInsertion: (text, focus = true) =>
+    set((state) => ({
+      pendingInputInsertions: [
+        ...state.pendingInputInsertions,
+        {
+          id: `insert_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          text,
+          focus,
+        },
+      ],
+    })),
+
+  consumeInputInsertion: (id) =>
+    set((state) => ({
+      pendingInputInsertions: state.pendingInputInsertions.filter((item) => item.id !== id),
+    })),
 
   setPermission: (permission) => set({ pendingPermission: permission }),
 
@@ -646,13 +698,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       parts: createOptimisticMessageParts(messageID, text, images),
     };
 
-    set({
-      messages: [...state.messages, optimisticMessage],
-      optimisticMessageID: messageID,
-      savedInputText: state.inputText,
-      inputText: '',
-      attachedImages: [],
-    });
+      set({
+        messages: [...state.messages, optimisticMessage],
+        optimisticMessageID: messageID,
+        savedInputText: state.inputText,
+        savedAttachedImages: state.attachedImages,
+        inputText: '',
+        attachedImages: [],
+      });
 
     return messageID;
   },
@@ -661,18 +714,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get();
     if (!state.optimisticMessageID) return;
 
-    set({
-      messages: state.messages.filter(m => m.info.id !== state.optimisticMessageID),
-      inputText: state.savedInputText ?? '',
-      optimisticMessageID: undefined,
-      savedInputText: undefined,
-    });
-  },
+      set({
+        messages: state.messages.filter(m => m.info.id !== state.optimisticMessageID),
+        inputText: state.savedInputText ?? '',
+        attachedImages: state.savedAttachedImages ?? [],
+        optimisticMessageID: undefined,
+        savedInputText: undefined,
+        savedAttachedImages: undefined,
+      });
+    },
 
   confirmOptimisticMessage: () => {
     set({
       optimisticMessageID: undefined,
       savedInputText: undefined,
+      savedAttachedImages: undefined,
       sessionStatus: 'active',
       isStreaming: true,
     });
@@ -688,8 +744,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
       inputText: '',
       isStreaming: false,
       attachedImages: [],
+      pendingInputInsertions: [],
       optimisticMessageID: undefined,
       savedInputText: undefined,
+      savedAttachedImages: undefined,
       bufferedRealtimeParts: {},
       agents: [],
       selectedAgent: '',

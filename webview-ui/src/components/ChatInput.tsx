@@ -3,7 +3,7 @@
  */
 
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
-import { useChatStore } from '../stores/chatStore';
+import { useChatStore, type ChatImageAttachment } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
 import { ModelSelector } from './ModelSelector';
 import { AgentSelector } from './AgentSelector';
@@ -14,7 +14,6 @@ import { MentionMenu } from './MentionMenu';
 import type { MentionMenuHandle } from './MentionMenu';
 import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
 import { useCommandStore } from '../stores/commandStore';
-import { useInputHistory } from '../hooks/useInputHistory';
 import { useMentionSearch } from '../hooks/useMentionSearch';
 import type { MentionResult } from '../hooks/useMentionSearch';
 
@@ -23,24 +22,140 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
 /** Maximum height of the chat input textarea in pixels */
 const MAX_TEXTAREA_HEIGHT_PX = 200;
+const BASE_TEXTAREA_HEIGHT_PX = 24;
 
 function isImageFile(file: File) {
   return file.type.startsWith('image/');
 }
 
+function getImageMarkerLabel(index: number): string {
+  return `[Image ${index}]`;
+}
+
+function getMaxImageMarkerIndex(text: string): number {
+  const matches = text.matchAll(/\[Image\s+(\d+)\]/gi);
+  let maxMarkerIndex = 0;
+
+  for (const match of matches) {
+    const value = Number(match[1]);
+    if (Number.isFinite(value)) {
+      maxMarkerIndex = Math.max(maxMarkerIndex, value);
+    }
+  }
+
+  return maxMarkerIndex;
+}
+
+function getNextImageMarkerIndex(text: string, attachedImages: ChatImageAttachment[]): number {
+  const attachmentMaxMarkerIndex = attachedImages.reduce(
+    (maxMarkerIndex, image) => Math.max(maxMarkerIndex, image.markerNumber),
+    0,
+  );
+
+  return Math.max(attachmentMaxMarkerIndex, getMaxImageMarkerIndex(text)) + 1;
+}
+
+function insertTextAtSelection(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  insertText: string,
+): { value: string; cursor: number } {
+  const before = text.slice(0, selectionStart);
+  const after = text.slice(selectionEnd);
+  const beforeChar = before[before.length - 1];
+  const afterChar = after[0];
+  const needsLeadingSpace = Boolean(beforeChar) && !/[\s([{<]/.test(beforeChar);
+  const needsTrailingSpace = Boolean(afterChar) && !/[\s.,!?;:)>\]}]/.test(afterChar);
+  const injected = `${needsLeadingSpace ? ' ' : ''}${insertText}${needsTrailingSpace ? ' ' : ''}`;
+
+  return {
+    value: `${before}${injected}${after}`,
+    cursor: before.length + injected.length,
+  };
+}
+
+function insertValueAtSelection(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  insertText: string,
+): { value: string; cursor: number } {
+  const before = text.slice(0, selectionStart);
+  const after = text.slice(selectionEnd);
+
+  return {
+    value: `${before}${insertText}${after}`,
+    cursor: before.length + insertText.length,
+  };
+}
+
+function insertBlockAtSelection(
+  text: string,
+  selectionStart: number,
+  selectionEnd: number,
+  insertText: string,
+): { value: string; cursor: number } {
+  const before = text.slice(0, selectionStart);
+  const after = text.slice(selectionEnd);
+  const prefix = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
+  const suffix = after.length > 0 && !after.startsWith('\n') ? '\n' : '';
+
+  return insertValueAtSelection(
+    text,
+    selectionStart,
+    selectionEnd,
+    `${prefix}${insertText}${suffix}`,
+  );
+}
+
+function removeMarkerText(text: string, marker: string): string {
+  let next = text;
+  let index = next.indexOf(marker);
+
+  while (index !== -1) {
+    let start = index;
+    let end = index + marker.length;
+    const beforeChar = next[start - 1];
+    const afterChar = next[end];
+
+    if (beforeChar === ' ' && afterChar === ' ') {
+      end += 1;
+    } else if (beforeChar === ' ') {
+      start -= 1;
+    } else if (afterChar === ' ') {
+      end += 1;
+    }
+
+    next = `${next.slice(0, start)}${next.slice(end)}`;
+    index = next.indexOf(marker);
+  }
+
+  return next;
+}
+
+function createImageAttachmentID(): string {
+  return `image_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+type PendingImageAttachment = Omit<ChatImageAttachment, 'dataUrl'> & { file: File };
+
 export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const slashMenuRef = useRef<SlashCommandMenuHandle>(null);
   const mentionMenuRef = useRef<MentionMenuHandle>(null);
+  const nextImageMarkerIndexRef = useRef(1);
 
   const inputText = useChatStore((s) => s.inputText);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const attachedImages = useChatStore((s) => s.attachedImages);
+  const pendingInputInsertions = useChatStore((s) => s.pendingInputInsertions);
   const connected = useChatStore((s) => s.connected);
   const setInputText = useChatStore((s) => s.setInputText);
   const removeImage = useChatStore((s) => s.removeImage);
+  const removeImages = useChatStore((s) => s.removeImages);
   const addImage = useChatStore((s) => s.addImage);
+  const consumeInputInsertion = useChatStore((s) => s.consumeInputInsertion);
   const addOptimisticMessage = useChatStore((s) => s.addOptimisticMessage);
 
   // Slash command state from store
@@ -49,16 +164,23 @@ export function ChatInput() {
   const initCommandListener = useCommandStore((s) => s.initListener);
   const fetchCommands = useCommandStore((s) => s.fetchCommands);
 
-  const { addToHistory, navigateUp, navigateDown, reset: resetHistory } = useInputHistory();
-
   const [slashOpen, setSlashOpen] = useState(false);
   const [slashQuery, setSlashQuery] = useState('');
+  const [isTextareaExpanded, setIsTextareaExpanded] = useState(false);
 
   // Mention (@) state
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionTriggerIndex, setMentionTriggerIndex] = useState(-1);
   const mentionSearch = useMentionSearch();
+
+  /** Close mention menu and clear search state. */
+  const closeMentionMenu = useCallback(() => {
+    setMentionOpen(false);
+    setMentionQuery('');
+    setMentionTriggerIndex(-1);
+    mentionSearch.clear();
+  }, [mentionSearch]);
 
   // Initialize command store listener and do initial fetch
   useEffect(() => {
@@ -73,18 +195,73 @@ export function ChatInput() {
     [commands, slashQuery]
   );
 
-  const canSend = connected && inputText.trim().length > 0;
+  const canSend = connected && (inputText.trim().length > 0 || attachedImages.length > 0);
+
+  useEffect(() => {
+    nextImageMarkerIndexRef.current = getNextImageMarkerIndex(inputText, attachedImages);
+  }, [inputText, attachedImages]);
+
+  useEffect(() => {
+    const missingImageIDs = attachedImages
+      .filter((image) => !inputText.includes(image.marker))
+      .map((image) => image.id);
+
+    if (missingImageIDs.length > 0) {
+      removeImages(missingImageIDs);
+    }
+  }, [attachedImages, inputText, removeImages]);
+
+  useEffect(() => {
+    const pendingInsertion = pendingInputInsertions[0];
+    if (!pendingInsertion) {
+      return;
+    }
+
+    const textarea = textareaRef.current;
+    const currentText = useChatStore.getState().inputText;
+    const useSelection = document.activeElement === textarea;
+    const selectionStart = useSelection ? textarea?.selectionStart ?? currentText.length : currentText.length;
+    const selectionEnd = useSelection ? textarea?.selectionEnd ?? selectionStart : selectionStart;
+    const { value, cursor } = insertBlockAtSelection(
+      currentText,
+      selectionStart,
+      selectionEnd,
+      pendingInsertion.text,
+    );
+
+    setInputText(value);
+    setSlashOpen(false);
+    setSlashQuery('');
+    closeMentionMenu();
+    consumeInputInsertion(pendingInsertion.id);
+
+    if (pendingInsertion.focus) {
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.selectionStart = cursor;
+          textareaRef.current.selectionEnd = cursor;
+        }
+      }, 0);
+    }
+  }, [closeMentionMenu, consumeInputInsertion, pendingInputInsertions, setInputText]);
 
   // Auto-resize textarea
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     if (!textarea.value) {
-      textarea.style.height = '24px';
+      textarea.style.height = `${BASE_TEXTAREA_HEIGHT_PX}px`;
+      setIsTextareaExpanded(false);
       return;
     }
+
     textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX)}px`;
+    const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX);
+    textarea.style.height = `${nextHeight}px`;
+    setIsTextareaExpanded(
+      textarea.scrollHeight > BASE_TEXTAREA_HEIGHT_PX + 1 || nextHeight > BASE_TEXTAREA_HEIGHT_PX + 1,
+    );
   }, []);
 
   useEffect(() => {
@@ -95,11 +272,9 @@ export function ChatInput() {
     if (!canSend) return;
 
     const text = inputText.trim();
-    const images = attachedImages.length > 0 ? [...attachedImages] : undefined;
-
-    // Add to input history before clearing
-    addToHistory(text);
-    resetHistory();
+    const images = attachedImages.length > 0
+      ? attachedImages.map((image) => image.dataUrl)
+      : undefined;
 
     // Check if this is a command execution (starts with / followed by a known command name)
     const commandMatch = text.match(/^\/(\S+)(?:\s+(.*))?$/s);
@@ -148,7 +323,7 @@ export function ChatInput() {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [canSend, inputText, attachedImages, commands, addOptimisticMessage, setInputText, addToHistory, resetHistory]);
+  }, [canSend, inputText, attachedImages, commands, addOptimisticMessage, setInputText]);
 
   const handleStop = useCallback(() => {
     postMessage({ type: 'chat:abort' });
@@ -183,14 +358,6 @@ export function ChatInput() {
     },
     [],
   );
-
-  /** Close mention menu and clear search state. */
-  const closeMentionMenu = useCallback(() => {
-    setMentionOpen(false);
-    setMentionQuery('');
-    setMentionTriggerIndex(-1);
-    mentionSearch.clear();
-  }, [mentionSearch]);
 
   /** Handle a file being selected from the mention menu. */
   const handleMentionSelect = useCallback(
@@ -280,59 +447,13 @@ export function ChatInput() {
         }
       }
 
-      // Input history navigation with ↑/↓ (only when cursor is at first/last line)
-      const textarea = textareaRef.current;
-      if (textarea && !slashOpen && !mentionOpen) {
-        if (e.key === 'ArrowUp') {
-          const cursorPos = textarea.selectionStart;
-          const textBeforeCursor = inputText.slice(0, cursorPos);
-          // At first line: no newline before cursor
-          if (!textBeforeCursor.includes('\n')) {
-            const result = navigateUp(inputText);
-            if (result !== null) {
-              e.preventDefault();
-              setInputText(result);
-              // Move cursor to end after React re-renders
-              setTimeout(() => {
-                if (textareaRef.current) {
-                  textareaRef.current.selectionStart = result.length;
-                  textareaRef.current.selectionEnd = result.length;
-                }
-              }, 0);
-            }
-            return;
-          }
-        }
-
-        if (e.key === 'ArrowDown') {
-          const cursorPos = textarea.selectionStart;
-          const textAfterCursor = inputText.slice(cursorPos);
-          // At last line: no newline after cursor
-          if (!textAfterCursor.includes('\n')) {
-            const result = navigateDown();
-            if (result !== null) {
-              e.preventDefault();
-              setInputText(result);
-              // Move cursor to end after React re-renders
-              setTimeout(() => {
-                if (textareaRef.current) {
-                  textareaRef.current.selectionStart = result.length;
-                  textareaRef.current.selectionEnd = result.length;
-                }
-              }, 0);
-            }
-            return;
-          }
-        }
-      }
-
       // Enter to send, Shift+Enter for newline
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
         handleSend();
       }
     },
-    [slashOpen, filteredCommands.length, mentionOpen, mentionSearch.results.length, closeMentionMenu, handleSend, inputText, navigateUp, navigateDown, setInputText]
+    [slashOpen, filteredCommands.length, mentionOpen, mentionSearch.results.length, closeMentionMenu, handleSend]
   );
 
   const handleChange = useCallback(
@@ -419,51 +540,128 @@ export function ChatInput() {
     setSlashQuery('');
   }, []);
 
-  const processImageFile = useCallback(
-    (file: File) => {
-      if (!isImageFile(file)) return;
+  const collectValidImageFiles = useCallback((files: Iterable<File>): File[] => {
+    return Array.from(files).filter((file) => {
+      if (!isImageFile(file)) {
+        return false;
+      }
+
       if (file.size > MAX_IMAGE_SIZE) {
         console.warn(`Image too large: ${(file.size / 1024 / 1024).toFixed(1)}MB (max 10MB)`);
+        return false;
+      }
+
+      return true;
+    });
+  }, []);
+
+  const readImageFile = useCallback((file: File): Promise<string | null> => {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+
+      reader.onload = () => {
+        resolve(typeof reader.result === 'string' ? reader.result : null);
+      };
+
+      reader.onerror = () => {
+        console.error('Failed to read image file');
+        resolve(null);
+      };
+
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const processAcceptedImageFiles = useCallback(
+    async (images: PendingImageAttachment[]) => {
+      if (images.length === 0) {
         return;
       }
 
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result !== 'string') {
-          console.error('Unexpected image reader result type');
-          return;
+      const resolvedImages = await Promise.all(images.map(async (image) => {
+        const dataUrl = await readImageFile(image.file);
+        if (!dataUrl) {
+          return null;
         }
-        addImage(reader.result);
-      };
-      reader.onerror = () => {
-        console.error('Failed to read image file');
-      };
-      reader.readAsDataURL(file);
+
+        const { file: _file, ...attachment } = image;
+        return {
+          ...attachment,
+          dataUrl,
+        } satisfies ChatImageAttachment;
+      }));
+
+      resolvedImages.forEach((image) => {
+        if (image && useChatStore.getState().inputText.includes(image.marker)) {
+          addImage(image);
+        }
+      });
     },
-    [addImage]
+    [addImage, readImageFile]
   );
 
-  const processImageFiles = useCallback(
-    (files: Iterable<File>) => {
-      Array.from(files).forEach(processImageFile);
+  const insertAcceptedImages = useCallback(
+    (files: File[], mode: 'selection' | 'append') => {
+      if (files.length === 0) {
+        return;
+      }
+
+      const currentText = useChatStore.getState().inputText;
+      const startIndex = nextImageMarkerIndexRef.current;
+      const images = files.map((file, offset) => {
+        const markerNumber = startIndex + offset;
+        return {
+          id: createImageAttachmentID(),
+          marker: getImageMarkerLabel(markerNumber),
+          markerNumber,
+          file,
+        } satisfies PendingImageAttachment;
+      });
+      const markerText = images.map((image) => image.marker).join(' ');
+      const textarea = textareaRef.current;
+      const useSelection = mode === 'selection' && document.activeElement === textarea;
+      const selectionStart = useSelection ? textarea?.selectionStart ?? currentText.length : currentText.length;
+      const selectionEnd = useSelection ? textarea?.selectionEnd ?? selectionStart : selectionStart;
+      const { value, cursor } = insertTextAtSelection(
+        currentText,
+        selectionStart,
+        selectionEnd,
+        markerText,
+      );
+
+      nextImageMarkerIndexRef.current = startIndex + images.length;
+      setInputText(value);
+      setSlashOpen(false);
+      setSlashQuery('');
+      closeMentionMenu();
+
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.selectionStart = cursor;
+          textareaRef.current.selectionEnd = cursor;
+        }
+      }, 0);
+
+      void processAcceptedImageFiles(images);
     },
-    [processImageFile]
+    [closeMentionMenu, processAcceptedImageFiles, setInputText]
   );
 
-  // Image attachment via file input
-  const handleImageSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (!files) return;
+  const handleImageRemove = useCallback(
+    (image: ChatImageAttachment) => {
+      removeImage(image.id);
 
-      processImageFiles(files);
-
-      // Reset input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+      const currentText = useChatStore.getState().inputText;
+      const nextText = removeMarkerText(currentText, image.marker);
+      if (nextText !== currentText) {
+        setInputText(nextText);
+        setSlashOpen(false);
+        setSlashQuery('');
+        closeMentionMenu();
       }
     },
-    [processImageFiles]
+    [closeMentionMenu, removeImage, setInputText]
   );
 
   // Drag and drop support
@@ -472,27 +670,30 @@ export function ChatInput() {
       e.preventDefault();
       e.stopPropagation();
 
-      const files = e.dataTransfer.files;
-      processImageFiles(files);
+      const files = collectValidImageFiles(e.dataTransfer.files);
+      insertAcceptedImages(files, 'append');
     },
-    [processImageFiles]
+    [collectValidImageFiles, insertAcceptedImages]
   );
 
   const handlePaste = useCallback(
     (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-      const imageFiles = Array.from(e.clipboardData.items)
+      const imageFiles = collectValidImageFiles(
+        Array.from(e.clipboardData.items)
         .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
         .map((item) => item.getAsFile())
-        .filter((file): file is File => file !== null);
+        .filter((file): file is File => file !== null)
+      );
 
       if (imageFiles.length === 0) {
         return;
       }
 
       e.preventDefault();
-      processImageFiles(imageFiles);
+
+      insertAcceptedImages(imageFiles, 'selection');
     },
-    [processImageFiles]
+    [collectValidImageFiles, insertAcceptedImages]
   );
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -524,32 +725,10 @@ export function ChatInput() {
           />
           <div className="chat-input__shell">
             <div className="chat-input__row">
-              <button
-                className="chat-input__attach-btn"
-                onClick={() => fileInputRef.current?.click()}
-                title="Attach image"
-                aria-label="Attach image"
-                disabled={isStreaming}
-                type="button"
-              >
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M11.5 1a3.5 3.5 0 0 1 .19 6.995l-.19.005H5a2 2 0 0 1-.15-3.995L5 4h5.5a.5.5 0 0 1 .09.992L10.5 5H5a1 1 0 0 0-.117 1.993L5 7h6.5a2.5 2.5 0 0 0 .164-4.995L11.5 2H5a3.5 3.5 0 0 0-.192 6.995L5 9h6.5a.5.5 0 0 1 .09.992L11.5 10H5a4.5 4.5 0 0 1-.212-8.995L5 1h6.5z" />
-                </svg>
-              </button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleImageSelect}
-              />
-
               <div className="chat-input__field">
                 <textarea
                   ref={textareaRef}
-                  className="chat-input__textarea"
+                  className={`chat-input__textarea${isTextareaExpanded ? ' chat-input__textarea--expanded' : ''}`}
                   value={inputText}
                   onChange={handleChange}
                   onKeyDown={handleKeyDown}
@@ -598,10 +777,6 @@ export function ChatInput() {
                   <ModelSelector />
                   <AgentSelector />
                 </div>
-
-                <div className="chat-input__hint">
-                  <span>Enter to send · Shift+Enter for new line · ↑↓ for history</span>
-                </div>
               </div>
 
               <TokenUsageBar />
@@ -610,15 +785,15 @@ export function ChatInput() {
 
           {attachedImages.length > 0 && (
             <div className="chat-input__tray">
-              <div className="chat-input__images">
-                {attachedImages.map((img, index) => (
-                  <div key={index} className="chat-input__image-preview">
-                    <img src={img} alt={`Attachment ${index + 1}`} />
+                <div className="chat-input__images">
+                {attachedImages.map((image) => (
+                  <div key={image.id} className="chat-input__image-preview" title={image.marker}>
+                    <img src={image.dataUrl} alt={`Attachment ${image.marker}`} />
                     <button
                       className="chat-input__image-remove"
-                      onClick={() => removeImage(index)}
-                      title="Remove image"
-                      aria-label={`Remove attachment ${index + 1}`}
+                      onClick={() => handleImageRemove(image)}
+                      title={`Remove ${image.marker}`}
+                      aria-label={`Remove attachment ${image.marker}`}
                       type="button"
                     >
                       &times;

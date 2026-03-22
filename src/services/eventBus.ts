@@ -1,29 +1,33 @@
 import type { EventType, EventPayloads } from '../types/events';
 
 type EventHandler<T extends EventType> = (payload: EventPayloads[T]) => void;
+type HandlerRegistry = { [K in EventType]?: Set<EventHandler<K>> };
 
 /**
  * Typed event bus for internal extension communication
  */
 export class EventBus {
-  private handlers: Map<string, Set<Function>> = new Map();
+  private handlers: HandlerRegistry = {};
 
   on<T extends EventType>(event: T, handler: EventHandler<T>): () => void {
-    if (!this.handlers.has(event)) {
-      this.handlers.set(event, new Set());
+    const handlers = this.handlers[event] as Set<EventHandler<T>> | undefined;
+
+    if (handlers) {
+      handlers.add(handler);
+    } else {
+      this.handlers[event] = new Set([handler]) as HandlerRegistry[T];
     }
-    this.handlers.get(event)!.add(handler);
 
     // Return unsubscribe function
     return () => {
-      this.handlers.get(event)?.delete(handler);
+      (this.handlers[event] as Set<EventHandler<T>> | undefined)?.delete(handler);
     };
   }
 
   emit<T extends EventType>(event: T, payload: EventPayloads[T]): void {
-    this.handlers.get(event)?.forEach(handler => {
+    (this.handlers[event] as Set<EventHandler<T>> | undefined)?.forEach((handler) => {
       try {
-        (handler as EventHandler<T>)(payload);
+        handler(payload);
       } catch (error) {
         console.error(`Error in event handler for ${event}:`, error);
       }
@@ -32,9 +36,9 @@ export class EventBus {
 
   removeAllListeners(event?: EventType): void {
     if (event) {
-      this.handlers.delete(event);
+      delete this.handlers[event];
     } else {
-      this.handlers.clear();
+      this.handlers = {};
     }
   }
 }
