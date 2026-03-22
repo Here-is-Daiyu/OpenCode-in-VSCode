@@ -1,10 +1,9 @@
-name: Build and package release VSIX
+name: Build dev VSIX on branch push
 
 on:
   push:
-    tags:
-      - "v*"
-      - "V*"
+    branches:
+      - "**"
 
 jobs:
   build-and-package:
@@ -31,28 +30,31 @@ jobs:
       - name: Install webview dependencies
         run: npm ci --prefix webview-ui
 
-      - name: Parse version from tag
+      - name: Derive dev version from commit SHA and date
         id: version
         shell: bash
         run: |
-          raw_tag="${GITHUB_REF_NAME}"
-          version="${raw_tag#v}"
-          version="${version#V}"
+          build_date="$(date -u +%Y%m%d)"
+          short_sha="${GITHUB_SHA::7}"
+          short_sha="${short_sha,,}"
 
-          if [[ -z "${version}" || "${version}" == "${raw_tag}" ]]; then
-            echo "::error::Tag '${raw_tag}' must start with v or V."
+          if [[ ! "${build_date}" =~ ^[0-9]{8}$ ]]; then
+            echo "::error::Build date '${build_date}' is not a valid UTC date in YYYYMMDD format."
             exit 1
           fi
 
-          if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "::error::Parsed version '${version}' is not a valid semver-like version."
+          if [[ ! "${short_sha}" =~ ^[0-9a-f]{7}$ ]]; then
+            echo "::error::Short SHA '${short_sha}' is not a valid 7-character hex commit prefix."
             exit 1
           fi
 
-          echo "raw_tag=${raw_tag}" >> "${GITHUB_OUTPUT}"
+          version="0.0.0-dev-${build_date}-${short_sha}"
+
+          echo "build_date=${build_date}" >> "${GITHUB_OUTPUT}"
+          echo "short_sha=${short_sha}" >> "${GITHUB_OUTPUT}"
           echo "version=${version}" >> "${GITHUB_OUTPUT}"
 
-      - name: Sync package.json version from tag
+      - name: Sync package.json version for dev package
         run: npm version "${{ steps.version.outputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build extension
@@ -85,7 +87,7 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opencode-vscode-${{ steps.version.outputs.version }}-vsix
+          name: opencode-vscode-dev-${{ steps.version.outputs.build_date }}-${{ steps.version.outputs.short_sha }}-vsix
           path: ${{ steps.package.outputs.vsix_path }}
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
