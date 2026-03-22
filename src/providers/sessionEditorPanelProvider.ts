@@ -16,6 +16,9 @@ import { getWebviewHtml } from '../utils/webviewHtml';
 type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:status' }>;
 type SessionLoadedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:loaded' }>;
 type SessionHistoryPrependedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:historyPrepended' }>;
+type ConfigUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'config:updated' }>;
+type ProvidersUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'providers:updated' }>;
+type AgentsUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'agents:updated' }>;
 
 const DEFAULT_IMAGE_MIME = 'image/png';
 const DATA_URL_PREFIX = /^data:/i;
@@ -56,6 +59,10 @@ export class SessionEditorPanelProvider {
   private logger?: Logger;
   private modelPrefs?: ModelPreferencesService;
   private modelPrefsBaseUrlLogged = false;
+  private lastServerStatus?: ServerStatusMessage['data'];
+  private lastConfig?: ConfigUpdatedMessage['data'];
+  private lastProviders?: ProvidersUpdatedMessage['data'];
+  private lastAgents?: AgentsUpdatedMessage['data'];
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -104,6 +111,7 @@ export class SessionEditorPanelProvider {
     const state = this.panels.get(sessionId);
     if (!state) { return; }
 
+    this.cacheGlobalMessage(message);
     this.cacheMessageForPanel(state, message);
     this.doPostMessage(state, message);
   }
@@ -112,6 +120,7 @@ export class SessionEditorPanelProvider {
    * Broadcast a message to every open editor panel.
    */
   broadcastMessage(message: ExtensionToWebviewMessage): void {
+    this.cacheGlobalMessage(message);
     for (const state of this.panels.values()) {
       this.cacheMessageForPanel(state, message);
       this.doPostMessage(state, message);
@@ -391,8 +400,20 @@ export class SessionEditorPanelProvider {
     // Send latest known server status (or disconnected fallback)
     this.doPostMessage(state, {
       type: 'server:status',
-      data: state.lastServerStatus ?? { connected: false },
+      data: state.lastServerStatus ?? this.lastServerStatus ?? { connected: false },
     });
+
+    if (this.lastConfig) {
+      this.doPostMessage(state, { type: 'config:updated', data: this.lastConfig });
+    }
+
+    if (this.lastProviders) {
+      this.doPostMessage(state, { type: 'providers:updated', data: this.lastProviders });
+    }
+
+    if (this.lastAgents) {
+      this.doPostMessage(state, { type: 'agents:updated', data: this.lastAgents });
+    }
 
     // Re-send the session data if we have it
     if (state.lastSessionLoaded) {
@@ -805,6 +826,23 @@ export class SessionEditorPanelProvider {
         if (state.sessionId && message.data.id === state.sessionId) {
           state.lastSessionLoaded = undefined;
         }
+        break;
+    }
+  }
+
+  private cacheGlobalMessage(message: ExtensionToWebviewMessage): void {
+    switch (message.type) {
+      case 'server:status':
+        this.lastServerStatus = message.data;
+        break;
+      case 'config:updated':
+        this.lastConfig = message.data;
+        break;
+      case 'providers:updated':
+        this.lastProviders = message.data;
+        break;
+      case 'agents:updated':
+        this.lastAgents = message.data;
         break;
     }
   }

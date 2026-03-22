@@ -1,13 +1,12 @@
 /**
- * MessageHeader - Two-column layout with provider icon and model info.
+ * MessageHeader - Metadata header placeholder.
  *
- * For user messages: 18px user icon in the decoration column, no text label.
- * For assistant messages: Provider icon + provider name (uppercase) + model name.
- * Matches the official OpenCode web UI layout.
+ * Visible role icons are intentionally omitted; provider/model identity now
+ * lives in the footer for a cleaner message flow.
  */
 
 import React, { useEffect, useState } from 'react';
-import type { AssistantMessage, Message } from '../../types/opencode';
+import type { Message } from '../../types/opencode';
 
 interface MessageHeaderProps {
   info: Message;
@@ -76,47 +75,9 @@ export function getProviderInfo(modelID: string, providerID: string): { name: st
 }
 
 export const MessageHeader = React.memo(function MessageHeader({
-  info,
+  info: _info,
 }: MessageHeaderProps) {
-  const isUser = info.role === 'user';
-
-  if (isUser) {
-    // User: just the icon in the decoration column, no text
-    return (
-      <div className="msg-part-row msg-header-row">
-        <div className="msg-part-row__decoration">
-          <span className="msg-part-row__icon">
-            <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M8 1a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM2 13c0-3 2.5-5 6-5s6 2 6 5v1H2v-1z" />
-            </svg>
-          </span>
-        </div>
-        <div className="msg-part-row__content msg-header-row__content">
-          {/* Role text hidden — kept for accessibility / screen readers */}
-          <span className="msg-header__role">You</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Assistant: icon only — model/provider identity lives in the footer.
-  const assistantInfo = info as AssistantMessage;
-  const modelID = assistantInfo.modelID ?? '';
-  const providerID = assistantInfo.providerID ?? '';
-  const provider = getProviderInfo(modelID, providerID);
-
-  return (
-    <div className="msg-part-row msg-header-row">
-      <div className="msg-part-row__decoration">
-        <span className="msg-part-row__icon">
-          {provider.icon}
-        </span>
-      </div>
-      <div className="msg-part-row__content msg-header-row__content">
-        <span className="msg-header__role">Assistant</span>
-      </div>
-    </div>
-  );
+  return null;
 });
 
 // ---------------------------------------------------------------------------

@@ -11,6 +11,7 @@ import type { SettingsViewProvider } from '../providers/settingsViewProvider';
 import type { SessionEditorPanelProvider } from '../providers/sessionEditorPanelProvider';
 import type { StatusBarManager } from '../managers/statusBarManager';
 import type { SessionManager } from '../managers/sessionManager';
+import type { OpenCodeConfig } from '../types/opencode';
 
 /**
  * Services and providers needed by command handlers.
@@ -316,8 +317,53 @@ async function restartServer(ctx: CommandContext): Promise<void> {
   }
 }
 
-async function selectModel(ctx: CommandContext): Promise<void> {
+function syncConfig(ctx: CommandContext, config: OpenCodeConfig): void {
+  ctx.eventBus.emit('config:updated', config);
+  const message = { type: 'config:updated' as const, data: config };
+  ctx.chatProvider.postMessageToWebview(message);
+  ctx.editorPanelProvider.broadcastMessage(message);
+}
+
+async function updateSelectedModel(
+  ctx: CommandContext,
+  providerID: string,
+  modelID: string,
+): Promise<void> {
+  const config = await ctx.client.updateConfig({ model: `${providerID}/${modelID}` });
+  syncConfig(ctx, config);
+  ctx.statusBarManager.setModel(providerID, modelID);
+  ctx.logger.info(`Selected model: ${providerID}/${modelID}`);
+}
+
+async function updateSelectedAgent(ctx: CommandContext, agentId: string): Promise<void> {
+  const config = await ctx.client.updateConfig({ agent: agentId });
+  syncConfig(ctx, config);
+  ctx.logger.info(`Selected agent: ${agentId}`);
+}
+
+async function selectModel(
+  ctx: CommandContext,
+  providerID?: unknown,
+  modelID?: unknown,
+): Promise<void> {
   if (!requireConnected(ctx)) { return; }
+
+  if (typeof providerID === 'string' && typeof modelID === 'string') {
+    const nextProviderID = providerID.trim();
+    const nextModelID = modelID.trim();
+    if (!nextProviderID || !nextModelID) {
+      vscode.window.showWarningMessage('Invalid model selection.');
+      return;
+    }
+
+    try {
+      await updateSelectedModel(ctx, nextProviderID, nextModelID);
+    } catch (err) {
+      ctx.logger.error('Failed to select model', err);
+      vscode.window.showErrorMessage(`Failed to load models: ${errorMessage(err)}`);
+    }
+    return;
+  }
 
   try {
     const response = await ctx.client.getProviders();
@@ -351,9 +397,7 @@ async function selectModel(ctx: CommandContext): Promise<void> {
     });
 
     if (pick) {
-      await ctx.client.updateConfig({ model: `${pick._providerID}/${pick._modelID}` });
-      ctx.statusBarManager.setModel(pick._providerID, pick._modelID);
-      ctx.logger.info(`Selected model: ${pick._providerID}/${pick._modelID}`);
+      await updateSelectedModel(ctx, pick._providerID, pick._modelID);
     }
   } catch (err) {
     ctx.logger.error('Failed to select model', err);
@@ -361,8 +405,24 @@ async function selectModel(ctx: CommandContext): Promise<void> {
   }
 }
 
-async function selectAgent(ctx: CommandContext): Promise<void> {
+async function selectAgent(ctx: CommandContext, agentId?: unknown): Promise<void> {
   if (!requireConnected(ctx)) { return; }
+
+  if (typeof agentId === 'string') {
+    const nextAgentId = agentId.trim();
+    if (!nextAgentId) {
+      vscode.window.showWarningMessage('Invalid agent selection.');
+      return;
+    }
+
+    try {
+      await updateSelectedAgent(ctx, nextAgentId);
+    } catch (err) {
+      ctx.logger.error('Failed to select agent', err);
+      vscode.window.showErrorMessage(`Failed to load agents: ${errorMessage(err)}`);
+    }
+    return;
+  }
 
   try {
     const agents = await ctx.client.listAgents();
@@ -384,8 +444,7 @@ async function selectAgent(ctx: CommandContext): Promise<void> {
     });
 
     if (pick) {
-      await ctx.client.updateConfig({ agent: pick._agentId });
-      ctx.logger.info(`Selected agent: ${pick._agentId}`);
+      await updateSelectedAgent(ctx, pick._agentId);
     }
   } catch (err) {
     ctx.logger.error('Failed to select agent', err);
@@ -568,9 +627,28 @@ async function openConfigFile(ctx: CommandContext): Promise<void> {
   if (!requireConnected(ctx)) { return; }
   try {
     const pathInfo = await ctx.client.getPathInfo();
-    const configPath = vscode.Uri.file(
-      path.join(pathInfo.config, 'opencode.json')
-    );
+    const directory = pathInfo.directory?.trim();
+    if (!directory) {
+      throw new Error('OpenCode server did not report a project directory.');
+    }
+
+    const configPath = vscode.Uri.file(path.join(directory, 'config.json'));
+    if (!vscode.workspace.getWorkspaceFolder(configPath)) {
+      vscode.window.showWarningMessage('OpenCode config is outside the current workspace. Open the project folder first.');
+      return;
+    }
+
+    try {
+      await vscode.workspace.fs.stat(configPath);
+    } catch {
+      await vscode.workspace.fs.writeFile(
+        configPath,
+        new TextEncoder().encode(`{
+  "$schema": "https://opencode.ai/config.json"
+}
+`),
+      );
+    }
     const doc = await vscode.workspace.openTextDocument(configPath);
     await vscode.window.showTextDocument(doc);
   } catch (err) {
@@ -583,26 +661,48 @@ async function openConfigFile(ctx: CommandContext): Promise<void> {
 // Editor panel commands
 // ---------------------------------------------------------------------------
 
+function resolveSessionId(value: unknown): string | undefined {
+  if (typeof value === 'string') {
+    return value.trim() || undefined;
+  }
+
+  if (value && typeof value === 'object' && 'session' in value) {
+    const item = value as { session?: { id?: string } };
+    return item.session?.id;
+  }
+
+  return undefined;
+}
+
+async function openEditorSession(ctx: CommandContext, sessionId: string): Promise<void> {
+  ctx.editorPanelProvider.createOrShow(sessionId);
+
+  try {
+    const [session, messages] = await Promise.all([
+      ctx.client.getSession(sessionId),
+      ctx.client.listMessages(sessionId),
+    ]);
+    ctx.editorPanelProvider.postMessageToPanel(sessionId, {
+      type: 'session:loaded',
+      data: { session, messages },
+    });
+  } catch (err) {
+    ctx.logger.error('Failed to load editor session', err);
+    vscode.window.showErrorMessage(`Failed to open session in editor: ${errorMessage(err)}`);
+  }
+}
+
 function openSessionInEditor(ctx: CommandContext, sessionId?: unknown): void {
   if (!requireConnected(ctx)) { return; }
 
-  // sessionId may be a plain string (called programmatically) or a
-  // SessionTreeItem (called from tree view context menu).
-  let id: string | undefined;
-  if (typeof sessionId === 'string') {
-    id = sessionId.trim() || undefined;
-  } else if (sessionId && typeof sessionId === 'object' && 'session' in sessionId) {
-    // SessionTreeItem has a `session` property with an `id`
-    const item = sessionId as { session?: { id?: string } };
-    id = item.session?.id;
-  }
+  const id = resolveSessionId(sessionId);
 
   if (!id) {
     vscode.window.showWarningMessage('No session ID provided.');
     return;
   }
 
-  ctx.editorPanelProvider.createOrShow(id);
+  void openEditorSession(ctx, id);
 }
 
 function openNewSessionInEditor(ctx: CommandContext): void {
@@ -619,7 +719,7 @@ function openActiveSessionInEditor(ctx: CommandContext): void {
     return;
   }
 
-  ctx.editorPanelProvider.createOrShow(sessionId);
+  void openEditorSession(ctx, sessionId);
 }
 
 function openCurrentOrNewSessionInEditor(ctx: CommandContext): void {
@@ -627,9 +727,62 @@ function openCurrentOrNewSessionInEditor(ctx: CommandContext): void {
 
   const sessionId = ctx.activeSessionId;
   if (sessionId) {
-    ctx.editorPanelProvider.createOrShow(sessionId);
+    void openEditorSession(ctx, sessionId);
   } else {
     ctx.editorPanelProvider.createOrShowNewSession();
+  }
+}
+
+function resolveStatusItemId(item: unknown): string | undefined {
+  if (typeof item === 'string') {
+    return item.trim() || undefined;
+  }
+
+  if (!item || typeof item !== 'object') {
+    return undefined;
+  }
+
+  if ('itemId' in item && typeof (item as { itemId?: unknown }).itemId === 'string') {
+    return ((item as { itemId: string }).itemId).trim() || undefined;
+  }
+
+  if ('label' in item && typeof (item as { label?: unknown }).label === 'string') {
+    return ((item as { label: string }).label).trim() || undefined;
+  }
+
+  return undefined;
+}
+
+async function toggleMCPServer(
+  ctx: CommandContext,
+  item: unknown,
+  enabled: boolean,
+): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  const name = resolveStatusItemId(item);
+  if (!name) {
+    vscode.window.showWarningMessage('No MCP server selected.');
+    return;
+  }
+
+  try {
+    const config = await ctx.client.getConfig();
+    const next = { ...(config.mcp ?? {}) };
+    const current = next[name];
+    if (!current) {
+      vscode.window.showWarningMessage(`MCP server not found in config: ${name}`);
+      return;
+    }
+
+    next[name] = { ...current, enabled };
+    const updated = await ctx.client.updateConfig({ mcp: next });
+    syncConfig(ctx, updated);
+    await ctx.statusProvider.refresh();
+    vscode.window.showInformationMessage(`${enabled ? 'Enabled' : 'Disabled'} MCP server: ${name}`);
+  } catch (err) {
+    ctx.logger.error('Failed to toggle MCP server', err);
+    vscode.window.showErrorMessage(`Failed to toggle MCP server: ${errorMessage(err)}`);
   }
 }
 
@@ -670,8 +823,8 @@ export function registerCommands(
     ['opencode.startServer', () => startServer(ctx)],
     ['opencode.stopServer', () => stopServer(ctx)],
     ['opencode.restartServer', () => restartServer(ctx)],
-    ['opencode.selectModel', () => selectModel(ctx)],
-    ['opencode.selectAgent', () => selectAgent(ctx)],
+    ['opencode.selectModel', (providerID?: unknown, modelID?: unknown) => selectModel(ctx, providerID, modelID)],
+    ['opencode.selectAgent', (agentId?: unknown) => selectAgent(ctx, agentId)],
     ['opencode.openSettings', () => openSettings(ctx)],
     ['opencode.addFileToPrompt', () => addFileToPrompt(ctx)],
     ['opencode.addSelectionToPrompt', () => addSelectionToPrompt(ctx)],
@@ -687,6 +840,8 @@ export function registerCommands(
     ['opencode.openNewSessionInEditor', () => openNewSessionInEditor(ctx)],
     ['opencode.openActiveSessionInEditor', () => openActiveSessionInEditor(ctx)],
     ['opencode.openCurrentOrNewSessionInEditor', () => openCurrentOrNewSessionInEditor(ctx)],
+    ['opencode.enableMCPServer', (item?: unknown) => toggleMCPServer(ctx, item, true)],
+    ['opencode.disableMCPServer', (item?: unknown) => toggleMCPServer(ctx, item, false)],
   ];
 
   for (const [id, handler] of commands) {

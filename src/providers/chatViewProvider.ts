@@ -18,6 +18,9 @@ type SessionLoadedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:
 type SessionHistoryPrependedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:historyPrepended' }>;
 type SessionCreatedMessage = Extract<ExtensionToWebviewMessage, { type: 'session:created' }>;
 type ChatInsertTextMessage = Extract<ExtensionToWebviewMessage, { type: 'chat:insertText' }>;
+type ConfigUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'config:updated' }>;
+type ProvidersUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'providers:updated' }>;
+type AgentsUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'agents:updated' }>;
 
 const DEFAULT_IMAGE_MIME = 'image/png';
 const DATA_URL_PREFIX = /^data:/i;
@@ -46,6 +49,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private lastSessionLoaded?: SessionLoadedMessage['data'];
   // Optional: helps keep provider-side currentSessionID correct even if webview isn't ready.
   private lastSessionCreated?: SessionCreatedMessage['data'];
+  private lastConfig?: ConfigUpdatedMessage['data'];
+  private lastProviders?: ProvidersUpdatedMessage['data'];
+  private lastAgents?: AgentsUpdatedMessage['data'];
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -144,6 +150,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case 'session:created':
         this.lastSessionCreated = message.data;
         this.currentSessionID = message.data.id;
+        break;
+      case 'config:updated':
+        this.lastConfig = message.data;
+        break;
+      case 'providers:updated':
+        this.lastProviders = message.data;
+        break;
+      case 'agents:updated':
+        this.lastAgents = message.data;
         break;
       case 'session:cleared':
         this.lastSessionLoaded = undefined;
@@ -465,6 +480,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       });
     }
 
+    if (this.lastConfig) {
+      this.postMessage({ type: 'config:updated', data: this.lastConfig });
+    }
+
+    if (this.lastProviders) {
+      this.postMessage({ type: 'providers:updated', data: this.lastProviders });
+    }
+
+    if (this.lastAgents) {
+      this.postMessage({ type: 'agents:updated', data: this.lastAgents });
+    }
+
     // Send model preferences
     this.sendModelPrefs();
     this.flushQueuedInsertMessages();
@@ -487,6 +514,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         type: 'session:loaded',
         data: this.lastSessionLoaded,
       });
+    }
+
+    if (this.lastConfig) {
+      this.postMessage({ type: 'config:updated', data: this.lastConfig });
+    }
+
+    if (this.lastProviders) {
+      this.postMessage({ type: 'providers:updated', data: this.lastProviders });
+    }
+
+    if (this.lastAgents) {
+      this.postMessage({ type: 'agents:updated', data: this.lastAgents });
     }
 
     this.flushQueuedInsertMessages();

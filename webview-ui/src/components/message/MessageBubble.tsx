@@ -23,6 +23,7 @@ import { useChatStore } from '../../stores/chatStore';
 import { MessageHeader } from './MessageHeader';
 import { MessageContent } from './MessageContent';
 import { MessageFooter } from './MessageFooter';
+import { stripImageMarkers } from '../../utils/renderText';
 
 /** Character threshold after which user messages are collapsible. */
 const COLLAPSE_CHAR_THRESHOLD = 300;
@@ -54,13 +55,17 @@ export const MessageBubble = React.memo(function MessageBubble({
   // --- Collapsible user messages ---
   const isLongUserMessage = useMemo(() => {
     if (!isUser) return false;
+    const hasInlineImages = parts.some(
+      (part) => part.type === 'file' && (part.mime ?? part.mediaType ?? '').startsWith('image/'),
+    );
     const text = parts
       .filter((p) => p.type === 'text')
       .map((p) => (p.type === 'text' ? p.text : ''))
       .join('\n');
+    const displayText = hasInlineImages ? stripImageMarkers(text) : text;
     return (
-      text.length > COLLAPSE_CHAR_THRESHOLD ||
-      text.split('\n').length >= COLLAPSE_LINE_THRESHOLD
+      displayText.length > COLLAPSE_CHAR_THRESHOLD ||
+      displayText.split('\n').length >= COLLAPSE_LINE_THRESHOLD
     );
   }, [isUser, parts]);
 

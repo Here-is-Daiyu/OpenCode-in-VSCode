@@ -60,6 +60,8 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 | PATCH | `/config` | partial config | `Config` |
 | GET | `/config/providers` | — | `{ providers: Provider[], default: Record<string, string> }` — **NOTE:** uses `providers` key (not `all` like `/provider`) |
 
+> **Storage note:** `PATCH /config` writes the project-local file `<Path.directory>/config.json` (verified against official server source: `Config.update()`), not the global config directory returned by `Path.config`. Global files under `Path.config` (`opencode.jsonc`, `opencode.json`, `config.json`) are load sources and are used by `Config.updateGlobal()` instead.
+
 ### Provider
 
 | Method | Path | Body | Response |

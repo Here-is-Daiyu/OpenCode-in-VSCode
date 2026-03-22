@@ -8,11 +8,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useAgentStore } from '../stores/agentStore';
 import { postMessage } from '../utils/vscodeApi';
+import type { Agent } from '../types/opencode';
 
 /** Capitalize the first letter of a string */
 function capitalize(str: string): string {
   if (!str) return str;
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function formatAgentModel(agent: Agent | undefined): string | undefined {
+  const model = agent?.model;
+  if (typeof model === 'string') {
+    return model.trim() || undefined;
+  }
+  if (model && typeof model === 'object') {
+    const providerID = typeof model.providerID === 'string' ? model.providerID.trim() : '';
+    const modelID = typeof model.modelID === 'string' ? model.modelID.trim() : '';
+    if (providerID && modelID) {
+      return `${providerID}/${modelID}`;
+    }
+    return modelID || providerID || undefined;
+  }
+  return undefined;
 }
 
 export function AgentSelector() {
@@ -29,6 +46,7 @@ export function AgentSelector() {
 
   // Derive current agent label
   const currentAgent = agents.find((a) => a.name === selectedAgent);
+  const currentAgentModel = formatAgentModel(currentAgent);
   const displayName = currentAgent
     ? capitalize(currentAgent.name)
     : selectedAgent
@@ -107,8 +125,8 @@ export function AgentSelector() {
           <path d="M6.5 13.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 0 1H7a.5.5 0 0 1-.5-.5z" />
         </svg>
         <span className="agent-selector__name">{displayName}</span>
-        {currentAgent?.model && (
-          <span className="agent-selector__model-badge">{currentAgent.model}</span>
+        {currentAgentModel && (
+          <span className="agent-selector__model-badge">{currentAgentModel}</span>
         )}
         <svg
           className="agent-selector__chevron"
@@ -125,6 +143,7 @@ export function AgentSelector() {
         <div className="agent-selector__dropdown" role="listbox">
           {visibleAgents.map((agent) => {
             const isSelected = agent.name === selectedAgent;
+            const modelLabel = formatAgentModel(agent);
             return (
               <div
                 key={agent.name}
@@ -139,10 +158,10 @@ export function AgentSelector() {
                     <span className="agent-selector__item-mode">(sub)</span>
                   )}
                 </span>
-                {agent.model && (
-                  <span className="agent-selector__item-model">{agent.model}</span>
+                {modelLabel && (
+                  <span className="agent-selector__item-model">{modelLabel}</span>
                 )}
-                {!agent.model && agent.description && (
+                {!modelLabel && agent.description && (
                   <span className="agent-selector__item-desc">{agent.description}</span>
                 )}
                 {isSelected && (

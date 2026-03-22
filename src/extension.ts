@@ -264,13 +264,21 @@ async function onServerStarted(ctx: CommandContext): Promise<void> {
 // ---------------------------------------------------------------------------
 
 async function loadInitialData(ctx: CommandContext): Promise<void> {
-  try {
-    // Load sessions
-    const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.setSessions(sessions);
+  const sessionsPromise = ctx.client.listSessions();
+  const configPromise = ctx.client.getConfig();
+  const providersPromise = ctx.client.getProviderInfo();
+  const agentsPromise = ctx.client.listAgents();
 
-    // Load config (model info)
-    const config = await ctx.client.getConfig();
+  try {
+    const sessions = await sessionsPromise;
+    ctx.sessionProvider.setSessions(sessions);
+    ctx.logger.debug(`Loaded ${sessions.length} sessions`);
+  } catch (err) {
+    ctx.logger.error('Failed to load sessions', err);
+  }
+
+  try {
+    const config = await configPromise;
     const model = getConfiguredModel(config);
     if (model) {
       const parts = model.split('/');
@@ -281,23 +289,40 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
       ctx.statusBarManager.setModelAuto();
     }
 
-    // Send config to chat webview so it knows the current model/agent on startup
-    ctx.chatProvider.postMessageToWebview({ type: 'config:updated', data: config });
-
-    ctx.statusProvider.refresh();
-    ctx.logger.debug(`Loaded ${sessions.length} sessions`);
+    const message = { type: 'config:updated' as const, data: config };
+    ctx.chatProvider.postMessageToWebview(message);
+    ctx.editorPanelProvider.broadcastMessage(message);
   } catch (err) {
-    ctx.logger.error('Failed to load initial data', err);
+    ctx.logger.error('Failed to load config', err);
   }
 
-  // Load agents (separate try-catch so failure doesn't break session/config loading)
   try {
-    const agents = await ctx.client.listAgents();
-    ctx.chatProvider.postMessageToWebview({ type: 'agents:updated', data: agents });
+    const providers = await providersPromise;
+    const message = {
+      type: 'providers:updated' as const,
+      data: {
+        providers: providers.all,
+        connected: providers.connected,
+      },
+    };
+    ctx.chatProvider.postMessageToWebview(message);
+    ctx.editorPanelProvider.broadcastMessage(message);
+    ctx.logger.debug(`Loaded ${providers.connected.length} connected providers`);
+  } catch (err) {
+    ctx.logger.error('Failed to load providers', err);
+  }
+
+  try {
+    const agents = await agentsPromise;
+    const message = { type: 'agents:updated' as const, data: agents };
+    ctx.chatProvider.postMessageToWebview(message);
+    ctx.editorPanelProvider.broadcastMessage(message);
     ctx.logger.debug(`Loaded ${agents.length} agents`);
   } catch (err) {
     ctx.logger.error('Failed to load agents', err);
   }
+
+  void ctx.statusProvider.refresh();
 }
 
 // ---------------------------------------------------------------------------

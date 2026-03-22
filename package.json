@@ -2,7 +2,7 @@
   "name": "opencode-vscode",
   "displayName": "OpenCode for VSCode",
   "description": "Full-featured OpenCode AI coding assistant integration for Visual Studio Code",
-  "version": "1.0.1-beta",
+  "version": "1.0.1",
   "publisher": "opencode-community",
   "license": "MIT",
   "repository": {
@@ -196,6 +196,16 @@
         "icon": "$(gear)"
       },
       {
+        "command": "opencode.enableMCPServer",
+        "title": "Enable MCP Server",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.disableMCPServer",
+        "title": "Disable MCP Server",
+        "category": "OpenCode"
+      },
+      {
         "command": "opencode.openSessionInEditor",
         "title": "Open Session in Editor",
         "category": "OpenCode",
@@ -283,12 +293,22 @@
       "view/item/context": [
         {
           "command": "opencode.openSessionInEditor",
-          "when": "view == opencode.sessions && viewItem =~ /session/",
+          "when": "view == opencode.sessions && (viewItem == session || viewItem == activeSession)",
           "group": "inline"
         },
         {
           "command": "opencode.openSessionInEditor",
-          "when": "view == opencode.sessions && viewItem =~ /session/",
+          "when": "view == opencode.sessions && (viewItem == session || viewItem == activeSession)",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.enableMCPServer",
+          "when": "view == opencode.status && viewItem == mcpServerDisabled",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.disableMCPServer",
+          "when": "view == opencode.status && viewItem == mcpServerEnabled",
           "group": "navigation"
         }
       ]

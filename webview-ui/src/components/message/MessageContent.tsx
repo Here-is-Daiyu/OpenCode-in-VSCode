@@ -32,7 +32,7 @@ import { PatchPartView } from './parts/PatchPartView';
 import { AgentPartView } from './parts/AgentPartView';
 import { RetryPartView } from './parts/RetryPartView';
 import { CompactionPartView } from './parts/CompactionPartView';
-import { hasDisplayText, toDisplayText } from '../../utils/renderText';
+import { hasDisplayText, stripImageMarkers, toDisplayText } from '../../utils/renderText';
 
 interface MessageContentProps {
   parts: Part[];
@@ -61,7 +61,11 @@ type RenderChunk =
  * Groups consecutive context-tool parts into ContextToolGroup chunks,
  * and merges adjacent text/reasoning parts.
  */
-function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] {
+function buildRenderChunks(
+  parts: Part[],
+  isStreaming?: boolean,
+  hideImageMarkers = false,
+): RenderChunk[] {
   if (!parts || !Array.isArray(parts)) return [];
   const chunks: RenderChunk[] = [];
   let contextBuffer: ToolPart[] = [];
@@ -109,15 +113,19 @@ function buildRenderChunks(parts: Part[], isStreaming?: boolean): RenderChunk[] 
 
   for (const part of parts) {
     switch (part.type) {
-      case 'text':
-        if (!hasDisplayText(part.text, 'message.text')) {
+      case 'text': {
+        const text = hideImageMarkers
+          ? stripImageMarkers(toDisplayText(part.text, 'message.text'))
+          : toDisplayText(part.text, 'message.text');
+        if (!text.trim()) {
           break;
         }
         flushReasoning();
         flushContext();
         if (!textId) textId = part.id;
-        textBuffer += (textBuffer ? '\n\n' : '') + toDisplayText(part.text, 'message.text');
+        textBuffer += (textBuffer ? '\n\n' : '') + text;
         break;
+      }
 
       case 'reasoning':
         if (!hasDisplayText(part.text, 'message.reasoning')) {
@@ -272,9 +280,15 @@ export const MessageContent = React.memo(function MessageContent({
   isStreaming,
 }: MessageContentProps) {
   const filtered = useMemo(() => filterParts(parts ?? []), [parts]);
+  const hideImageMarkers = useMemo(
+    () => filtered.some(
+      (part) => part.type === 'file' && (part.mime ?? part.mediaType ?? '').startsWith('image/'),
+    ),
+    [filtered],
+  );
   const chunks = useMemo(
-    () => groupConsecutiveTools(buildRenderChunks(filtered, isStreaming)),
-    [filtered, isStreaming],
+    () => groupConsecutiveTools(buildRenderChunks(filtered, isStreaming, hideImageMarkers)),
+    [filtered, hideImageMarkers, isStreaming],
   );
 
   return (

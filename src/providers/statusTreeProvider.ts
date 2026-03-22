@@ -32,6 +32,7 @@ export class StatusTreeItem extends vscode.TreeItem {
       icon?: vscode.ThemeIcon;
       tooltip?: string | vscode.MarkdownString;
       contextValue?: string;
+      itemId?: string;
       /** Opaque key used to match children to their parent section. */
       sectionKey?: SectionKey;
     } = {},
@@ -49,10 +50,18 @@ export class StatusTreeItem extends vscode.TreeItem {
     if (options.sectionKey) {
       (this as Record<string, unknown>)['_sectionKey'] = options.sectionKey;
     }
+
+    if (options.itemId) {
+      (this as Record<string, unknown>)['_itemId'] = options.itemId;
+    }
   }
 
   get sectionKey(): SectionKey | undefined {
     return (this as Record<string, unknown>)['_sectionKey'] as SectionKey | undefined;
+  }
+
+  get itemId(): string | undefined {
+    return (this as Record<string, unknown>)['_itemId'] as string | undefined;
   }
 }
 
@@ -409,18 +418,14 @@ export class StatusTreeProvider
 
     const connectedSet = new Set(this.providersData.connected ?? []);
 
-    // Show connected providers first, then disconnected — but only the ones that
-    // are actually connected or have models configured.  The `all` array can
-    // contain 100+ entries; we filter to keep the tree useful.
-    const connectedProviders: Provider[] = [];
-    const otherProviders: Provider[] = [];
+    const connectedProviders = (this.providersData.all ?? []).filter((provider) => connectedSet.has(provider.id));
 
-    for (const provider of this.providersData.all) {
-      if (connectedSet.has(provider.id)) {
-        connectedProviders.push(provider);
-      } else if (provider.models && Object.keys(provider.models).length > 0) {
-        otherProviders.push(provider);
-      }
+    if (connectedProviders.length === 0) {
+      return [
+        new StatusTreeItem('No providers connected', {
+          icon: new vscode.ThemeIcon('info'),
+        }),
+      ];
     }
 
     const toItem = (provider: Provider): StatusTreeItem => {
@@ -442,7 +447,7 @@ export class StatusTreeProvider
       });
     };
 
-    return [...connectedProviders.map(toItem), ...otherProviders.map(toItem)];
+    return connectedProviders.map(toItem);
   }
 
   // -- MCP children ----------------------------------------------------------
@@ -460,6 +465,12 @@ export class StatusTreeProvider
       const errorMsg = 'error' in mcpEntry ? mcpEntry.error : undefined;
       const tooltipLines = [`${name}: ${mcpEntry.status}`];
       if (errorMsg) { tooltipLines.push(`Error: ${errorMsg}`); }
+      const configEnabled = this.config?.mcp?.[name]?.enabled;
+      const disabled = configEnabled === false
+        ? true
+        : configEnabled === true
+          ? false
+          : mcpEntry.status === 'disabled';
 
       return new StatusTreeItem(name, {
         description: mcpEntry.status,
@@ -468,7 +479,8 @@ export class StatusTreeProvider
           mcpStatusColor(mcpEntry.status),
         ),
         tooltip: tooltipLines.join('\n'),
-        contextValue: 'mcpServer',
+        contextValue: disabled ? 'mcpServerDisabled' : 'mcpServerEnabled',
+        itemId: name,
       });
     });
   }
@@ -512,7 +524,17 @@ export class StatusTreeProvider
       ];
     }
 
-    return this.formatterStatus.map((fmt) => {
+    const enabledFormatters = this.formatterStatus.filter((fmt) => fmt.enabled);
+
+    if (enabledFormatters.length === 0) {
+      return [
+        new StatusTreeItem('No enabled formatters', {
+          icon: new vscode.ThemeIcon('info'),
+        }),
+      ];
+    }
+
+    return enabledFormatters.map((fmt) => {
       const exts = fmt.extensions.join(', ');
       return new StatusTreeItem(fmt.name, {
         description: fmt.enabled

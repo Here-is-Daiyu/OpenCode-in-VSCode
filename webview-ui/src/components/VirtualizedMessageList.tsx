@@ -46,7 +46,7 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
       const partsCount = msg?.parts?.length ?? 1;
       return Math.min(800, 120 + partsCount * 80);
     },
-    overscan: 5,
+    overscan: 10,
   });
 
   const virtualItems = virtualizer.getVirtualItems();

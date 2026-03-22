@@ -77,6 +77,8 @@ textarea {
  * ==================================================================== */
 
 .chat-app {
+  --font-size-base: 13px;
+  --font-size-small: 11px;
   --chat-assistant-max-width: 40rem;
   --chat-user-max-width: 66ch;
   --chat-scroll-button-offset: 16px;
@@ -276,6 +278,7 @@ textarea {
 .chat-messages__virtual {
   width: 100%;
   position: relative;
+  contain: layout paint;
 }
 
 .chat-scroll-bottom {

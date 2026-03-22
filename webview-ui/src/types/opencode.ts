@@ -333,7 +333,7 @@ export interface Agent {
   mode: 'primary' | 'subagent';
   native: boolean;
   prompt?: string;
-  model?: string;
+  model?: string | ModelRef;
   hidden?: boolean;
   temperature?: number;
 }
