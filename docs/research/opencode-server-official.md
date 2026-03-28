@@ -161,6 +161,12 @@ The opencode server exposes the following APIs.
 | `POST` | `/session/:id/unrevert` | Restore all reverted messages | Returns `boolean` |
 | `POST` | `/session/:id/permissions/:permissionID` | Respond to a permission request | body: `{ response, remember? }`, returns `boolean` |
 
+**Revert internals (official source `src/session/revert.ts`):**
+
+- `POST /session/:id/revert` does not immediately delete messages. It computes `session.revert.messageID`, preserves the original snapshot on first revert, replays collected `patch` parts through the snapshot subsystem, and stores a diff summary on the session.
+- `POST /session/:id/unrevert` restores the saved snapshot and clears `session.revert`.
+- Message deletion happens later through `SessionRevert.cleanup()` (for example before a new prompt or compaction). Until then, clients still receive the reverted messages from `/session/:id/message` and need a frontend visibility filter if they want true undo/redo UX.
+
 ---
 
 ### Messages

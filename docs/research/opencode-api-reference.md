@@ -61,6 +61,10 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 | GET | `/config/providers` | — | `{ providers: Provider[], default: Record<string, string> }` — **NOTE:** uses `providers` key (not `all` like `/provider`) |
 
 > **Storage note:** `PATCH /config` writes the project-local file `<Path.directory>/config.json` (verified against official server source: `Config.update()`), not the global config directory returned by `Path.config`. Global files under `Path.config` (`opencode.jsonc`, `opencode.json`, `config.json`) are load sources and are used by `Config.updateGlobal()` instead.
+>
+> **Read vs write mismatch:** Official config reads are broader than `PATCH /config` writes. The read precedence is: remote `/.well-known/opencode` → global config dir (`Path.config`) → `OPENCODE_CONFIG` → project `opencode.jsonc` / `opencode.json` found from `Path.directory` up to `Path.worktree` → `.opencode/opencode.jsonc` / `.opencode/opencode.json` on that same upward walk → `OPENCODE_CONFIG_CONTENT`. This means the file most likely affecting manual edits is not always `<Path.directory>/config.json`.
+>
+> **Extension strategy:** the VS Code extension's “Open local config” action should prefer the highest-precedence *observable project-local* config source it can infer from `GET /path`, then fall back to creating `<Path.directory>/opencode.jsonc`. It cannot be perfectly identical to official resolution because the API does not expose env-driven overrides such as `OPENCODE_CONFIG`, `OPENCODE_CONFIG_DIR`, or `OPENCODE_CONFIG_CONTENT`.
 
 ### Provider
 
@@ -94,6 +98,12 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 | POST | `/session/:id/unrevert` | — | `boolean` |
 | POST | `/session/:id/permissions/:permissionID` | `{ response, remember? }` | `boolean` |
 
+> **Undo/redo mapping:** official `/undo` and `/redo` UX is frontend behavior layered on top of `POST /session/:id/revert` and `POST /session/:id/unrevert`.
+>
+> **Server-side revert behavior:** official server `SessionRevert.revert()` stores `session.revert`, captures the current snapshot on first revert, replays `patch` parts through the snapshot subsystem, and records a `diff` summary. `SessionRevert.unrevert()` restores the saved snapshot and clears `session.revert`.
+>
+> **Client rendering caveat:** reverted messages are still returned by `GET /session/:id/message` until the server later runs revert cleanup (for example before a new prompt, compact, or explicit cleanup paths). Clients that want undo/redo UX must hide messages from `session.revert.messageID` onward in the visible conversation. This extension now keeps the raw message list in store and derives `visibleMessages` by slicing everything before that revert point; if the revert boundary has not been loaded yet during batched history hydration, the visible list is treated as empty until that boundary arrives.
+
 ### Messages
 
 | Method | Path | Body / Query | Response |
@@ -104,6 +114,10 @@ opencode serve --port 4096 --hostname 127.0.0.1 --mdns --cors "http://localhost:
 | POST | `/session/:id/prompt_async` | same body as `/message`; `parts` required in practice | `204 No Content` |
 | POST | `/session/:id/command` | `{ messageID?, agent?, model?, command, arguments }` | `{ info: Message, parts: Part[] }` |
 | POST | `/session/:id/shell` | `{ agent, model?, command }` | `{ info: Message, parts: Part[] }` |
+
+> **Shell execution note:** official TUI `!` input is only a frontend shortcut. Actual execution goes through `POST /session/:id/shell`, not a client-side `child_process` call.
+>
+> **Shell response shape:** the server creates an assistant message whose primary visible content is a `tool` part with `tool: "bash"`. Output is streamed by normal session SSE updates (`message.updated` / `message.part.updated` / `message.part.delta`), so clients should reuse the standard session message pipeline rather than inventing a separate terminal result channel.
 
 ### Commands
 
@@ -620,6 +634,10 @@ type Path = {
   directory: string         // e.g. "C:\\Users\\YZM-一只猫"
 }
 ```
+
+- `config` is the global config directory (`Global.Path.config` in the official source).
+- `directory` is the current project directory used by `PATCH /config` and as the start point for upward config lookup.
+- `worktree` is the stop boundary for upward project config searches (`findUp` / `.opencode` scans).
 
 ### VcsInfo
 
