@@ -22,18 +22,16 @@ class DiffContentProvider implements vscode.TextDocumentContentProvider {
    * Called by VSCode when the virtual document needs to be materialised.
    */
   provideTextDocumentContent(uri: vscode.Uri): string {
-    const key = uri.path;
-    return this.contents.get(key) ?? '';
+    return this.contents.get(this.getKey(uri)) ?? '';
   }
 
   /**
    * Store original content for a given file path and return the corresponding
    * virtual URI that can be opened via `vscode.diff`.
    */
-  setContent(filePath: string, content: string): vscode.Uri {
-    const normalised = filePath.replace(/\\/g, '/');
-    this.contents.set(normalised, content);
-    const uri = vscode.Uri.parse(`opencode-diff:${normalised}?original`);
+  setContent(filePath: string, content: string, side: 'original' | 'modified' = 'original'): vscode.Uri {
+    const uri = this.toUri(filePath, side);
+    this.contents.set(this.getKey(uri), content);
     this._onDidChange.fire(uri);
     return uri;
   }
@@ -42,8 +40,8 @@ class DiffContentProvider implements vscode.TextDocumentContentProvider {
    * Remove cached content for a path.
    */
   clearContent(filePath: string): void {
-    const normalised = filePath.replace(/\\/g, '/');
-    this.contents.delete(normalised);
+    this.contents.delete(this.getKey(this.toUri(filePath, 'original')));
+    this.contents.delete(this.getKey(this.toUri(filePath, 'modified')));
   }
 
   /**
@@ -56,6 +54,18 @@ class DiffContentProvider implements vscode.TextDocumentContentProvider {
   dispose(): void {
     this._onDidChange.dispose();
     this.contents.clear();
+  }
+
+  private toUri(filePath: string, side: 'original' | 'modified'): vscode.Uri {
+    const normalised = filePath.replace(/\\/g, '/');
+    return vscode.Uri.parse(`opencode-diff:${normalised}`).with({
+      query: side,
+      fragment: '',
+    });
+  }
+
+  private getKey(uri: vscode.Uri): string {
+    return uri.toString(true);
   }
 }
 
@@ -113,10 +123,7 @@ export class DiffService implements vscode.Disposable {
    * points to the real file on disk.
    */
   async showFileDiff(fileDiff: FileDiff): Promise<void> {
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
-    const fullPath = path.isAbsolute(fileDiff.path)
-      ? fileDiff.path
-      : path.join(workspaceRoot, fileDiff.path);
+    const fullPath = this.resolvePath(fileDiff.path);
 
     const filename = path.basename(fileDiff.path);
 
@@ -132,14 +139,11 @@ export class DiffService implements vscode.Disposable {
       ? this.extractOriginalFromDiff(fileDiff.diff)
       : '';
 
-    const originalUri = this.diffContentProvider.setContent(fullPath, originalContent);
+    const originalUri = this.diffContentProvider.setContent(fullPath, originalContent, 'original');
 
     if (fileDiff.status === 'deleted') {
       // Deleted file — show the original on both sides (modified will be empty)
-      const deletedUri = this.diffContentProvider.setContent(
-        `${fullPath}__deleted`,
-        '',
-      );
+      const deletedUri = this.diffContentProvider.setContent(fullPath, '', 'modified');
       await vscode.commands.executeCommand(
         'vscode.diff',
         originalUri,
@@ -156,6 +160,19 @@ export class DiffService implements vscode.Disposable {
       originalUri,
       modifiedUri,
       `${filename} (AI Changes)`,
+    );
+  }
+
+  async showTextDiff(filePath: string, original: string, modified: string): Promise<void> {
+    const fullPath = this.resolvePath(filePath);
+    const originalUri = this.diffContentProvider.setContent(fullPath, original, 'original');
+    const modifiedUri = this.diffContentProvider.setContent(fullPath, modified, 'modified');
+
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      originalUri,
+      modifiedUri,
+      `${this.getTitle(filePath, fullPath)} (AI Changes)`,
     );
   }
 
@@ -287,6 +304,28 @@ export class DiffService implements vscode.Disposable {
 
   private normalisePath(p: string): string {
     return p.replace(/\\/g, '/').toLowerCase();
+  }
+
+  private resolvePath(filePath: string): string {
+    if (/^file:/i.test(filePath)) {
+      return vscode.Uri.parse(filePath).fsPath;
+    }
+
+    if (path.isAbsolute(filePath)) {
+      return filePath;
+    }
+
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return root ? path.join(root, filePath) : filePath;
+  }
+
+  private getTitle(filePath: string, fullPath: string): string {
+    if (!path.isAbsolute(fullPath)) {
+      return filePath;
+    }
+
+    const relative = vscode.workspace.asRelativePath(vscode.Uri.file(fullPath), false);
+    return relative || path.basename(fullPath) || filePath;
   }
 
   private statusIcon(status: FileDiff['status']): string {
