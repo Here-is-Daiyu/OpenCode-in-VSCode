@@ -356,6 +356,10 @@ export class SessionEditorPanelProvider {
         this.openFile(message.data.path, message.data.line, message.data.column);
         break;
 
+      case 'url:open':
+        void this.openUrl(message.data.url);
+        break;
+
       case 'diff:show':
         vscode.commands.executeCommand(
           'opencode.showDiff',
@@ -793,6 +797,22 @@ export class SessionEditorPanelProvider {
       }
     } catch {
       vscode.window.showErrorMessage(`Failed to open file: ${filePath}`);
+    }
+  }
+
+  private async openUrl(url: string): Promise<void> {
+    const target = url.trim();
+    if (!target) {
+      return;
+    }
+
+    try {
+      const opened = await vscode.env.openExternal(vscode.Uri.parse(target));
+      if (!opened) {
+        vscode.window.showErrorMessage(`Failed to open URL: ${target}`);
+      }
+    } catch {
+      vscode.window.showErrorMessage(`Failed to open URL: ${target}`);
     }
   }
 

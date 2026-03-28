@@ -117,6 +117,8 @@ export interface ArgsSummaryInfo {
   text: string;
   /** If set, clicking the summary should open this file. */
   filePath?: string;
+  /** If set, clicking the summary should open this URL externally. */
+  url?: string;
   /** Optional line number to jump to. */
   line?: number;
 }
@@ -266,9 +268,13 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
     return { text: display.length > 60 ? display.slice(0, 57) + '...' : display };
   }
 
-  if (name === 'webfetch' && value.url) {
-    const url = String(value.url);
-    return { text: url.length > 60 ? url.slice(0, 57) + '...' : url };
+  const url = toNonEmptyString(value.url);
+
+  if (name === 'webfetch' && url) {
+    return {
+      text: url.length > 60 ? url.slice(0, 57) + '...' : url,
+      url,
+    };
   }
 
   const firstVal = Object.values(value).find((item) => typeof item === 'string');
@@ -389,6 +395,27 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
     }
   }, [openFileAtLine, summaryInfo.filePath, summaryLine]);
 
+  const openUrl = useCallback(() => {
+    if (!summaryInfo.url) {
+      return;
+    }
+
+    postMessage({
+      type: 'url:open',
+      data: { url: summaryInfo.url },
+    });
+  }, [summaryInfo.url]);
+
+  const handleUrlClick = useCallback((e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!summaryInfo.url) {
+      return;
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+    openUrl();
+  }, [openUrl, summaryInfo.url]);
+
   const handleSessionClick = useCallback(() => {
     if (!childSessionId) {
       return;
@@ -402,6 +429,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
 
   const hasContent = output.trim() || error.trim();
   const toolDisplayName = getToolDisplayName(tool);
+  const canOpenUrl = Boolean(summaryInfo.url && status !== 'pending' && status !== 'running');
   const outputHtml = useMemo(
     () => (containsAnsi(output) ? ansiToHtml(output) : null),
     [output],
@@ -436,6 +464,28 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
             >
               {summaryInfo.text}
             </span>
+          ) : canOpenUrl ? (
+            <a
+              className="msg-tool-compact__target msg-tool-compact__target--external"
+              href={summaryInfo.url}
+              onClick={handleUrlClick}
+              rel="noopener noreferrer"
+              target="_blank"
+              title={summaryInfo.url}
+            >
+              <span className="msg-tool-compact__target-text">{summaryInfo.text}</span>
+              <svg
+                aria-hidden="true"
+                className="msg-tool-compact__target-icon"
+                fill="currentColor"
+                height="12"
+                viewBox="0 0 16 16"
+                width="12"
+              >
+                <path d="M10 2.5a.5.5 0 0 1 .5-.5h3A1.5 1.5 0 0 1 15 3.5v3a.5.5 0 0 1-1 0V4.707L8.354 10.354a.5.5 0 1 1-.708-.708L13.293 4H10.5a.5.5 0 0 1-.5-.5Z" />
+                <path d="M3.5 4A1.5 1.5 0 0 0 2 5.5v7A1.5 1.5 0 0 0 3.5 14h7a1.5 1.5 0 0 0 1.5-1.5V8.75a.5.5 0 0 0-1 0v3.75a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5h3.75a.5.5 0 0 0 0-1H3.5Z" />
+              </svg>
+            </a>
           ) : (
             <span className="msg-tool-compact__target" title={summaryInfo.text}>
               {summaryInfo.text}

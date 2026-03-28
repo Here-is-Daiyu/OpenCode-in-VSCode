@@ -66,6 +66,7 @@ export type WebviewToExtensionMessage =
   | { type: 'model:select'; data: { providerID: string; modelID: string } }
   | { type: 'agent:select'; data: { id: string } }
   | { type: 'file:open'; data: { path: string; line?: number; column?: number } }
+  | { type: 'url:open'; data: { url: string } }
   | { type: 'diff:show'; data: { path: string; original: string; modified: string } }
   | { type: 'command:execute'; data: { command: string; args?: string } }
   | { type: 'command:list' }
