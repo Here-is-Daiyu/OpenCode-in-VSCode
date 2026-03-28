@@ -63,7 +63,7 @@
 - [x] **14. Markdown 链接渲染支持点击访问**
   对话中的 markdown 链接可以直接点击跳转。
 
-- [ ] **15. 宽屏 Last API Response 面板**
+- [x] **15. 宽屏 Last API Response 面板**
   当对话流窗口足够宽（> 对话流最大宽度的 1.5 倍）时，在右侧显示 `last api response in this session`，设计风格和对话流对齐。
 
 ---

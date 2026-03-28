@@ -7,7 +7,7 @@
  * degradation in VSCode's sidebar/auxiliary panel environment.
  */
 
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useChatStore } from '../../stores/chatStore';
 import { useModelStore } from '../../stores/modelStore';
 import { useAgentStore } from '../../stores/agentStore';
@@ -21,6 +21,7 @@ import { QuestionCard } from '../../components/QuestionCard';
 import { MessageErrorBoundary } from '../../components/ErrorBoundary';
 import { VirtualizedMessageList } from '../../components/VirtualizedMessageList';
 import { OutlineIndex } from '../../components/OutlineIndex';
+import { LastApiResponsePanel } from '../../components/LastApiResponsePanel';
 import { NotificationToastContainer } from '../../components/NotificationToast';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useMessageQueueStore } from '../../stores/messageQueueStore';
@@ -36,6 +37,7 @@ const MIN_CHAT_PANEL_WIDTH = 320;
 /** Layout breakpoints for adaptive column sizing */
 const COMPACT_CHAT_PANEL_WIDTH = 520;
 const ROOMY_CHAT_PANEL_WIDTH = 960;
+const LAST_API_RESPONSE_PANEL_WIDTH = ROOMY_CHAT_PANEL_WIDTH * 1.5;
 
 /** Message count at which we switch to virtualized rendering */
 const VIRTUALIZE_THRESHOLD = 40;
@@ -640,6 +642,16 @@ export function ChatApp() {
   ]
     .filter(Boolean)
     .join(' ');
+  const lastResponse = useMemo(() => {
+    for (let i = visibleMessages.length - 1; i >= 0; i -= 1) {
+      const msg = visibleMessages[i];
+      if (msg.info.role === 'assistant') {
+        return msg;
+      }
+    }
+
+    return undefined;
+  }, [visibleMessages]);
 
   // ── Connecting state ──────────────────────────────────────────────────
 
@@ -659,6 +671,7 @@ export function ChatApp() {
   const hasMessages = visibleMessages.length > 0;
   const showScrollButton = hasMessages && !atBottom;
   const isTooNarrow = panelWidth > 0 && panelWidth < MIN_CHAT_PANEL_WIDTH;
+  const showLastApiResponse = panelWidth >= LAST_API_RESPONSE_PANEL_WIDTH;
 
   return (
     <div ref={appRef} className={chatAppClassName}>
@@ -725,105 +738,113 @@ export function ChatApp() {
         </div>
       ) : (
         <div className="chat-body">
-          <div className="chat-message-stage">
-            {/* Messages area */}
-            {!hasMessages ? (
-              <div className="chat-messages chat-messages--empty">
-                <div className="chat-messages__inner chat-messages__inner--empty">
-                  <div className="chat-welcome">
-                    <div className="chat-welcome__icon">
-                      {/* Stylized bot icon */}
-                      <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-                        <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
-                        <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
-                        <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
-                        <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
-                        <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
-                        <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
-                      </svg>
-                    </div>
-                    <div className="chat-welcome__title">Start a conversation</div>
-                    <div className="chat-welcome__subtitle">
-                      Ask questions, write code, or get help with your project.
-                    </div>
-                    <div className="chat-welcome__hints">
-                      <span className="chat-welcome__hint">
-                        <kbd>@</kbd> reference files
-                      </span>
-                      <span className="chat-welcome__hint-sep">·</span>
-                      <span className="chat-welcome__hint">
-                        <kbd>/</kbd> commands
-                      </span>
+          <div className="chat-layout">
+            <div className="chat-main">
+              <div className="chat-message-stage">
+                {/* Messages area */}
+                {!hasMessages ? (
+                  <div className="chat-messages chat-messages--empty">
+                    <div className="chat-messages__inner chat-messages__inner--empty">
+                      <div className="chat-welcome">
+                        <div className="chat-welcome__icon">
+                          {/* Stylized bot icon */}
+                          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                            <rect x="8" y="16" width="32" height="24" rx="6" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                            <rect x="12" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                            <rect x="26" y="20" width="10" height="8" rx="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.7" />
+                            <rect x="18" y="32" width="12" height="3" rx="1.5" fill="var(--vscode-descriptionForeground, rgba(128,128,128,0.5))" />
+                            <rect x="22" y="8" width="4" height="10" rx="2" fill="var(--vscode-badge-background, rgba(128,128,128,0.15))" />
+                            <circle cx="24" cy="7" r="3" fill="var(--vscode-focusBorder, #007acc)" opacity="0.5" />
+                          </svg>
+                        </div>
+                        <div className="chat-welcome__title">Start a conversation</div>
+                        <div className="chat-welcome__subtitle">
+                          Ask questions, write code, or get help with your project.
+                        </div>
+                        <div className="chat-welcome__hints">
+                          <span className="chat-welcome__hint">
+                            <kbd>@</kbd> reference files
+                          </span>
+                          <span className="chat-welcome__hint-sep">·</span>
+                          <span className="chat-welcome__hint">
+                            <kbd>/</kbd> commands
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              </div>
-            ) : (
-              <div
-                className="chat-messages"
-                ref={messagesRef}
-                onScroll={handleScroll}
-              >
-                <div className="chat-messages__inner">
-                  {visibleMessages.length >= VIRTUALIZE_THRESHOLD ? (
-                    <VirtualizedMessageList
-                      messages={visibleMessages}
-                      scrollElementRef={messagesRef}
-                    />
-                  ) : (
-                    visibleMessages.map((msg) => (
-                      <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
-                        <MessageBubble message={msg} />
-                      </MessageErrorBoundary>
-                    ))
-                  )}
+                ) : (
+                  <div
+                    className="chat-messages"
+                    ref={messagesRef}
+                    onScroll={handleScroll}
+                  >
+                    <div className="chat-messages__inner">
+                      {visibleMessages.length >= VIRTUALIZE_THRESHOLD ? (
+                        <VirtualizedMessageList
+                          messages={visibleMessages}
+                          scrollElementRef={messagesRef}
+                        />
+                      ) : (
+                        visibleMessages.map((msg) => (
+                          <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
+                            <MessageBubble message={msg} />
+                          </MessageErrorBoundary>
+                        ))
+                      )}
 
-                  {/* Permission request card */}
-                  {pendingPermission && (
-                    <PermissionCard permission={pendingPermission} />
-                  )}
+                      {/* Permission request card */}
+                      {pendingPermission && (
+                        <PermissionCard permission={pendingPermission} />
+                      )}
 
-                  {/* Question card */}
-                  {pendingQuestion && (
-                    <QuestionCard question={pendingQuestion} />
-                  )}
+                      {/* Question card */}
+                      {pendingQuestion && (
+                        <QuestionCard question={pendingQuestion} />
+                      )}
 
-                  {/* Streaming indicator */}
-                  {isStreaming && (
-                    <div className="chat-streaming-indicator">
-                      <div className="chat-streaming-indicator__dots">
-                        <span className="chat-streaming-indicator__dot" />
-                        <span className="chat-streaming-indicator__dot" />
-                        <span className="chat-streaming-indicator__dot" />
-                      </div>
-                      <span>Generating...</span>
+                      {/* Streaming indicator */}
+                      {isStreaming && (
+                        <div className="chat-streaming-indicator">
+                          <div className="chat-streaming-indicator__dots">
+                            <span className="chat-streaming-indicator__dot" />
+                            <span className="chat-streaming-indicator__dot" />
+                            <span className="chat-streaming-indicator__dot" />
+                          </div>
+                          <span>Generating...</span>
+                        </div>
+                      )}
+
+                      {/* Scroll anchor */}
+                      <div ref={bottomRef} className="chat-scroll-anchor" />
                     </div>
-                  )}
+                    <OutlineIndex messages={visibleMessages} onScrollToMessageId={scrollToMessageId} />
+                  </div>
+                )}
 
-                  {/* Scroll anchor */}
-                  <div ref={bottomRef} className="chat-scroll-anchor" />
-                </div>
-                <OutlineIndex messages={visibleMessages} onScrollToMessageId={scrollToMessageId} />
+                {showScrollButton && (
+                  <button
+                    className="chat-scroll-bottom"
+                    onClick={() => scrollToBottom('smooth')}
+                    title="Scroll to bottom"
+                    aria-label="Scroll to bottom"
+                    type="button"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                      <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
+                    </svg>
+                  </button>
+                )}
               </div>
-            )}
 
-            {showScrollButton && (
-              <button
-                className="chat-scroll-bottom"
-                onClick={() => scrollToBottom('smooth')}
-                title="Scroll to bottom"
-                aria-label="Scroll to bottom"
-                type="button"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                  <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
-                </svg>
-              </button>
+              {/* Input */}
+              <ChatInput />
+            </div>
+
+            {showLastApiResponse && (
+              <LastApiResponsePanel message={lastResponse} />
             )}
           </div>
-
-          {/* Input */}
-          <ChatInput />
         </div>
       )}
     </div>

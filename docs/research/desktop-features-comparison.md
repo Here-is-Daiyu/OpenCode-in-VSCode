@@ -32,6 +32,7 @@ Comparison between OpenCode Desktop application features and our planned VS Code
 | LaTeX rendering | ✅ KaTeX | ✅ KaTeX | |
 | Token usage tracking | ✅ | ✅ Status bar + inline | |
 | Context usage | ✅ | ✅ | |
+| Raw messages inspector | ✅ Context tab + Raw Messages | 🟡 Wide panel (latest assistant response only) | Match official raw JSON content shape (`message` + `parts`) without cloning the full context tab |
 | Todo list | ✅ | ✅ Panel in sidebar | |
 | Slash commands | ✅ | ✅ | |
 | File references (@) | ✅ | ❌ Not implemented | Placeholder text only — no file picker, mention parsing, or context provider |
@@ -188,6 +189,12 @@ Scroll behavior uses **CSS `overflow-anchor`** for stable scrolling:
 - New content appended at the bottom doesn't cause scroll jumps when the user is reading earlier messages
 - Auto-scroll to bottom is engaged only when the user is already at/near the bottom
 - Smooth transition between "following" and "browsing" scroll modes
+
+#### Context Tab / Raw Messages
+
+Desktop exposes a **Context tab** with a **Raw Messages** section. Each raw entry renders the message's raw JSON as `JSON.stringify({ message, parts }, null, 2)`, i.e. the message metadata together with its associated parts array.
+
+For the VS Code extension, the wide-screen **Last API Response** panel should reuse this raw-content shape, but stay intentionally narrower in scope: show only the latest visible assistant message instead of recreating the full multi-message context inspector.
 
 ### Implications for Our VSCode Extension
 
