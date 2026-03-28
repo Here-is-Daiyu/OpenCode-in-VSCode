@@ -7,7 +7,7 @@
  *     (collapsed content when expanded)
  *     2.5s (only if duration > 2000ms)
  *
- * Specialized renderers are dispatched for certain tools (todo, bash, edit/write).
+ * Specialized renderers are dispatched for certain tools (task, todo, bash, edit/write).
  */
 
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
@@ -17,6 +17,7 @@ import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
 import { TodoRenderer } from './TodoRenderer';
 import { BashRenderer } from './BashRenderer';
 import { EditRenderer } from './EditRenderer';
+import { TaskRenderer } from './TaskRenderer';
 
 // ---------------------------------------------------------------------------
 // Tool helpers (exported for use by specialized renderers)
@@ -409,6 +410,9 @@ export const ToolCallPart = React.memo(function ToolCallPart({
     case 'todowrite':
     case 'todoread':
       inner = <TodoRenderer part={part} />;
+      break;
+    case 'task':
+      inner = <TaskRenderer part={part} grouped={grouped} />;
       break;
     case 'bash':
     case 'shell':
