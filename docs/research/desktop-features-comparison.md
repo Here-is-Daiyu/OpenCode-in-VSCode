@@ -35,7 +35,7 @@ Comparison between OpenCode Desktop application features and our planned VS Code
 | Raw messages inspector | ✅ Context tab + Raw Messages | 🟡 Wide panel (latest assistant response only) | Match official raw JSON content shape (`message` + `parts`) without cloning the full context tab |
 | Todo list | ✅ | ✅ Panel in sidebar | |
 | Slash commands | ✅ | ✅ | |
-| File references (@) | ✅ | ❌ Not implemented | Placeholder text only — no file picker, mention parsing, or context provider |
+| File references (@) | ✅ | 🟡 File-path mentions implemented | Autocomplete + prompt attachment work today; pill UI / symbol-provider parity still missing |
 | Voice input | ❌ (OpenGUI has it) | 🔮 Future | |
 | Prompt queue | ❌ (OpenGUI has it) | 🔮 Future | |
 | Multi-project | ✅ | ✅ VSCode workspaces | Better: native workspaces |
@@ -122,7 +122,7 @@ OpenGUI also supports prompt queuing. This feature would allow users to queue mu
 
 Detailed analysis of the OpenCode Desktop application's chat architecture, based on source code research of the official monorepo.
 
-> Reference source checkout: `D:\dai宇の文件\其他\其他东西\coding\OpenCode-in-VScode\opencode-github-dev` is the local checkout of the official `anomalyco/opencode` source tree used for desktop/reference-source investigation.
+> Reference source checkout: `vendor/opencode-official/` (or any local checkout of the official `anomalyco/opencode` source tree) can be used for desktop/reference-source investigation.
 
 ### Tech Stack
 

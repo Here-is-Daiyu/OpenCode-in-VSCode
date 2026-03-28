@@ -15,7 +15,3 @@ export type {
 export { EventBus } from './eventBus';
 export { Logger } from './logger';
 export { DiffService } from './diffService';
-export { FileReferenceService } from './fileReferenceService';
-export type { FileCompletion, ResolvedFileReference, SelectionInfo, CurrentFileInfo } from './fileReferenceService';
-export { DecorationService } from './decorationService';
-export { TerminalService } from './terminalService';

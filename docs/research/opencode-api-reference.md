@@ -204,7 +204,7 @@ Events are received via `GET /global/event` as a Server-Sent Events stream. Each
 > ```
 > data: {"payload":{"type":"server.connected","properties":{}}}
 >
-> data: {"directory":"C:\\Users\\...","payload":{"type":"message.part.delta","properties":{"sessionID":"...","messageID":"...","partID":"...","field":"text","delta":"some text"}}}
+> data: {"directory":"C:\\Users\\ExampleUser\\project","payload":{"type":"message.part.delta","properties":{"sessionID":"...","messageID":"...","partID":"...","field":"text","delta":"some text"}}}
 > ```
 
 > **Note:** The OpenAPI spec schema names use PascalCase (e.g., `EventSessionCreated`), but the actual `type` field sent on the wire uses **dot-notation** (e.g., `session.created`). The PascalCase names are TypeScript type names only.
@@ -627,11 +627,11 @@ type Agent = {
 
 ```typescript
 type Path = {
-  home: string              // e.g. "C:\\Users\\YZM-一只猫"
-  state: string             // e.g. "C:\\Users\\YZM-一只猫\\.local\\state\\opencode"
-  config: string            // e.g. "C:\\Users\\YZM-一只猫\\.config\\opencode"
+  home: string              // e.g. "C:\\Users\\ExampleUser"
+  state: string             // e.g. "C:\\Users\\ExampleUser\\.local\\state\\opencode"
+  config: string            // e.g. "C:\\Users\\ExampleUser\\.config\\opencode"
   worktree: string          // e.g. "/"
-  directory: string         // e.g. "C:\\Users\\YZM-一只猫"
+  directory: string         // e.g. "C:\\Users\\ExampleUser\\project"
 }
 ```
 

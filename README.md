@@ -110,9 +110,6 @@ src/
     serverManager.ts              — Start/stop/monitor opencode serve
     eventBus.ts                   — Typed event bus
     diffService.ts                — Diff viewing
-    decorationService.ts          — Editor decorations
-    fileReferenceService.ts       — File reference handling
-    terminalService.ts            — Terminal integration
     modelPreferences.ts           — Model preference persistence
     logger.ts                     — Extension logging
   types/

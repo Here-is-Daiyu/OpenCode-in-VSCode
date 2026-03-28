@@ -4,6 +4,8 @@
 > Extension branch: `feature/settings-redesign-v2`
 > Desktop reference: `vendor/OpenCodeUI/` (SolidJS/Tauri, GPL-3.0 — read-only reference)
 > Server reference: `vendor/opencode-official/` (v1.2.26)
+>
+> **Status update (2026-03-28):** this audit snapshot is now partially historical. Core gaps from the original pass — file-path `@` mention autocomplete + prompt resolution, specialized part renderers, tool-specific renderers, outline index, tool timeline, turn-duration footer, collapsible user messages, context usage bar, session time grouping, the **Last API Response** panel (latest assistant message only), clickable `read` line jumps, and external URL opening for `webfetch` / Markdown links — are now implemented. The sections below focus on the still-relevant gaps and remaining desktop-parity limits.
 
 ---
 
@@ -24,7 +26,7 @@ All findings were cross-verified against the live server at `http://127.0.0.1:23
 | Category | Feature | Implementation |
 |----------|---------|----------------|
 | SSE Events | 14 event types | `session.created/updated/deleted/status`, `message.updated/removed`, `message.part.updated/delta`, `permission.asked`, `question.asked`, `config.updated`, `todo.updated`, `file.edited`, `mcp.tools.changed` |
-| Message Parts | 7 part types rendered | `text`, `reasoning`, `tool`, `step-start`, `step-finish`, `file`, `subtask` |
+| Message Parts | 11+ part/view types | `text`, `reasoning`, `tool`, `step-start`, `file`, `subtask`, `snapshot`, `patch`, `agent`, `retry`, `compaction` |
 | Permissions | Full system | PermissionCard.tsx with approve/deny + API integration |
 | Questions | Full system | QuestionCard.tsx with response submission |
 | Token/Cost | Detailed display | TokenUsageBar.tsx with input/output/reasoning/cache segments |
@@ -40,151 +42,86 @@ All findings were cross-verified against the live server at `http://127.0.0.1:23
 | Settings | 5-tab redesign | Connection/Chat/Models/Integrations/Permissions |
 | ANSI Colors | Tool output | Custom ansiToHtml parser (SGR 0-107, 256-color, truecolor) |
 | Themes | Light/Dark | CSS variables, anti-flash transition suppression |
+| File references | `@` mentions | Debounced file search + prompt payload resolution in chat/webview providers |
+| Message Rendering | Specialized part views | `snapshot`, `patch`, `agent`, `retry`, and `compaction` renderers now ship |
+| Tool Rendering | Specialized cards | Dedicated `TaskRenderer`, `TodoRenderer`, `BashRenderer`, and `EditRenderer` |
+| Chat Navigation | Outline index | `OutlineIndex.tsx` provides fisheye message navigation |
+| Tool Layout | Timeline grouping | `MessageContent.tsx` + `ToolCallPart.tsx` render grouped timeline rails |
+| Message Footer | Turn duration | `MessageFooter.tsx` shows per-turn elapsed time |
+| User Messages | Collapse / expand | `MessageBubble.tsx` collapses long user prompts with Show more / less |
+| Composer Meta | Context usage bar | `TokenUsageBar.tsx` renders context/token usage inline in the composer |
+| Session List | Time grouping | `SessionTreeProvider.ts` groups sessions into Today / Yesterday / Previous 7 / 30 Days / Older |
+| Response Inspection | Wide panel | **Last API Response** shows the latest visible assistant message |
+| Link / File Opening | Click-through actions | Markdown links, `webfetch` URLs, and `read` line numbers open directly |
 
 ---
 
-## Genuine Feature Gaps
+## Remaining Feature Gaps
 
 ### HIGH Priority
 
-#### 1. @-Mention System (Complexity: L)
+#### 1. @-Mention Desktop Parity (Complexity: M)
 
-**Status:** ❌ NOT IMPLEMENTED (docs incorrectly claimed it was)
+**Status:** 🟡 PARTIALLY IMPLEMENTED
 
-**What exists:** ChatInput placeholder text says `(@ for files, / for commands)` — but there is NO actual implementation.
+**What exists now:**
+- `ChatInput.tsx` opens a debounced mention menu on `@`
+- `useMentionSearch.ts` + `chatViewProvider.ts` / `sessionEditorPanelProvider.ts` perform file lookup and return results
+- Selected file paths are sent as `mentions` and resolved into prompt file parts before submission
 
-**What's missing:**
-- File picker / autocomplete dropdown when typing `@`
-- Mention parsing in input text
-- Context provider registry
-- File/symbol search integration
-- Pill-based UI for inserted mentions
+**Still missing vs desktop:**
+- Pill/chip UI for inserted mentions
+- Symbol/provider-registry style mention sources
+- Broader server-backed parity around symbol/file-context lookup
 
-**Desktop reference:** `src/features/mention/` directory with full mention system
+**Desktop reference:** `src/features/mention/` directory with fuller mention/provider coverage
 
-**Server endpoints needed:**
-- `GET /file?path=` — File listing
-- `GET /file/content?path=` — File content retrieval
-- `GET /find?pattern=` — Glob search
-- `GET /find/file?query=` — File name search
-- `GET /find/symbol?query=` — Symbol search
+#### 2. Notification History / Center (Complexity: M)
 
-#### 2. Missing Message Part Types (Complexity: M)
+**Status:** 🟡 TOASTS ONLY
 
-**Status:** ❌ 5 part types explicitly filtered out
+**What exists now:** `NotificationToastContainer` surfaces transient in-chat notifications.
 
-**What's skipped in `MessageContent.tsx:159-187`:**
-
-| Part Type | Purpose | Desktop Renderer |
-|-----------|---------|-----------------|
-| `snapshot` | File system snapshot for revert | Visual indicator with revert action |
-| `patch` | File diffs/patches | Inline diff display |
-| `agent` | Agent delegation markers | Agent badge/indicator |
-| `retry` | Retry indicators | Countdown + error details |
-| `compaction` | Context compaction markers | Compaction summary |
-
-#### 3. Tool-Specific Renderers (Complexity: M)
-
-**Status:** ❌ All tools use generic `ToolCallPart`
-
-**Desktop has specialized renderers:**
-
-| Renderer | Purpose | Desktop Location |
-|----------|---------|-----------------|
-| TaskRenderer | Nested sub-session view for agent tasks | `src/features/message/tools/renderers/TaskRenderer` |
-| TodoRenderer | Interactive checklist for todo operations | `src/features/message/tools/renderers/TodoRenderer` |
-| DefaultRenderer | Structured input/output/diagnostics display | `src/features/message/tools/renderers/DefaultRenderer` |
+**What's still missing:** persistent cross-session history / inbox UI comparable to desktop.
 
 ### MEDIUM Priority
 
-#### 4. Fisheye Outline Index (Complexity: L)
+#### 3. Active Sessions View (Complexity: M)
 
-Floating right-side message navigation with hover-fisheye effect showing message titles/summaries.
+**Status:** 🟡 PARTIAL
 
-**Desktop:** `src/components/OutlineIndex.tsx`
+**Current state:** the chat header shows an `activeSessionCount` badge, but there is still no dedicated multi-session busy/active sessions panel.
 
-#### 5. Tool Timeline Layout (Complexity: M)
+#### 4. Session Search UI (Complexity: S)
 
-Multi-tool calls displayed with vertical timeline connectors and grouped rendering, showing execution flow.
+**Status:** 🟡 INTERNAL PLUMBING ONLY
 
-**Desktop:** `src/features/message/parts/ToolPartView.tsx`
+**Current state:** `SessionTreeProvider` already has filter logic, but there is no exposed search command / TreeView search affordance for users.
 
-#### 6. Turn Duration Display (Complexity: S)
-
-Show total round-trip time for user → assistant message pairs (e.g., "Took 12.3s").
-
-**Desktop:** `MessageRenderer.tsx:109-158`
-
-#### 7. Retry Status Inline (Complexity: S)
-
-When the model retries, show a countdown with expandable error details inline in the conversation.
-
-**Desktop:** `RetryStatusInline.tsx`
-
-#### 8. Active Sessions Tab (Complexity: M)
-
-Dedicated sidebar view showing busy/active sessions across all projects with status dots and progress indicators.
-
-**Desktop:** `SidePanel.tsx:533-669`
-
-#### 9. Session Search (Complexity: S)
-
-Real-time search/filter through session titles in the session list.
-
-**Desktop:** `SessionList.tsx:122-146`
-
-#### 10. Agent Variant Selection (Complexity: S)
-
-Dropdown in the chat input toolbar to select agent "thinking" variants: default, fast, deep thinking.
-
-**Desktop:** `InputToolbar.tsx:251-312`
-
-#### 11. Input History (Complexity: S)
+#### 5. Input History (Complexity: S)
 
 Navigate through previously sent messages using Up/Down arrow keys in the chat input.
 
 **Desktop:** `useInputHistory.ts`
 
-#### 12. Notification History / Toast System (Complexity: M)
-
-Cross-session event notifications with a persistent notification center/history panel.
-
-**Desktop:** `notificationStore.ts`
-
-#### 13. Collapsible User Messages (Complexity: S)
-
-Long user messages automatically collapse to an 8-line preview with "Show more" / "Show less" toggle.
-
-#### 14. Context Window Usage Bar (Complexity: XS)
-
-Visual progress bar showing current context token usage vs. model's maximum context window size.
-
-**Desktop:** `SidebarFooter.tsx`
-
-#### 15. Session Time Grouping (Complexity: S)
-
-Sessions grouped by relative time buckets: Today / Yesterday / Previous 7 Days / Previous 30 Days / Older.
-
 ---
 
 ## Server API Endpoints Not Yet Consumed
 
-### File System & Search (needed for @-mention)
+### Mention / File-System Parity Follow-ups
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/file` | GET | List files at path |
-| `/file/content` | GET | Read file content |
-| `/find` | GET | Glob pattern search |
-| `/find/file` | GET | Fuzzy file name search |
-| `/find/symbol` | GET | Symbol search across files |
+| `/file` | GET | Directory listing for richer file pickers / mention providers |
+| `/file/content` | GET | Server-side file content retrieval (not needed for current workspace-local mention resolution) |
+| `/find` | GET | Glob/text search UI beyond current filename mention lookup |
+| `/find/symbol` | GET | Symbol-level `@` mention search |
 
 ### Session Operations
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/session/:id/summarize` | POST | AI context compaction/summarization |
-| `/session/:id/shell` | POST | Execute shell command in session context |
 
 ### Provider & Auth
 
@@ -202,41 +139,30 @@ Sessions grouped by relative time buckets: Today / Yesterday / Previous 7 Days /
 | `/experimental/workspace` | GET/POST | Workspace management |
 | `/experimental/worktree` | GET | Git worktree management |
 | `/vcs` | GET | VCS/Git information |
-| `/command` | GET | Server-side command list |
 | `/skill` | GET | Available skills |
 
 ---
 
 ## Recommended Implementation Order
 
-### Phase 1 — Quick Wins (1-2 days)
+### Phase 1 — Small UX Gaps (1-2 days)
 
-1. **Context Window Usage Bar** (XS) — Simple progress bar, data already available
-2. **Session Time Grouping** (S) — Pure UI grouping logic
-3. **Collapsible User Messages** (S) — CSS + toggle state
-4. **Turn Duration Display** (S) — Timestamp diff calculation
-5. **Session Search** (S) — Filter existing session list
-6. **Input History** (S) — Array + arrow key handler
+1. **Session Search UI** (S) — Expose the existing tree filter capability through a user-facing command/control
+2. **Input History** (S) — Add Up/Down recall for previously sent prompts
 
-### Phase 2 — Core Enhancements (3-5 days)
+### Phase 2 — Parity Polish (2-4 days)
 
-7. **Missing Part Types** (M) — Add renderers for snapshot/patch/agent/retry/compaction
-8. **Retry Status Inline** (S) — Depends on retry part type
-9. **Agent Variant Selection** (S) — Dropdown + API integration
-10. **Tool-Specific Renderers** (M) — TaskRenderer, TodoRenderer, DefaultRenderer
+3. **@-Mention polish** (M) — Pill UI + better desktop parity for mention sources
+4. **Notification history** (M) — Persist / review recent notifications instead of toast-only surfacing
 
-### Phase 3 — Major Features (1-2 weeks)
+### Phase 3 — Larger Sidebar Work (3-5 days)
 
-11. **@-Mention System** (L) — File picker, search API, mention parsing, pill UI
-12. **Fisheye Outline Index** (L) — Custom floating navigation component
-13. **Tool Timeline Layout** (M) — Visual timeline connectors
-14. **Active Sessions Tab** (M) — New sidebar view
-15. **Notification System** (M) — Toast + history panel
+5. **Active Sessions view** (M) — Dedicated busy-session list instead of header badge only
 
 ---
 
 ## Documentation Corrections
 
-| File | Line | Issue | Fix |
-|------|------|-------|-----|
-| `desktop-features-comparison.md` | 37 | Claims `File references (@)` is `✅ Autocomplete` | Should be `❌ Not implemented` — only placeholder text exists |
+| File | Section | Previous issue | Current correction |
+|------|---------|----------------|--------------------|
+| `desktop-features-comparison.md` | Feature Matrix | `File references (@)` was still treated as missing | Updated to reflect current file-path `@` mention support and remaining parity limits |
