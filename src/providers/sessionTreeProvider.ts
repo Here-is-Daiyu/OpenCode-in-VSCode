@@ -125,7 +125,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
   /**
    * Mark a session as the currently active one.
    */
-  setActiveSession(id: string): void {
+  setActiveSession(id?: string): void {
     this.activeSessionId = id;
     this._onDidChangeTreeData.fire(undefined);
   }

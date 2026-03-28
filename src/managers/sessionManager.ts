@@ -256,16 +256,44 @@ export class SessionManager implements vscode.Disposable {
     return this.sessions.get(id);
   }
 
+  setSessions(sessions: Session[]): void {
+    this.sessions.clear();
+    for (const session of sessions) {
+      this.sessions.set(session.id, session);
+    }
+
+    if (this.activeSessionId && !this.sessions.has(this.activeSessionId)) {
+      const previousActiveSessionId = this.activeSessionId;
+      this.activeSessionId = undefined;
+      this.activeSessionLoadNonce++;
+      this.sessionProvider.setActiveSession(undefined);
+      this.chatProvider.postMessage({
+        type: 'session:cleared',
+        data: undefined,
+      });
+      this.logger.debug(`SessionManager: cleared missing active session ${previousActiveSessionId}`);
+    }
+  }
+
+  getLatestSessionId(): string | undefined {
+    let latestSession: Session | undefined;
+
+    for (const session of this.sessions.values()) {
+      if (!latestSession || session.time.updated > latestSession.time.updated) {
+        latestSession = session;
+      }
+    }
+
+    return latestSession?.id;
+  }
+
   /**
    * Refresh the full session list from the server.
    */
   async refreshSessions(): Promise<void> {
     try {
       const list = await this.client.listSessions();
-      this.sessions.clear();
-      for (const s of list) {
-        this.sessions.set(s.id, s);
-      }
+      this.setSessions(list);
       this.sessionProvider.setSessions(list);
       this.logger.debug(`SessionManager: refreshed ${list.length} session(s)`);
     } catch (err) {

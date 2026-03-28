@@ -271,7 +271,29 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
 
   try {
     const sessions = await sessionsPromise;
+    const previousActiveSessionId = ctx.activeSessionId ?? ctx.sessionManager.getActiveSessionId();
+
+    ctx.sessionManager.setSessions(sessions);
     ctx.sessionProvider.setSessions(sessions);
+
+    if (previousActiveSessionId && ctx.sessionManager.getSession(previousActiveSessionId)) {
+      if (ctx.sessionManager.getActiveSessionId() !== previousActiveSessionId) {
+        await ctx.sessionManager.setActiveSession(previousActiveSessionId);
+      }
+      ctx.activeSessionId = previousActiveSessionId;
+    } else {
+      ctx.activeSessionId = undefined;
+
+      const latestSessionId = ctx.sessionManager.getLatestSessionId();
+      if (latestSessionId) {
+        await ctx.sessionManager.setActiveSession(latestSessionId);
+        ctx.activeSessionId = latestSessionId;
+        ctx.logger.debug(`Loaded latest session by default: ${latestSessionId}`);
+      } else {
+        ctx.logger.debug('No sessions to auto-activate');
+      }
+    }
+
     ctx.logger.debug(`Loaded ${sessions.length} sessions`);
   } catch (err) {
     ctx.logger.error('Failed to load sessions', err);
