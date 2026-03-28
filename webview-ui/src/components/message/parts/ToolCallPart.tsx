@@ -121,6 +121,92 @@ export interface ArgsSummaryInfo {
   line?: number;
 }
 
+interface ReadOutputLine {
+  lineNumber: number;
+  text: string;
+}
+
+interface ReadOutputInfo {
+  lines: ReadOutputLine[];
+  note?: string;
+}
+
+function toNonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const text = value.trim();
+  return text ? text : undefined;
+}
+
+function toPositiveLineNumber(value: unknown): number | undefined {
+  if (value == null || value === '') {
+    return undefined;
+  }
+
+  const line = Number(value);
+  if (!Number.isFinite(line) || line < 1) {
+    return undefined;
+  }
+
+  return Math.trunc(line);
+}
+
+function splitOutputLines(output: string): string[] {
+  const normalized = output.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+
+  if (normalized.endsWith('\n')) {
+    lines.pop();
+  }
+
+  return lines;
+}
+
+function parseReadOutput(value: unknown): ReadOutputInfo | undefined {
+  if (typeof value !== 'string' || !value.trim()) {
+    return undefined;
+  }
+
+  const all = splitOutputLines(value);
+  const typeIndex = all.indexOf('<type>file</type>');
+  const start = all.indexOf('<content>');
+  const end = all.indexOf('</content>');
+
+  if (typeIndex === -1 || start === -1 || end <= start || typeIndex > start) {
+    return undefined;
+  }
+
+  const note: string[] = [];
+  const lines = all.slice(start + 1, end).flatMap((text) => {
+    const match = text.match(/^(\d+):(.*)$/);
+    if (!match) {
+      note.push(text);
+      return [];
+    }
+
+    const lineNumber = toPositiveLineNumber(match[1]);
+    if (lineNumber === undefined) {
+      note.push(text);
+      return [];
+    }
+
+    const lineText = match[2].startsWith(' ') ? match[2].slice(1) : match[2];
+    return [{ lineNumber, text: lineText }];
+  });
+
+  if (lines.length === 0) {
+    return undefined;
+  }
+
+  const summary = note.join('\n').trim();
+  return {
+    lines,
+    note: summary || undefined,
+  };
+}
+
 export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInfo {
   const name = tool.toLowerCase();
   const value = toRecord(input);
@@ -135,13 +221,16 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
     }
   }
 
-  if (name === 'read' && value.filePath) {
-    const fp = String(value.filePath);
+  const filePath = toNonEmptyString(value.filePath);
+
+  if (name === 'read' && filePath) {
+    const fp = filePath;
     const short = fp.length > 50 ? '...' + fp.slice(-47) : fp;
-    const offset = value.offset ? Number(value.offset) : undefined;
+    const offset = toPositiveLineNumber(value.offset);
+    const limit = toPositiveLineNumber(value.limit);
     const range =
-      value.offset || value.limit
-        ? ` lines ${value.offset ?? 1}-${(Number(value.offset ?? 1)) + (Number(value.limit ?? 2000)) - 1}`
+      offset !== undefined || limit !== undefined
+        ? ` lines ${offset ?? 1}-${(offset ?? 1) + (limit ?? 2000) - 1}`
         : '';
     return { text: `${short}${range}`, filePath: fp, line: offset ?? 1 };
   }
@@ -156,16 +245,16 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
     return { text: `/${pat}/${inc}` };
   }
 
-  if (name === 'edit' && value.filePath) {
-    const fp = String(value.filePath);
+  if (name === 'edit' && filePath) {
+    const fp = filePath;
     return {
       text: fp.length > 60 ? '...' + fp.slice(-57) : fp,
       filePath: fp,
     };
   }
 
-  if (name === 'write' && value.filePath) {
-    const fp = String(value.filePath);
+  if (name === 'write' && filePath) {
+    const fp = filePath;
     return {
       text: fp.length > 60 ? '...' + fp.slice(-57) : fp,
       filePath: fp,
@@ -244,6 +333,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
   const [bodyHeight, setBodyHeight] = useState(0);
   const tool = getToolName(part.tool);
   const input = part.state?.input;
+  const rawOutput = part.state?.output;
   const output = stringifyValue(part.state?.output);
   const error = stringifyValue(part.state?.error);
   const status = part.state?.status ?? 'pending';
@@ -265,6 +355,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
   const summaryInfo = getArgsSummaryInfo(tool, input);
+  const summaryLine = toPositiveLineNumber(summaryInfo.line);
   const childSessionId = tool === 'task'
     ? (() => {
       const value = toRecord(part.state?.metadata).sessionId;
@@ -272,15 +363,31 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
     })()
     : undefined;
 
+  const openFileAtLine = useCallback((line?: number) => {
+    if (!summaryInfo.filePath) {
+      return;
+    }
+
+    postMessage({
+      type: 'file:open',
+      data: { path: summaryInfo.filePath, line },
+    });
+  }, [summaryInfo.filePath]);
+
   const handleFileClick = useCallback((e: React.MouseEvent) => {
     if (summaryInfo.filePath) {
       e.stopPropagation();
-      postMessage({
-        type: 'file:open',
-        data: { path: summaryInfo.filePath, line: summaryInfo.line },
-      });
+      openFileAtLine(summaryLine);
     }
-  }, [summaryInfo.filePath, summaryInfo.line]);
+  }, [openFileAtLine, summaryInfo.filePath, summaryLine]);
+
+  const handleFileKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && summaryInfo.filePath) {
+      e.preventDefault();
+      e.stopPropagation();
+      openFileAtLine(summaryLine);
+    }
+  }, [openFileAtLine, summaryInfo.filePath, summaryLine]);
 
   const handleSessionClick = useCallback(() => {
     if (!childSessionId) {
@@ -299,6 +406,13 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
     () => (containsAnsi(output) ? ansiToHtml(output) : null),
     [output],
   );
+  const readOutputInfo = useMemo(() => {
+    if (tool !== 'read' || !summaryInfo.filePath || outputHtml !== null) {
+      return undefined;
+    }
+
+    return parseReadOutput(rawOutput);
+  }, [outputHtml, rawOutput, summaryInfo.filePath, tool]);
 
   return (
     <div className={`msg-tool-compact ${grouped ? 'msg-tool-compact--grouped' : ''}`}>
@@ -316,6 +430,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
               className="msg-tool-compact__target msg-tool-compact__target--clickable"
               title={`Open ${summaryInfo.filePath}`}
               onClick={handleFileClick}
+              onKeyDown={handleFileKeyDown}
               role="link"
               tabIndex={0}
             >
@@ -370,7 +485,27 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
         >
           <div ref={bodyRef} className="msg-tool-compact__result">
             {output.trim() && (
-              outputHtml !== null ? (
+              readOutputInfo ? (
+                <div className="msg-tool-compact__read-result" aria-label={`Read result for ${summaryInfo.filePath}`}>
+                  {readOutputInfo.lines.map(({ lineNumber, text }) => (
+                    <div key={lineNumber} className="msg-tool-compact__read-row">
+                      <button
+                        aria-label={`Open ${summaryInfo.filePath} at line ${lineNumber}`}
+                        className="msg-tool-compact__read-line-number"
+                        onClick={() => openFileAtLine(lineNumber)}
+                        title={`Open ${summaryInfo.filePath} at line ${lineNumber}`}
+                        type="button"
+                      >
+                        {lineNumber}
+                      </button>
+                      <span className="msg-tool-compact__read-line-text">{text || '\u00a0'}</span>
+                    </div>
+                  ))}
+                  {readOutputInfo.note && (
+                    <div className="msg-tool-compact__read-note">{readOutputInfo.note}</div>
+                  )}
+                </div>
+              ) : outputHtml !== null ? (
                 <pre
                   className="ansi-output"
                   dangerouslySetInnerHTML={{ __html: outputHtml }}

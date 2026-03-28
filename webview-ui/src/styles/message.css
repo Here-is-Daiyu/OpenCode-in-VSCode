@@ -394,6 +394,12 @@
   text-decoration-style: solid;
 }
 
+.msg-tool-compact__target--clickable:focus-visible {
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .msg-tool-compact__spinner {
   animation: tool-spin 0.8s linear infinite;
   flex-shrink: 0;
@@ -501,6 +507,73 @@
   border: 1px solid var(--border-weaker-base);
   border-radius: var(--radius-md);
   background: var(--surface-inset-base);
+}
+
+.msg-tool-compact__read-result {
+  max-height: 300px;
+  overflow: auto;
+  padding: 0.625rem 0;
+  border: 1px solid var(--border-weaker-base);
+  border-radius: var(--radius-md);
+  background: var(--surface-inset-base);
+}
+
+.msg-tool-compact__read-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0 0.75rem;
+}
+
+.msg-tool-compact__read-row:hover {
+  background: color-mix(in srgb, var(--surface-base-hover) 72%, transparent);
+}
+
+.msg-tool-compact__read-line-number {
+  min-width: 4ch;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-weaker);
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: right;
+  cursor: pointer;
+}
+
+.msg-tool-compact__read-line-number:hover {
+  color: var(--accent-primary);
+  text-decoration: underline;
+}
+
+.msg-tool-compact__read-line-number:focus-visible {
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+.msg-tool-compact__read-line-text {
+  min-width: 0;
+  color: var(--text-base);
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.msg-tool-compact__read-note {
+  padding: 0.5rem 0.75rem 0;
+  color: var(--text-weaker);
+  font-family: var(--font-family-mono);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* ANSI-rendered terminal output container */
