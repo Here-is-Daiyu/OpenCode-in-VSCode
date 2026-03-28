@@ -49,7 +49,7 @@
 - [x] **11. 支持点击 task 事件进入 subagent 会话**
   点击 task 事件可进入 subagent 会话，同时在进入 subagent 后添加返回上级的按键。查看 opencode 的实现方式。
 
-- [ ] **12. Task 事件呈现优化**
+- [x] **12. Task 事件呈现优化**
   参考 `vendor/OpenCodeUI` 优化 task 事件的视觉展示。
   *(与 #11 强关联，紧挨着做)*
 
