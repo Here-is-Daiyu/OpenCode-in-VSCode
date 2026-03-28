@@ -262,9 +262,9 @@ export function SettingsApp() {
                   type="button"
                   className="settings-header-button"
                   onClick={() => postMessage({ type: 'settings:openConfigFile' })}
-                  title="Open opencode.json in editor"
+                  title="Open the highest-priority local OpenCode config source"
                 >
-                  Open opencode.json
+                  Open local config
                 </button>
                 {store.saveIndicator && (
                   <span className="settings-header__indicator settings-header__indicator--saved">

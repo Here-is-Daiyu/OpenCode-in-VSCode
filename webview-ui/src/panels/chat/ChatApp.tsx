@@ -12,6 +12,7 @@ import { useChatStore } from '../../stores/chatStore';
 import { useModelStore } from '../../stores/modelStore';
 import { useAgentStore } from '../../stores/agentStore';
 import { useMessageListener } from '../../hooks/useMessageListener';
+import { useQueuedMessageAutoSend } from '../../hooks/useQueuedMessageAutoSend';
 import { postMessage } from '../../utils/vscodeApi';
 import { MessageBubble } from '../../components/message';
 import { ChatInput } from '../../components/ChatInput';
@@ -22,6 +23,7 @@ import { VirtualizedMessageList } from '../../components/VirtualizedMessageList'
 import { OutlineIndex } from '../../components/OutlineIndex';
 import { NotificationToastContainer } from '../../components/NotificationToast';
 import { useNotificationStore } from '../../stores/notificationStore';
+import { useMessageQueueStore } from '../../stores/messageQueueStore';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
 import { getConfiguredAgent } from '../../utils/opencodeConfig';
 
@@ -49,6 +51,15 @@ type SessionScopedWebviewMessage = Extract<
 
 function getBufferedPartKey(sessionID: string, messageID: string, partID: string): string {
   return `${sessionID}:${messageID}:${partID}`;
+}
+
+function getShellCommand(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('!')) {
+    return undefined;
+  }
+
+  return trimmed.slice(1).trim();
 }
 
 function coalesceBufferedSessionMessages(
@@ -130,7 +141,8 @@ export function ChatApp() {
   // Store state
   const connected = useChatStore((s) => s.connected);
   const currentSession = useChatStore((s) => s.currentSession);
-  const messages = useChatStore((s) => s.messages);
+  const rawMessages = useChatStore((s) => s.messages);
+  const visibleMessages = useChatStore((s) => s.visibleMessages);
   const sessionStatus = useChatStore((s) => s.sessionStatus);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const pendingPermission = useChatStore((s) => s.pendingPermission);
@@ -152,7 +164,12 @@ export function ChatApp() {
   const setQuestion = useChatStore((s) => s.setQuestion);
   const rollbackOptimisticMessage = useChatStore((s) => s.rollbackOptimisticMessage);
   const confirmOptimisticMessage = useChatStore((s) => s.confirmOptimisticMessage);
+  const rollbackQueuedOptimisticMessage = useChatStore((s) => s.rollbackQueuedOptimisticMessage);
+  const confirmQueuedOptimisticMessage = useChatStore((s) => s.confirmQueuedOptimisticMessage);
+  const beginPendingSend = useChatStore((s) => s.beginPendingSend);
   const queueInputInsertion = useChatStore((s) => s.queueInputInsertion);
+
+  useQueuedMessageAutoSend();
 
   const applySessionScopedMessage = useCallback(
     (message: SessionScopedWebviewMessage) => {
@@ -238,7 +255,7 @@ export function ChatApp() {
   );
 
   const prependSessionHistory = useCallback(
-    (sessionID: string, olderMessages: typeof messages) => {
+    (sessionID: string, olderMessages: typeof rawMessages) => {
       if (useChatStore.getState().currentSession?.id !== sessionID) {
         return;
       }
@@ -302,19 +319,19 @@ export function ChatApp() {
     //   style.height is already updated when useLayoutEffect fires
     const scrollHeightDelta = scrollContainer.scrollHeight - pendingScrollState.previousScrollHeight;
     scrollContainer.scrollTop = pendingScrollState.previousScrollTop + scrollHeightDelta;
-    prevMessageCountRef.current = messages.length;
+    prevMessageCountRef.current = visibleMessages.length;
     skipNextAutoScrollRef.current = true;
-  }, [messages]);
+  }, [visibleMessages]);
 
   // Auto-scroll on new messages or streaming content updates
   useLayoutEffect(() => {
     if (skipNextAutoScrollRef.current) {
       skipNextAutoScrollRef.current = false;
-      prevMessageCountRef.current = messages.length;
+      prevMessageCountRef.current = visibleMessages.length;
       return;
     }
 
-    const newCount = messages.length;
+    const newCount = visibleMessages.length;
     prevMessageCountRef.current = newCount;
 
     if (!newCount || !atBottomRef.current) {
@@ -322,7 +339,7 @@ export function ChatApp() {
     }
 
     scrollToBottom('instant');
-  }, [messages, scrollToBottom]);
+  }, [visibleMessages, scrollToBottom]);
 
   // Scroll to bottom when permission or question cards appear
   useEffect(() => {
@@ -372,6 +389,7 @@ export function ChatApp() {
             break;
 
           case 'session:deleted':
+            useMessageQueueStore.getState().clearSessionQueue(message.data.id);
             bufferedSessionMessagesRef.current.delete(message.data.id);
             if (getActiveSessionID() === message.data.id) {
               pendingHistoryPrependScrollRef.current = null;
@@ -380,7 +398,11 @@ export function ChatApp() {
             }
             break;
 
-          case 'session:cleared':
+          case 'session:cleared': {
+            const activeSessionID = getActiveSessionID();
+            if (activeSessionID) {
+              useMessageQueueStore.getState().clearSessionQueue(activeSessionID);
+            }
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
             atBottomRef.current = true;
@@ -388,6 +410,7 @@ export function ChatApp() {
             bufferedSessionMessagesRef.current.clear();
             clearSession();
             break;
+          }
 
           case 'session:status':
             applyOrBufferSessionMessage(message);
@@ -425,14 +448,30 @@ export function ChatApp() {
             setError(message.data.message);
             break;
 
-          case 'chat:sendResult':
+          case 'chat:sendResult': {
+            const queuedSend = useMessageQueueStore.getState().getSendingEntry();
             if (message.data.success) {
-              confirmOptimisticMessage();
+              if (queuedSend) {
+                confirmQueuedOptimisticMessage(message.data.streaming);
+              } else {
+                confirmOptimisticMessage(message.data.streaming);
+              }
+              if (queuedSend) {
+                useMessageQueueStore.getState().finishSending(queuedSend.sessionID, queuedSend.messageID);
+              }
             } else {
-              rollbackOptimisticMessage();
+              if (queuedSend) {
+                rollbackQueuedOptimisticMessage();
+              } else {
+                rollbackOptimisticMessage();
+              }
+              if (queuedSend) {
+                useMessageQueueStore.getState().failSending(queuedSend.sessionID, queuedSend.messageID);
+              }
               setError(message.data.error ?? 'Failed to send message');
             }
             break;
+          }
 
           case 'theme:changed': {
             // Suppress CSS transitions during theme switch to prevent flash
@@ -473,8 +512,11 @@ export function ChatApp() {
             if (autoSendText) {
               // Clear current session so handleChatSend creates a fresh one
               clearSession();
-              // Add optimistic message and send
-              useChatStore.getState().addOptimisticMessage(autoSendText);
+              if (getShellCommand(autoSendText)) {
+                beginPendingSend();
+              } else {
+                useChatStore.getState().addOptimisticMessage(autoSendText);
+              }
               postMessage({
                 type: 'chat:send',
                 data: { text: autoSendText },
@@ -507,6 +549,9 @@ export function ChatApp() {
       setQuestion,
       rollbackOptimisticMessage,
       confirmOptimisticMessage,
+      rollbackQueuedOptimisticMessage,
+      confirmQueuedOptimisticMessage,
+      beginPendingSend,
       queueInputInsertion,
     ]
   );
@@ -603,7 +648,7 @@ export function ChatApp() {
 
   // ── Main render ───────────────────────────────────────────────────────
 
-  const hasMessages = messages.length > 0;
+  const hasMessages = visibleMessages.length > 0;
   const showScrollButton = hasMessages && !atBottom;
   const isTooNarrow = panelWidth > 0 && panelWidth < MIN_CHAT_PANEL_WIDTH;
 
@@ -699,13 +744,13 @@ export function ChatApp() {
                 onScroll={handleScroll}
               >
                 <div className="chat-messages__inner">
-                  {messages.length >= VIRTUALIZE_THRESHOLD ? (
+                  {visibleMessages.length >= VIRTUALIZE_THRESHOLD ? (
                     <VirtualizedMessageList
-                      messages={messages}
+                      messages={visibleMessages}
                       scrollElementRef={messagesRef}
                     />
                   ) : (
-                    messages.map((msg) => (
+                    visibleMessages.map((msg) => (
                       <MessageErrorBoundary key={msg.info.id} messageId={msg.info.id} message={msg}>
                         <MessageBubble message={msg} />
                       </MessageErrorBoundary>
@@ -737,7 +782,7 @@ export function ChatApp() {
                   {/* Scroll anchor */}
                   <div ref={bottomRef} className="chat-scroll-anchor" />
                 </div>
-                <OutlineIndex messages={messages} onScrollToMessageId={scrollToMessageId} />
+                <OutlineIndex messages={visibleMessages} onScrollToMessageId={scrollToMessageId} />
               </div>
             )}
 

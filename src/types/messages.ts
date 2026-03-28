@@ -26,7 +26,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'todos:updated'; data: Todo[] }
   | { type: 'server:status'; data: { connected: boolean; version?: string } }
   | { type: 'error'; data: { message: string; details?: string } }
-  | { type: 'chat:sendResult'; data: { success: boolean; messageID?: string; error?: string } }
+  | { type: 'chat:sendResult'; data: { success: boolean; messageID?: string; error?: string; streaming?: boolean } }
   | { type: 'theme:changed'; data: { kind: 'light' | 'dark' | 'highContrast' } }
   | { type: 'file:added'; data: { path: string; name: string; content: string } }
   | { type: 'selection:added'; data: { path: string; name: string; content: string; startLine: number; endLine: number } }
@@ -39,7 +39,7 @@ export type ExtensionToWebviewMessage =
 
 // Webview → Extension messages
 export type WebviewToExtensionMessage =
-  | { type: 'chat:send'; data: { text: string; images?: string[] } }
+  | { type: 'chat:send'; data: { text: string; images?: string[]; mentions?: string[] } }
   | { type: 'chat:abort' }
   | { type: 'session:create'; data?: { title?: string } }
   | { type: 'session:switch'; data: { id: string } }

@@ -3,17 +3,25 @@
  */
 
 import React, { useRef, useCallback, useEffect, useState, useMemo } from 'react';
-import { useChatStore, type ChatImageAttachment } from '../stores/chatStore';
+import {
+  countRevertedUserMessages,
+  getRedoTargetMessage,
+  getUndoTargetMessage,
+  useChatStore,
+  type ChatImageAttachment,
+} from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
 import { ModelSelector } from './ModelSelector';
 import { AgentSelector } from './AgentSelector';
 import { TokenUsageBar } from './TokenUsageBar';
+import { QueuedMessageList } from './QueuedMessageList';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
 import { MentionMenu } from './MentionMenu';
 import type { MentionMenuHandle } from './MentionMenu';
 import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
 import { useCommandStore } from '../stores/commandStore';
+import { useMessageQueueStore, type QueuedChatMessage } from '../stores/messageQueueStore';
 import { useMentionSearch } from '../hooks/useMentionSearch';
 import type { MentionResult } from '../hooks/useMentionSearch';
 
@@ -23,6 +31,7 @@ const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 /** Maximum height of the chat input textarea in pixels */
 const MAX_TEXTAREA_HEIGHT_PX = 200;
 const BASE_TEXTAREA_HEIGHT_PX = 24;
+const EMPTY_QUEUE: QueuedChatMessage[] = [];
 
 function isImageFile(file: File) {
   return file.type.startsWith('image/');
@@ -134,6 +143,57 @@ function removeMarkerText(text: string, marker: string): string {
   return next;
 }
 
+function isMentionStartBoundary(value: string | undefined): boolean {
+  return !value || /\s/.test(value);
+}
+
+function isMentionEndBoundary(value: string | undefined): boolean {
+  return !value || /[\s.,!?;:)\]>}'"]/.test(value);
+}
+
+function findMentionTokenIndex(text: string, mention: string): number {
+  const token = `@${mention}`;
+  let start = 0;
+
+  while (start < text.length) {
+    const index = text.indexOf(token, start);
+    if (index === -1) {
+      return -1;
+    }
+
+    const before = index > 0 ? text[index - 1] : undefined;
+    const after = text[index + token.length];
+    if (isMentionStartBoundary(before) && isMentionEndBoundary(after)) {
+      return index;
+    }
+
+    start = index + 1;
+  }
+
+  return -1;
+}
+
+function collectMentionPaths(text: string, mentions: string[]): string[] {
+  return mentions
+    .map((mention) => ({ mention, index: findMentionTokenIndex(text, mention) }))
+    .filter((entry) => entry.index !== -1)
+    .sort((a, b) => a.index - b.index)
+    .map((entry) => entry.mention);
+}
+
+function isShellDraft(text: string): boolean {
+  return text.trimStart().startsWith('!');
+}
+
+function getShellCommand(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('!')) {
+    return undefined;
+  }
+
+  return trimmed.slice(1).trim();
+}
+
 function createImageAttachmentID(): string {
   return `image_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -149,14 +209,32 @@ export function ChatInput() {
   const inputText = useChatStore((s) => s.inputText);
   const isStreaming = useChatStore((s) => s.isStreaming);
   const attachedImages = useChatStore((s) => s.attachedImages);
+  const currentSession = useChatStore((s) => s.currentSession);
+  const currentSessionID = currentSession?.id;
+  const messages = useChatStore((s) => s.messages);
   const pendingInputInsertions = useChatStore((s) => s.pendingInputInsertions);
   const connected = useChatStore((s) => s.connected);
+  const sessionStatus = useChatStore((s) => s.sessionStatus);
+  const optimisticMessageID = useChatStore((s) => s.optimisticMessageID);
   const setInputText = useChatStore((s) => s.setInputText);
   const removeImage = useChatStore((s) => s.removeImage);
   const removeImages = useChatStore((s) => s.removeImages);
   const addImage = useChatStore((s) => s.addImage);
+  const setAttachedImages = useChatStore((s) => s.setAttachedImages);
   const consumeInputInsertion = useChatStore((s) => s.consumeInputInsertion);
   const addOptimisticMessage = useChatStore((s) => s.addOptimisticMessage);
+  const beginPendingSend = useChatStore((s) => s.beginPendingSend);
+  const queuedMessages = useMessageQueueStore((s) =>
+    currentSessionID ? (s.queuedMessages[currentSessionID] ?? EMPTY_QUEUE) : EMPTY_QUEUE,
+  );
+  const sendingMessageID = useMessageQueueStore((s) =>
+    currentSessionID ? s.sendingMessageIDs[currentSessionID] : undefined,
+  );
+  const failedMessageID = useMessageQueueStore((s) =>
+    currentSessionID ? s.failedMessageIDs[currentSessionID] : undefined,
+  );
+  const enqueueMessage = useMessageQueueStore((s) => s.enqueue);
+  const recallQueuedMessage = useMessageQueueStore((s) => s.recall);
 
   // Slash command state from store
   const commands = useCommandStore((s) => s.commands);
@@ -172,6 +250,7 @@ export function ChatInput() {
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionTriggerIndex, setMentionTriggerIndex] = useState(-1);
+  const [mentionPaths, setMentionPaths] = useState<string[]>([]);
   const mentionSearch = useMentionSearch();
 
   /** Close mention menu and clear search state. */
@@ -194,8 +273,29 @@ export function ChatInput() {
     () => filterCommands(commands, slashQuery),
     [commands, slashQuery]
   );
+  const shellDraft = useMemo(() => isShellDraft(inputText), [inputText]);
+  const shellCommand = useMemo(() => getShellCommand(inputText), [inputText]);
+  const undoTarget = useMemo(
+    () => getUndoTargetMessage(messages, currentSession),
+    [messages, currentSession],
+  );
+  const redoTarget = useMemo(
+    () => getRedoTargetMessage(messages, currentSession),
+    [messages, currentSession],
+  );
+  const revertSteps = useMemo(
+    () => countRevertedUserMessages(messages, currentSession),
+    [messages, currentSession],
+  );
+  const canRedo = Boolean(currentSession?.revert?.messageID);
+  const queuesFollowups = Boolean(currentSessionID)
+    && !currentSession?.revert
+    && !shellDraft
+    && (isStreaming || sessionStatus === 'active' || sessionStatus === 'retry' || sessionStatus === 'compacting');
 
-  const canSend = connected && (inputText.trim().length > 0 || attachedImages.length > 0);
+  const canSend = connected
+    && !optimisticMessageID
+    && (inputText.trim().length > 0 || attachedImages.length > 0);
 
   useEffect(() => {
     nextImageMarkerIndexRef.current = getNextImageMarkerIndex(inputText, attachedImages);
@@ -218,7 +318,7 @@ export function ChatInput() {
     }
 
     const textarea = textareaRef.current;
-    const currentText = useChatStore.getState().inputText;
+    const currentText = textarea?.value ?? useChatStore.getState().inputText;
     const useSelection = document.activeElement === textarea;
     const selectionStart = useSelection ? textarea?.selectionStart ?? currentText.length : currentText.length;
     const selectionEnd = useSelection ? textarea?.selectionEnd ?? selectionStart : selectionStart;
@@ -268,6 +368,36 @@ export function ChatInput() {
     adjustHeight();
   }, [inputText, adjustHeight]);
 
+  const handleUndo = useCallback(() => {
+    if (!currentSession || !undoTarget) {
+      return;
+    }
+
+    postMessage({
+      type: 'session:revert',
+      data: { messageID: undoTarget.info.id },
+    });
+  }, [currentSession, undoTarget]);
+
+  const handleRedo = useCallback(
+    (restoreAll = false) => {
+      if (!currentSession?.revert?.messageID) {
+        return;
+      }
+
+      if (!restoreAll && redoTarget) {
+        postMessage({
+          type: 'session:revert',
+          data: { messageID: redoTarget.info.id },
+        });
+        return;
+      }
+
+      postMessage({ type: 'session:unrevert' });
+    },
+    [currentSession, redoTarget],
+  );
+
   const handleSend = useCallback(() => {
     if (!canSend) return;
 
@@ -275,6 +405,7 @@ export function ChatInput() {
     const images = attachedImages.length > 0
       ? attachedImages.map((image) => image.dataUrl)
       : undefined;
+    const mentions = collectMentionPaths(text, mentionPaths);
 
     // Check if this is a command execution (starts with / followed by a known command name)
     const commandMatch = text.match(/^\/(\S+)(?:\s+(.*))?$/s);
@@ -296,8 +427,18 @@ export function ChatInput() {
             case 'new':
               postMessage({ type: 'session:create' });
               break;
+            case 'undo':
+              handleUndo();
+              break;
+            case 'redo':
+              handleRedo();
+              break;
             case 'compact':
-              addOptimisticMessage('/compact');
+              if (currentSession?.revert) {
+                beginPendingSend();
+              } else {
+                addOptimisticMessage('/compact');
+              }
               postMessage({ type: 'chat:send', data: { text: '/compact' } });
               break;
           }
@@ -311,19 +452,72 @@ export function ChatInput() {
       }
     }
 
+    if (shellCommand !== undefined) {
+      beginPendingSend();
+      postMessage({
+        type: 'chat:send',
+        data: { text, images, mentions: mentions.length > 0 ? mentions : undefined },
+      });
+
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+      return;
+    }
+
+    if (queuesFollowups && currentSessionID) {
+      enqueueMessage(currentSessionID, {
+        text,
+        images: attachedImages,
+        mentions: mentions.length > 0 ? mentions : undefined,
+      });
+      setInputText('');
+      setAttachedImages([]);
+      setSlashOpen(false);
+      setSlashQuery('');
+      closeMentionMenu();
+
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+      }
+      return;
+    }
+
     // Regular message send
-    addOptimisticMessage(text, images);
+    if (currentSession?.revert) {
+      beginPendingSend();
+    } else {
+      addOptimisticMessage(text, images);
+    }
 
     postMessage({
       type: 'chat:send',
-      data: { text, images },
+      data: { text, images, mentions: mentions.length > 0 ? mentions : undefined },
     });
 
     // Reset textarea height
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
     }
-  }, [canSend, inputText, attachedImages, commands, addOptimisticMessage, setInputText]);
+  }, [
+    canSend,
+    inputText,
+    attachedImages,
+    commands,
+    closeMentionMenu,
+    currentSession,
+    currentSessionID,
+    addOptimisticMessage,
+    beginPendingSend,
+    enqueueMessage,
+    mentionPaths,
+    queuesFollowups,
+    setAttachedImages,
+    setInputText,
+    shellCommand,
+    handleUndo,
+    handleRedo,
+  ]);
 
   const handleStop = useCallback(() => {
     postMessage({ type: 'chat:abort' });
@@ -368,15 +562,18 @@ export function ChatInput() {
         return;
       }
 
-      // Replace `@query` with `@filename `
+      // Replace `@query` with the selected file path.
       const before = inputText.slice(0, mentionTriggerIndex);
       const cursorPos = textarea.selectionStart ?? inputText.length;
       const after = inputText.slice(cursorPos);
-      const insertText = `@${result.name} `;
+      const insertText = `@${result.path} `;
       const newText = before + insertText + after;
       const newCursorPos = before.length + insertText.length;
 
       setInputText(newText);
+      setMentionPaths((current) =>
+        current.includes(result.path) ? current : [...current, result.path]
+      );
       closeMentionMenu();
 
       // Restore focus and set cursor position after React re-render
@@ -462,6 +659,15 @@ export function ChatInput() {
       const cursorPos = e.target.selectionStart ?? value.length;
       setInputText(value);
 
+      if (isShellDraft(value)) {
+        setSlashOpen(false);
+        setSlashQuery('');
+        if (mentionOpen) {
+          closeMentionMenu();
+        }
+        return;
+      }
+
       // Detect slash trigger
       const trigger = detectSlashTrigger(value, cursorPos);
       if (trigger) {
@@ -511,8 +717,16 @@ export function ChatInput() {
           case 'new':
             postMessage({ type: 'session:create' });
             break;
+          case 'undo':
+            handleUndo();
+            break;
+          case 'redo':
+            handleRedo();
+            break;
           case 'compact':
-            addOptimisticMessage('/compact');
+            if (!currentSession?.revert) {
+              addOptimisticMessage('/compact');
+            }
             postMessage({ type: 'chat:send', data: { text: '/compact' } });
             break;
         }
@@ -532,13 +746,45 @@ export function ChatInput() {
         }
       }
     },
-    [setInputText, addOptimisticMessage]
+    [setInputText, currentSession, addOptimisticMessage, handleUndo, handleRedo]
   );
 
   const handleSlashClose = useCallback(() => {
     setSlashOpen(false);
     setSlashQuery('');
   }, []);
+
+  const handleQueuedRecall = useCallback(
+    (messageID: string) => {
+      if (!currentSessionID) {
+        return;
+      }
+
+      const item = recallQueuedMessage(currentSessionID, messageID);
+      if (!item) {
+        return;
+      }
+
+      setInputText(item.text);
+      setAttachedImages(item.images);
+      setMentionPaths(item.mentions ?? []);
+      setSlashOpen(false);
+      setSlashQuery('');
+      closeMentionMenu();
+
+      setTimeout(() => {
+        if (!textareaRef.current) {
+          return;
+        }
+
+        textareaRef.current.focus();
+        const cursor = item.text.length;
+        textareaRef.current.selectionStart = cursor;
+        textareaRef.current.selectionEnd = cursor;
+      }, 0);
+    },
+    [closeMentionMenu, currentSessionID, recallQueuedMessage, setAttachedImages, setInputText],
+  );
 
   const collectValidImageFiles = useCallback((files: Iterable<File>): File[] => {
     return Array.from(files).filter((file) => {
@@ -735,7 +981,9 @@ export function ChatInput() {
                   onPaste={handlePaste}
                   placeholder={
                     connected
-                      ? 'Type your message... (@ for files, / for commands)'
+                      ? shellDraft
+                        ? 'Run a shell command... (!pwd, !git status)'
+                        : 'Type your message... (@ for files, / for commands, ! for shell)'
                       : 'Connecting to OpenCode...'
                   }
                   disabled={!connected}
@@ -761,8 +1009,8 @@ export function ChatInput() {
                   className="chat-input__send-btn"
                   onClick={handleSend}
                   disabled={!canSend}
-                  title="Send message (Enter)"
-                  aria-label="Send message"
+                  title={shellDraft ? 'Run shell command (Enter)' : queuesFollowups ? 'Queue message (Enter)' : 'Send message (Enter)'}
+                  aria-label={shellDraft ? 'Run shell command' : queuesFollowups ? 'Queue message' : 'Send message'}
                   type="button"
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -772,6 +1020,60 @@ export function ChatInput() {
               </div>
             </div>
             <div className="chat-input__meta">
+              {currentSession?.revert && (
+                <div className="chat-input__hint chat-input__hint--revert" role="status" aria-live="polite">
+                  <span className="chat-input__hint-badge">Undo</span>
+                  <span className="chat-input__hint-text">
+                    {revertSteps > 1
+                      ? `Showing the session before ${revertSteps} reverted user prompts. Edit the restored draft, or redo to bring prompts back.`
+                      : 'Showing the session at an earlier point. Edit the restored draft, or redo to bring the last prompt back.'}
+                  </span>
+                  <div className="chat-input__revert-actions">
+                    <button
+                      className="chat-input__revert-btn"
+                      onClick={() => handleRedo()}
+                      disabled={!canRedo || isStreaming}
+                      type="button"
+                    >
+                      Redo
+                    </button>
+                    {revertSteps > 1 && (
+                      <button
+                        className="chat-input__revert-btn"
+                        onClick={() => handleRedo(true)}
+                        disabled={!canRedo || isStreaming}
+                        type="button"
+                      >
+                        Restore all
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+              {queuesFollowups && queuedMessages.length === 0 && (
+                <div className="chat-input__hint" role="status" aria-live="polite">
+                  <span className="chat-input__hint-badge">Queue</span>
+                  <span className="chat-input__hint-text">
+                    This session is still generating. New chat follow-ups will be queued and sent automatically.
+                  </span>
+                </div>
+              )}
+              <QueuedMessageList
+                items={queuedMessages}
+                sendingMessageID={sendingMessageID}
+                failedMessageID={failedMessageID}
+                onRecall={handleQueuedRecall}
+              />
+              {shellDraft && (
+                <div className="chat-input__hint" role="status" aria-live="polite">
+                  <span className="chat-input__hint-badge">Shell</span>
+                  <span className="chat-input__hint-text">
+                    {shellCommand
+                      ? 'Runs via the OpenCode server shell endpoint. Images and @ file references are ignored.'
+                      : 'Type a shell command after ! before sending.'}
+                  </span>
+                </div>
+              )}
               <div className="chat-input__toolbar">
                 <div className="chat-input__selectors">
                   <ModelSelector />

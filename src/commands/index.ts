@@ -11,7 +11,7 @@ import type { SettingsViewProvider } from '../providers/settingsViewProvider';
 import type { SessionEditorPanelProvider } from '../providers/sessionEditorPanelProvider';
 import type { StatusBarManager } from '../managers/statusBarManager';
 import type { SessionManager } from '../managers/sessionManager';
-import type { OpenCodeConfig } from '../types/opencode';
+import type { MessageWithParts, OpenCodeConfig } from '../types/opencode';
 
 /**
  * Services and providers needed by command handlers.
@@ -64,6 +64,44 @@ function requireSession(ctx: CommandContext): string | undefined {
   return ctx.activeSessionId;
 }
 
+function getUserMessages(messages: MessageWithParts[]): MessageWithParts[] {
+  return messages.filter((message) => message.info.role === 'user');
+}
+
+function getUndoTargetMessage(
+  messages: MessageWithParts[],
+  session: { revert?: { messageID: string } },
+): MessageWithParts | undefined {
+  const userMessages = getUserMessages(messages);
+  if (userMessages.length === 0) {
+    return undefined;
+  }
+
+  const revertMessageID = session.revert?.messageID;
+  if (!revertMessageID) {
+    return userMessages[userMessages.length - 1];
+  }
+
+  const revertIndex = userMessages.findIndex((message) => message.info.id === revertMessageID);
+  return revertIndex > 0 ? userMessages[revertIndex - 1] : undefined;
+}
+
+function getRedoTargetMessage(
+  messages: MessageWithParts[],
+  session: { revert?: { messageID: string } },
+): MessageWithParts | undefined {
+  const revertMessageID = session.revert?.messageID;
+  if (!revertMessageID) {
+    return undefined;
+  }
+
+  const userMessages = getUserMessages(messages);
+  const revertIndex = userMessages.findIndex((message) => message.info.id === revertMessageID);
+  return revertIndex >= 0 && revertIndex < userMessages.length - 1
+    ? userMessages[revertIndex + 1]
+    : undefined;
+}
+
 function getCodeRange(editor: vscode.TextEditor): vscode.Range {
   if (!editor.selection.isEmpty) {
     return new vscode.Range(editor.selection.start, editor.selection.end);
@@ -98,6 +136,81 @@ function buildChatCodeInsertText(editor: vscode.TextEditor): string {
   const language = getFenceLanguage(editor.document.fileName);
 
   return `Source: \`${relativePath}:${lineRange}\`\n\`\`\`${language}\n${code}\n\`\`\``;
+}
+
+const DEFAULT_PROJECT_CONFIG_FILE = 'opencode.jsonc';
+const DEFAULT_PROJECT_CONFIG_TEMPLATE = `{
+  "$schema": "https://opencode.ai/config.json"
+}
+`;
+
+function normalizePathForComparison(filePath: string): string {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function getConfigSearchDirectories(directory: string, worktree: string): string[] {
+  const folders: string[] = [];
+  const stop = normalizePathForComparison(worktree);
+  let current = path.resolve(directory);
+
+  while (true) {
+    folders.push(current);
+
+    if (normalizePathForComparison(current) === stop) {
+      return folders;
+    }
+
+    const parent = path.dirname(current);
+    if (normalizePathForComparison(parent) === normalizePathForComparison(current)) {
+      return folders;
+    }
+
+    current = parent;
+  }
+}
+
+function getLocalConfigCandidates(directory: string, worktree: string): vscode.Uri[] {
+  const folders = getConfigSearchDirectories(directory, worktree);
+  const dotFolders = [...folders].reverse();
+  const files = [
+    // Official config loading merges plain project files first and `.opencode` files after,
+    // so `.opencode` wins over `opencode.json{,c}` when both exist. Project `.opencode`
+    // directories are walked from the current directory up to the worktree, which means the
+    // farthest matching `.opencode` file is applied last and therefore has the highest priority.
+    ...dotFolders.flatMap((folder) => [
+      path.join(folder, '.opencode', 'opencode.json'),
+      path.join(folder, '.opencode', 'opencode.jsonc'),
+    ]),
+    ...folders.map((folder) => path.join(folder, 'opencode.json')),
+    ...folders.map((folder) => path.join(folder, 'opencode.jsonc')),
+  ];
+
+  return files.map((filePath) => vscode.Uri.file(filePath));
+}
+
+async function fileExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function resolveLocalConfigFile(pathInfo: { directory: string; worktree: string }): Promise<vscode.Uri> {
+  for (const candidate of getLocalConfigCandidates(pathInfo.directory, pathInfo.worktree)) {
+    if (await fileExists(candidate)) {
+      return candidate;
+    }
+  }
+
+  const file = vscode.Uri.file(path.join(pathInfo.directory, DEFAULT_PROJECT_CONFIG_FILE));
+  await vscode.workspace.fs.writeFile(
+    file,
+    new TextEncoder().encode(DEFAULT_PROJECT_CONFIG_TEMPLATE),
+  );
+  return file;
 }
 
 // ---------------------------------------------------------------------------
@@ -230,20 +343,65 @@ async function abortSession(ctx: CommandContext): Promise<void> {
   }
 }
 
+async function revertSession(
+  ctx: CommandContext,
+  messageId: unknown,
+  partId?: unknown,
+): Promise<void> {
+  const sessionId = requireSession(ctx);
+  if (!sessionId) { return; }
+
+  if (typeof messageId !== 'string' || messageId.trim() === '') {
+    vscode.window.showWarningMessage('No message selected to revert.');
+    return;
+  }
+
+  const normalizedPartId = typeof partId === 'string' && partId.trim() !== ''
+    ? partId.trim()
+    : undefined;
+
+  try {
+    await ctx.client.revertSession(sessionId, messageId.trim(), normalizedPartId);
+    ctx.logger.info(
+      `Reverted session ${sessionId} to ${messageId}${normalizedPartId ? ` (part ${normalizedPartId})` : ''}`,
+    );
+  } catch (err) {
+    ctx.logger.error('Failed to revert session', err);
+    vscode.window.showErrorMessage(`Failed to revert session: ${errorMessage(err)}`);
+  }
+}
+
+async function unrevertSession(ctx: CommandContext): Promise<void> {
+  const sessionId = requireSession(ctx);
+  if (!sessionId) { return; }
+
+  try {
+    await ctx.client.unrevertSession(sessionId);
+    ctx.logger.info(`Restored reverted messages in session ${sessionId}`);
+  } catch (err) {
+    ctx.logger.error('Failed to restore reverted messages', err);
+    vscode.window.showErrorMessage(`Failed to restore reverted messages: ${errorMessage(err)}`);
+  }
+}
+
 async function undoMessage(ctx: CommandContext): Promise<void> {
   const sessionId = requireSession(ctx);
   if (!sessionId) { return; }
 
   try {
-    const messages = await ctx.client.listMessages(sessionId);
-    if (messages.length === 0) {
+    const [session, messages] = await Promise.all([
+      ctx.client.getSession(sessionId),
+      ctx.client.listMessages(sessionId),
+    ]);
+    const targetMessage = getUndoTargetMessage(messages, session);
+
+    if (!targetMessage) {
       vscode.window.showInformationMessage('No messages to undo.');
       return;
     }
-    // Revert to the last message
-    const lastMsg = messages[messages.length - 1];
-    await ctx.client.revertSession(sessionId, lastMsg.info.id);
-    ctx.logger.info(`Reverted last message in session ${sessionId}`);
+
+    await ctx.client.revertSession(sessionId, targetMessage.info.id);
+    ctx.logger.info(`Reverted session ${sessionId} to user message ${targetMessage.info.id}`);
   } catch (err) {
     ctx.logger.error('Failed to undo message', err);
     vscode.window.showErrorMessage(`Failed to undo message: ${errorMessage(err)}`);
@@ -255,8 +413,25 @@ async function redoMessage(ctx: CommandContext): Promise<void> {
   if (!sessionId) { return; }
 
   try {
+    const [session, messages] = await Promise.all([
+      ctx.client.getSession(sessionId),
+      ctx.client.listMessages(sessionId),
+    ]);
+
+    if (!session.revert?.messageID) {
+      vscode.window.showInformationMessage('No messages to redo.');
+      return;
+    }
+
+    const targetMessage = getRedoTargetMessage(messages, session);
+    if (targetMessage) {
+      await ctx.client.revertSession(sessionId, targetMessage.info.id);
+      ctx.logger.info(`Advanced revert point in session ${sessionId} to ${targetMessage.info.id}`);
+      return;
+    }
+
     await ctx.client.unrevertSession(sessionId);
-    ctx.logger.info(`Unreverted session ${sessionId}`);
+    ctx.logger.info(`Fully restored reverted messages in session ${sessionId}`);
   } catch (err) {
     ctx.logger.error('Failed to redo message', err);
     vscode.window.showErrorMessage(`Failed to redo message: ${errorMessage(err)}`);
@@ -628,27 +803,15 @@ async function openConfigFile(ctx: CommandContext): Promise<void> {
   try {
     const pathInfo = await ctx.client.getPathInfo();
     const directory = pathInfo.directory?.trim();
+    const worktree = pathInfo.worktree?.trim();
     if (!directory) {
       throw new Error('OpenCode server did not report a project directory.');
     }
-
-    const configPath = vscode.Uri.file(path.join(directory, 'config.json'));
-    if (!vscode.workspace.getWorkspaceFolder(configPath)) {
-      vscode.window.showWarningMessage('OpenCode config is outside the current workspace. Open the project folder first.');
-      return;
+    if (!worktree) {
+      throw new Error('OpenCode server did not report a project worktree.');
     }
 
-    try {
-      await vscode.workspace.fs.stat(configPath);
-    } catch {
-      await vscode.workspace.fs.writeFile(
-        configPath,
-        new TextEncoder().encode(`{
-  "$schema": "https://opencode.ai/config.json"
-}
-`),
-      );
-    }
+    const configPath = await resolveLocalConfigFile({ directory, worktree });
     const doc = await vscode.workspace.openTextDocument(configPath);
     await vscode.window.showTextDocument(doc);
   } catch (err) {
@@ -818,6 +981,8 @@ export function registerCommands(
     ['opencode.forkSession', () => forkSession(ctx)],
     ['opencode.shareSession', () => shareSession(ctx)],
     ['opencode.abortSession', () => abortSession(ctx)],
+    ['opencode.revertSession', (messageId?: unknown, partId?: unknown) => revertSession(ctx, messageId, partId)],
+    ['opencode.unrevertSession', () => unrevertSession(ctx)],
     ['opencode.undoMessage', () => undoMessage(ctx)],
     ['opencode.redoMessage', () => redoMessage(ctx)],
     ['opencode.startServer', () => startServer(ctx)],

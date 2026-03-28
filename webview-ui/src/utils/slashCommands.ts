@@ -18,6 +18,8 @@ export interface SlashCommand {
 /** Commands that are always available and executed locally in the webview. */
 export const FRONTEND_COMMANDS: SlashCommand[] = [
   { name: 'new', description: 'Start a new session', source: 'frontend' },
+  { name: 'undo', description: 'Revert to the previous user prompt', source: 'frontend' },
+  { name: 'redo', description: 'Restore the next reverted user prompt', source: 'frontend' },
   { name: 'compact', description: 'Compact message history', source: 'frontend' },
 ];
 

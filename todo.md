@@ -1,32 +1,75 @@
-# OpenCode for VSCode - TODO
+# OpenCode VSCode Extension — TODO
 
-> 最后更新: 2026-03-22
-> 当前工作: 1.0.1 正式版发布收尾
-> 备注: 本轮 10 个问题已完成代码修复，当前整理正式版发布内容
+> 按顺序执行：先补齐参考基线，再做官方行为对齐与核心交互，最后统一做导航与 UI 打磨。
 
-## 本轮修复结果
+---
 
-| # | 问题 | 优先级 | 状态 | 备注 |
-|---|------|--------|------|------|
-| 1 | 去掉连续 assistant message 中间的 `[Image 2]` 占位，并移除 assistant / user 图标 | 高 | 已修复 | 显示层清理 image marker，消息 header 图标移除 |
-| 2 | 修复高速滚动时黑屏闪烁 | 高 | 已修复 | 移除 `content-visibility`，提高虚拟列表 overscan |
-| 3 | 修复 session 列表日期列打开图标点击报错 | 高 | 已修复 | session tree context menu 仅对真实 session 节点显示 |
-| 4 | 修复从 session 列表图标打开后 editor 面板卡在连接态 / 打不开 | 高 | 已修复 | editor panel 缓存初始状态并主动加载 `session:loaded` |
-| 5 | 整体对话字体调小，优化 tool 调用展开后的展示 | 中 | 已修复 | chat / message 样式已收紧并优化 tool card |
-| 6 | 左侧 MCP 支持右键开启 / 关闭；Providers 仅显示已连接；Formatter 仅显示已启用 | 高 | 已修复 | 新增 MCP enable/disable 命令与 status tree 过滤 |
-| 7 | 一键打开 OpenCode Settings 的逻辑与 OpenCode 存储逻辑保持一致，修复当前打不开报错 | 高 | 已修复 | 改为项目目录 `config.json`，不存在时自动创建 |
-| 8 | 修复模型选择栏输入后无法正确补全 / 匹配 | 高 | 已修复 | 初始 providers/config 同步补齐，selector 命令支持 webview 参数 |
-| 9 | 修复切换 agent 崩溃问题（参考本地崩溃堆栈） | 高 | 已修复 | `Agent.model` 对齐真实 API，agent selector 安全格式化 |
-| 10 | 分析本地调试日志是否提供额外线索并纳入修复 | 中 | 已完成 | 日志线索已纳入 #4 / #8 / #9 根因与修复 |
+## Phase 1: 参考基线与资料同步
 
-## 验证
+- [x] **1. 拉取 OpenChamber 到 `vendor/`**
+  将 OpenChamber 也拉到本地 `vendor/` 里作为参考内容。
+  *(只做参考，先看实现思路，不直接照搬)*
 
-- ✅ `npm run typecheck`
-- ✅ `npm run build`
-- ✅ reviewer 自审通过（修复 status tree 空数据保护与 config 打开路径防护后复审）
+- [x] **2. 更新参考文档索引**
+  在 `AGENTS.md` / `docs/research/` / 相关说明里补充新的参考仓库说明，确保后续排查和实现时有统一入口。
 
-## 备注
+## Phase 2: 设置页与官方行为对齐
 
-- 当前未执行 git branch / commit / push；如需按仓库规范新建分支，需雨薇姐姐明确授权。
-- 已同步更新 `docs/research/opencode-api-reference.md`，补充 `/config` 的真实落盘位置说明。
-- 已清理发布前本地调试文件与 beta 版 VSIX 产物，准备切换到 `1.0.1` 正式版。
+- [x] **3. 对齐 opencode 配置文件读取逻辑**
+  打开本地 opencode 配置文件的逻辑改为与 opencode 官方读取逻辑完全一致，对齐官方行为；把入口按钮放到设置页里。
+
+- [x] **4. 支持 MCP 开启/关闭**
+  在设置页中添加 MCP 服务器的开启和关闭功能。
+  *(与设置页改动相邻，建议一起完成以减少来回改 UI)*
+
+## Phase 3: 输入能力与会话控制核心功能
+
+- [x] **5. 支持 `@` 引用文件（TUI 1.2）**
+  输入框中用 `@` 符号引用文件，模糊搜索项目文件，文件内容自动加入对话上下文。需先查阅 opencode 源码确认 API / 数据流是否支持。
+
+- [x] **6. 支持 `!` 执行 shell 命令（TUI 1.3）**
+  以 `!` 开头的消息作为 shell 命令执行，输出返回给 AI 上下文。需先查阅 opencode 源码确认 API / 数据流是否支持。
+
+- [x] **7. 支持待发送消息队列（参考官方 TUI）**
+  - 支持多条待发送消息排队
+  - 支持撤回指定待发送消息
+  - 撤回后自动恢复到输入框
+
+- [x] **8. 支持暂停**
+  参考 `vendor/OpenCodeUI` 与官方实现，补齐暂停中的状态流转与 UI。
+
+- [x] **9. 实现 undo / redo 命令**
+  参考 `vendor/OpenCodeUI` 实现。底层依赖 Git 管理文件改动，需要确认 extension 侧如何安全衔接。
+
+## Phase 4: 会话导航与任务视图
+
+- [ ] **10. 默认进入最新 session**
+  如果当前目录下有历史 session，则默认进入最新的 session，而不是每次都新建。
+
+- [ ] **11. 支持点击 task 事件进入 subagent 会话**
+  点击 task 事件可进入 subagent 会话，同时在进入 subagent 后添加返回上级的按键。查看 opencode 的实现方式。
+
+- [ ] **12. Task 事件呈现优化**
+  参考 `vendor/OpenCodeUI` 优化 task 事件的视觉展示。
+  *(与 #11 强关联，紧挨着做)*
+
+## Phase 5: 结果呈现与交互打磨
+
+- [ ] **13. 优化不同工具调用的结果呈现**
+  - 单文件编辑：点击后在 VSCode 中打开对应的 diff
+  - 读取文件：点击打开对应行
+  - `webfetch`：点击链接访问
+
+- [ ] **14. Markdown 链接渲染支持点击访问**
+  对话中的 markdown 链接可以直接点击跳转。
+
+- [ ] **15. 宽屏 Last API Response 面板**
+  当对话流窗口足够宽（> 对话流最大宽度的 1.5 倍）时，在右侧显示 `last api response in this session`，设计风格和对话流对齐。
+
+---
+
+### 备注
+
+- `vendor/OpenCodeUI` 为 GPL-3.0，仅作参考，不直接复制代码。
+- `vendor/OpenChamber` 先以“理解思路 / 对照行为”为目的使用。
+- 每当确认新的官方行为或接口细节时，要同步更新 `docs/research/` 中对应文档。

@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import type {
   ExtensionToWebviewMessage,
@@ -11,6 +12,7 @@ import type {
 } from '../services/openCodeClient';
 import type { Logger } from '../services/logger';
 import { ModelPreferencesService } from '../services/modelPreferences';
+import { getConfiguredAgent, parseConfiguredModel } from '../utils/opencodeConfig';
 import { getWebviewHtml } from '../utils/webviewHtml';
 
 type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:status' }>;
@@ -274,7 +276,7 @@ export class SessionEditorPanelProvider {
         break;
 
       case 'chat:send':
-        this.handleChatSend(panelId, message.data.text, message.data.images);
+        this.handleChatSend(panelId, message.data.text, message.data.images, message.data.mentions);
         break;
 
       case 'chat:abort':
@@ -365,6 +367,10 @@ export class SessionEditorPanelProvider {
 
       case 'command:list':
         this.handleCommandList(panelId);
+        break;
+
+      case 'mention:search':
+        this.handleMentionSearch(panelId, message.data.query);
         break;
 
       case 'command:execute':
@@ -492,6 +498,7 @@ export class SessionEditorPanelProvider {
     panelId: string,
     text: string,
     images?: string[],
+    mentions?: string[],
   ): Promise<void> {
     const state = this.panels.get(panelId);
     if (!state) { return; }
@@ -505,13 +512,67 @@ export class SessionEditorPanelProvider {
       return;
     }
 
-    const payload = this.buildPromptPayload(text, images);
+    const shellCommand = parseShellCommand(text);
+    if (shellCommand !== undefined) {
+      if (!shellCommand) {
+        this.doPostMessage(state, {
+          type: 'chat:sendResult',
+          data: {
+            success: false,
+            error: 'Please enter a shell command after ! before sending.',
+          },
+        });
+        return;
+      }
+
+      let sessionId = state.sessionId;
+      if (!sessionId) {
+        try {
+          const session = await this.client.createSession();
+          sessionId = session.id;
+          state.sessionId = session.id;
+
+          this.panels.delete(panelId);
+          this.panels.set(session.id, state);
+          state.panel.title = session.title || 'OpenCode Chat';
+
+          this.doPostMessage(state, { type: 'session:created', data: session });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          this.logger?.error('Failed to create session for editor panel chat:send', err);
+          this.doPostMessage(state, {
+            type: 'chat:sendResult',
+            data: { success: false, error: errMsg },
+          });
+          return;
+        }
+      }
+
+      try {
+        const shell = await this.resolveShellPayload(shellCommand);
+        await this.client.executeShell(sessionId, shell);
+        this.doPostMessage(state, {
+          type: 'chat:sendResult',
+          data: { success: true, streaming: false },
+        });
+      } catch (err) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        this.logger?.error('Failed to execute shell command from editor panel', err);
+        this.doPostMessage(state, {
+          type: 'chat:sendResult',
+          data: { success: false, error: errMsg },
+        });
+      }
+      return;
+    }
+
+    const payload = await this.buildPromptPayload(state, text, images, mentions);
     if (!payload) {
       this.doPostMessage(state, {
         type: 'chat:sendResult',
         data: {
           success: false,
-          error: 'Please enter a message or attach a valid image before sending.',
+          error: 'Please enter a message or attach a valid file or image before sending.',
         },
       });
       return;
@@ -588,6 +649,34 @@ export class SessionEditorPanelProvider {
     } catch (err) {
       this.logger?.warn('Failed to fetch commands from server', err);
       this.doPostMessage(state, { type: 'command:listed', data: { commands: [] } });
+    }
+  }
+
+  private async handleMentionSearch(panelId: string, query: string): Promise<void> {
+    const state = this.panels.get(panelId);
+    if (!state) { return; }
+
+    if (!this.client) {
+      this.doPostMessage(state, { type: 'mention:results', data: { query, results: [] } });
+      return;
+    }
+
+    try {
+      const paths = await this.client.searchFiles(query);
+      const results = paths.map((filePath) => {
+        const segments = filePath.replace(/\\/g, '/').split('/');
+        const name = segments[segments.length - 1] || filePath;
+        const isFolder = filePath.endsWith('/') || filePath.endsWith('\\');
+        return {
+          name,
+          path: filePath,
+          type: (isFolder ? 'folder' : 'file') as 'file' | 'folder',
+        };
+      });
+      this.doPostMessage(state, { type: 'mention:results', data: { query, results } });
+    } catch (err) {
+      this.logger?.warn('Failed to search files for mention', err);
+      this.doPostMessage(state, { type: 'mention:results', data: { query, results: [] } });
     }
   }
 
@@ -690,7 +779,7 @@ export class SessionEditorPanelProvider {
     column?: number,
   ): Promise<void> {
     try {
-      const uri = vscode.Uri.file(filePath);
+      const uri = toFileUri(filePath);
       const doc = await vscode.workspace.openTextDocument(uri);
       const editor = await vscode.window.showTextDocument(doc);
 
@@ -711,15 +800,21 @@ export class SessionEditorPanelProvider {
   //  Prompt payload
   // ---------------------------------------------------------------------------
 
-  private buildPromptPayload(
+  private async buildPromptPayload(
+    state: EditorPanelState,
     text: string,
     images?: string[],
-  ): SendMessageData | undefined {
+    mentions?: string[],
+  ): Promise<SendMessageData | undefined> {
     const parts: SendMessageData['parts'] = [];
     const normalizedText = text.trim();
 
     if (normalizedText) {
       parts.push({ type: 'text', text: normalizedText });
+    }
+
+    if (mentions?.length) {
+      parts.push(...await this.resolveMentionParts(state, mentions));
     }
 
     if (images?.length) {
@@ -741,6 +836,92 @@ export class SessionEditorPanelProvider {
     }
 
     return { parts };
+  }
+
+  private async resolveShellPayload(command: string) {
+    const config = this.lastConfig ?? await this.client?.getConfig();
+    if (!config) {
+      throw new Error('OpenCode config is not available');
+    }
+
+    this.lastConfig = config;
+    const agent = getConfiguredAgent(config);
+    if (!agent) {
+      throw new Error('No OpenCode agent is configured for shell execution');
+    }
+
+    return {
+      command,
+      agent,
+      model: parseConfiguredModel(config),
+    };
+  }
+
+  private async resolveMentionParts(
+    state: EditorPanelState,
+    mentions: string[],
+  ): Promise<PromptFilePart[]> {
+    const refs = Array.from(new Set(
+      mentions
+        .map((mention) => stripWrappingQuotes(mention).replace(/^@+/, '').trim())
+        .filter((mention) => mention.length > 0),
+    ));
+
+    if (refs.length === 0) {
+      return [];
+    }
+
+    const roots = await this.getMentionRoots(state);
+    const parts = await Promise.all(refs.map((mention) => this.normalizeMentionPart(mention, roots)));
+    const valid = parts.filter((part): part is PromptFilePart => part !== undefined);
+
+    if (valid.length !== refs.length) {
+      this.logger?.warn(
+        `Skipped ${refs.length - valid.length} invalid file mention(s) while building prompt payload`,
+      );
+    }
+
+    return valid;
+  }
+
+  private async getMentionRoots(state: EditorPanelState): Promise<string[]> {
+    const roots = new Set<string>();
+
+    if (state.lastSessionLoaded?.session.directory) {
+      roots.add(path.normalize(state.lastSessionLoaded.session.directory));
+    }
+
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+      roots.add(path.normalize(folder.uri.fsPath));
+    }
+
+    try {
+      const directory = (await this.client?.getPathInfo())?.directory;
+      if (directory) {
+        roots.add(path.normalize(directory));
+      }
+    } catch (err) {
+      this.logger?.debug('Failed to resolve mention roots from path info', err);
+    }
+
+    return [...roots];
+  }
+
+  private async normalizeMentionPart(
+    mention: string,
+    roots: string[],
+  ): Promise<PromptFilePart | undefined> {
+    const filePath = await resolveMentionPath(mention, roots);
+    if (!filePath) {
+      return undefined;
+    }
+
+    return {
+      type: 'file',
+      mime: 'text/plain',
+      filename: path.basename(filePath),
+      url: vscode.Uri.file(filePath).toString(),
+    };
   }
 
   private normalizeImagePart(
@@ -897,6 +1078,15 @@ function prependUniqueMessages(
   return [...uniqueOlderMessages, ...existingMessages];
 }
 
+function parseShellCommand(text: string): string | undefined {
+  const trimmed = text.trim();
+  if (!trimmed.startsWith('!')) {
+    return undefined;
+  }
+
+  return trimmed.slice(1).trim();
+}
+
 function stripWrappingQuotes(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length < 2) {
@@ -935,4 +1125,48 @@ function extensionForMime(mime: string): string {
       return subtype ? subtype.split('+')[0].toLowerCase() : 'bin';
     }
   }
+}
+
+async function resolveMentionPath(reference: string, roots: string[]): Promise<string | undefined> {
+  const value = stripWrappingQuotes(reference).replace(/^@+/, '').trim();
+  if (!value) {
+    return undefined;
+  }
+
+  const candidates = new Set<string>();
+
+  if (/^file:/i.test(value)) {
+    try {
+      candidates.add(path.normalize(toFileUri(value).fsPath));
+    } catch {
+      return undefined;
+    }
+  } else if (path.isAbsolute(value)) {
+    candidates.add(path.normalize(value));
+  } else {
+    for (const root of roots) {
+      candidates.add(path.resolve(root, value));
+    }
+  }
+
+  for (const candidate of candidates) {
+    try {
+      const stat = await vscode.workspace.fs.stat(vscode.Uri.file(candidate));
+      if ((stat.type & vscode.FileType.File) !== 0) {
+        return candidate;
+      }
+    } catch {
+      // Ignore invalid or missing references.
+    }
+  }
+
+  return undefined;
+}
+
+function toFileUri(filePath: string): vscode.Uri {
+  if (/^file:/i.test(filePath)) {
+    return vscode.Uri.parse(filePath).with({ query: '', fragment: '' });
+  }
+
+  return vscode.Uri.file(filePath);
 }

@@ -44,6 +44,14 @@ function getFallbackLabel(mimeType: string): string {
   return 'File attachment';
 }
 
+function getOpenTarget(part: FilePartType): string | undefined {
+  if (part.url?.startsWith('file://')) {
+    return part.url;
+  }
+
+  return part.filename;
+}
+
 export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
   const mimeType = part.mime ?? part.mediaType ?? '';
   const isImage = mimeType.startsWith('image/');
@@ -51,13 +59,14 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
     getBaseName(part.filename) ??
     getUrlFileName(part.url) ??
     getFallbackLabel(mimeType);
-  const canOpenFile = !isImage && Boolean(part.filename);
+  const openTarget = !isImage ? getOpenTarget(part) : undefined;
+  const canOpenFile = Boolean(openTarget);
 
   const handleClick = useCallback(() => {
-    if (canOpenFile && part.filename) {
-      postMessage({ type: 'file:open', data: { path: part.filename } });
+    if (canOpenFile && openTarget) {
+      postMessage({ type: 'file:open', data: { path: openTarget } });
     }
-  }, [canOpenFile, part.filename]);
+  }, [canOpenFile, openTarget]);
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
