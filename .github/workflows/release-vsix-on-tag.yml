@@ -85,7 +85,7 @@ jobs:
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opencode-vscode-${{ steps.version.outputs.version }}-vsix
+          name: OpenCode-in-VSCode-${{ steps.version.outputs.version }}-vsix
           path: ${{ steps.package.outputs.vsix_path }}
           if-no-files-found: error
           retention-days: 30

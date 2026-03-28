@@ -1,6 +1,6 @@
-# OpenCode for VSCode
+# OpenCode-in-VSCode
 
-A Visual Studio Code extension that brings [OpenCode](https://github.com/nicepkg/opencode) AI coding assistant into VS Code as native chat, session, status, and settings experiences. It manages or connects to `opencode serve`, syncs against the global event stream, and keeps the extension host and webview UI aligned through typed messages.
+OpenCode-in-VSCode is a Visual Studio Code extension that brings [OpenCode](https://github.com/anomalyco/opencode) AI coding assistant into VS Code as native chat, session, status, and settings experiences. It manages or connects to `opencode serve`, syncs against the global event stream, and keeps the extension host and webview UI aligned through typed messages.
 
 > This is not built by the OpenCode team and is not affiliated with OpenCode in any way.
 
@@ -20,7 +20,7 @@ A Visual Studio Code extension that brings [OpenCode](https://github.com/nicepkg
 - **Slash commands** — `/` command system with server-side command discovery and caching
 - **Agent selector** — Switch between agent variants (default/fast/deep thinking modes)
 - **Virtualized scrolling** — @tanstack/react-virtual for long message lists (40-message threshold)
-- **Editor panel** — Open chat in a full editor tab via `SessionEditorPanelProvider`
+- **Editor panel** — Open chat in a full editor tab via [`SessionEditorPanelProvider`](./src/providers/sessionEditorPanelProvider.ts)
 - **Reasoning traces** — Elapsed time display with spinner for streaming reasoning blocks
 - **Theme-aware** — Anti-flash theme switching, light/dark compatible with CSS variable theming
 
@@ -60,7 +60,7 @@ npm ci --prefix webview-ui
 | `npm run typecheck` | Type-check both extension and webview code |
 | `npm run package` | Package into `.vsix` |
 
-Root build helpers live in `scripts/` (`esbuild.mjs` for extension bundling/watch mode, `generate-icon.js` for icon asset generation).
+Root build helpers live in [`scripts/`](./scripts/) ([`esbuild.mjs`](./scripts/esbuild.mjs) for extension bundling/watch mode, [`generate-icon.js`](./scripts/generate-icon.js) for icon asset generation).
 
 To debug locally:
 
@@ -85,9 +85,9 @@ Extension Host (src/)           Webview (webview-ui/src/)
 
 ### Communication Patterns
 
-1. **Extension ↔ OpenCode Server** — REST API + SSE via `@opencode-ai/sdk`
+1. **Extension ↔ OpenCode Server** — REST API + SSE via [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk)
 2. **Extension ↔ Webview** — Typed bidirectional `postMessage`
-3. **Internal** — Event-driven via typed `EventBus`
+3. **Internal** — Event-driven via [`EventBus`](./src/services/eventBus.ts)
 
 ### Directory Structure
 
@@ -160,7 +160,7 @@ webview-ui/src/
 
 ### Type Safety
 
-- All Extension ↔ Webview messages typed in `src/types/messages.ts`
+- All Extension ↔ Webview messages typed in [`src/types/messages.ts`](./src/types/messages.ts)
 - All API response types have TypeScript interfaces
 - Discriminated unions for message/event types
 - No `any` types except at API boundaries with proper validation
@@ -169,21 +169,21 @@ webview-ui/src/
 
 ### Adding a New Command
 
-1. Define command ID in `package.json` → `contributes.commands`
-2. Create handler in `src/commands/`
-3. Register in `src/commands/index.ts`
+1. Define command ID in [`package.json`](./package.json) → `contributes.commands`
+2. Create handler in [`src/commands/`](./src/commands/)
+3. Register in [`src/commands/index.ts`](./src/commands/index.ts)
 4. Add keyboard shortcut if appropriate
 
 ### Adding a New Webview Message Type
 
-1. Define type in `src/types/messages.ts`
-2. Add handler in the relevant provider (`src/providers/`)
+1. Define type in [`src/types/messages.ts`](./src/types/messages.ts)
+2. Add handler in the relevant provider ([`src/providers/`](./src/providers/))
 3. Add sender in the webview component
 4. Test bidirectional communication
 
 ### Adding a New Setting
 
-1. Add to `package.json` → `contributes.configuration`
+1. Add to [`package.json`](./package.json) → `contributes.configuration`
 2. Add to settings webview UI
 3. Add change handler if needed
 
@@ -238,7 +238,7 @@ webview-ui/src/
 
 ## Release / CI
 
-The workflow in `.github/workflows/release-vsix-on-tag.yml`:
+The workflow in [`.github/workflows/release-vsix-on-tag.yml`](./.github/workflows/release-vsix-on-tag.yml):
 
 - Pushes to `main` → install, build, typecheck only
 - Tags matching `v*` / `V*` → also package into VSIX and upload as workflow artifact
@@ -250,26 +250,26 @@ The `docs/research/` directory contains accumulated research notes:
 
 | File | Content |
 |------|---------|
-| `opencode-api-reference.md` | REST API endpoints, SSE events, TypeScript types, SDK usage, message fetching caveats |
-| `desktop-features-comparison.md` | Desktop vs Extension feature matrix, Desktop UI architecture (SolidJS, part registry, throttled rendering) |
-| `vscode-extension-api.md` | WebviewView API, TreeView, Configuration, postMessage patterns |
-| `feature-gap-analysis.md` | Feature gap analysis and implementation roadmap |
-| `opencode-server-official.md` | Server internals analysis |
-| `openchamber-feature-reference.md` | OpenChamber feature/reference notes for extension ideas |
-| `reference-repositories.md` | Local `vendor/` reference repositories, licenses, and recommended lookup order |
-| `opencode-tui-tips.md` | TUI interaction patterns reference |
-| `vscode-settings-ui-research.md` | Settings UI implementation research |
+| [`opencode-api-reference.md`](./docs/research/opencode-api-reference.md) | REST API endpoints, SSE events, TypeScript types, SDK usage, message fetching caveats |
+| [`desktop-features-comparison.md`](./docs/research/desktop-features-comparison.md) | Desktop vs Extension feature matrix, Desktop UI architecture (SolidJS, part registry, throttled rendering) |
+| [`vscode-extension-api.md`](./docs/research/vscode-extension-api.md) | WebviewView API, TreeView, Configuration, postMessage patterns |
+| [`feature-gap-analysis.md`](./docs/research/feature-gap-analysis.md) | Feature gap analysis and implementation roadmap |
+| [`opencode-server-official.md`](./docs/research/opencode-server-official.md) | Server internals analysis |
+| [`openchamber-feature-reference.md`](./docs/research/openchamber-feature-reference.md) | OpenChamber feature/reference notes for extension ideas |
+| [`reference-repositories.md`](./docs/research/reference-repositories.md) | Local `vendor/` reference repositories, licenses, and recommended lookup order |
+| [`opencode-tui-tips.md`](./docs/research/opencode-tui-tips.md) | TUI interaction patterns reference |
+| [`vscode-settings-ui-research.md`](./docs/research/vscode-settings-ui-research.md) | Settings UI implementation research |
 
-## Reference Repositories
+## 参考的仓库
 
-The following local `vendor/` repositories are available for read-only comparison during development:
+The following repositories are used for read-only comparison during development:
 
-| Directory | Content | License | Notes |
-|-----------|---------|---------|-------|
-| `vendor/opencode-official/` | Official OpenCode source | MIT | First stop for official behavior |
-| `vendor/OpenChamber/` | OpenChamber monorepo | MIT | Useful for settings, session UX, terminal, and VS Code ideas |
-| `vendor/continue/` | Continue extension source | Apache-2.0 | Useful for extension/webview patterns |
-| `vendor/OpenCodeUI/` | Community OpenCode WebUI | GPL-3.0 | Reference only — do not copy code |
+| Repository | Local directory | License | Notes |
+|------------|-----------------|---------|-------|
+| [`anomalyco/opencode`](https://github.com/anomalyco/opencode) | [`vendor/opencode-official/`](./vendor/opencode-official/) | MIT | First stop for official behavior |
+| [`openchamber/openchamber`](https://github.com/openchamber/openchamber) | [`vendor/OpenChamber/`](./vendor/OpenChamber/) | MIT | Useful for settings, session UX, terminal, and VS Code ideas |
+| [`continuedev/continue`](https://github.com/continuedev/continue) | [`vendor/continue/`](./vendor/continue/) | Apache-2.0 | Useful for extension/webview patterns |
+| [`lehhair/OpenCodeUI`](https://github.com/lehhair/OpenCodeUI) | [`vendor/OpenCodeUI/`](./vendor/OpenCodeUI/) | GPL-3.0 | Reference only — do not copy code |
 
 ## Git Workflow
 

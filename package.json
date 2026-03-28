@@ -1,13 +1,13 @@
 {
   "name": "opencode-vscode",
-  "displayName": "OpenCode for VSCode",
+  "displayName": "OpenCode-in-VSCode",
   "description": "Full-featured OpenCode AI coding assistant integration for Visual Studio Code",
   "version": "1.0.1",
   "publisher": "opencode-community",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/opencode-community/opencode-vscode"
+    "url": "https://github.com/Here-is-Daiyu/OpenCode-in-VSCode.git"
   },
   "engines": {
     "vscode": "^1.94.0"

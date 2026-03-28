@@ -43,7 +43,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // 1. Create Logger
   logger = new Logger('OpenCode');
   context.subscriptions.push(logger);
-  logger.info('OpenCode for VSCode is activating…');
+  logger.info('OpenCode-in-VSCode is activating…');
 
   // 2. Create EventBus
   eventBus = new EventBus();
@@ -189,7 +189,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
-  logger.info('OpenCode for VSCode activated.');
+  logger.info('OpenCode-in-VSCode activated.');
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +197,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 // ---------------------------------------------------------------------------
 
 export async function deactivate(): Promise<void> {
-  logger?.info('OpenCode for VSCode is deactivating…');
+  logger?.info('OpenCode-in-VSCode is deactivating…');
 
   // Cancel SSE stream
   if (sseAbort) {
@@ -220,7 +220,7 @@ export async function deactivate(): Promise<void> {
   editorPanelProviderRef = undefined;
 
   // ServerManager and Logger are disposed via context.subscriptions
-  logger?.info('OpenCode for VSCode deactivated.');
+  logger?.info('OpenCode-in-VSCode deactivated.');
 }
 
 // ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 # OpenChamber 功能借鉴参考
 
 > 源仓库: <https://github.com/openchamber/openchamber>
-> 用途: 为 opencode-vscode 扩展开发提供功能实现参考
+> 用途: 为 OpenCode-in-VSCode 扩展开发提供功能实现参考
 > 注意: MIT 协议，可借鉴思路；代码仅供阅读理解，需独立实现
 
 ---
