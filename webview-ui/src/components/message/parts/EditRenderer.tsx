@@ -30,18 +30,25 @@ function shortenPath(path: string, max: number): string {
 
 interface EditInfo {
   filePath: string;
-  oldString: string;
-  newString: string;
+  oldString?: string;
+  newString?: string;
+  hasOldString: boolean;
+  hasNewString: boolean;
   isWrite: boolean;
 }
 
 function extractEditInfo(tool: string, input: unknown): EditInfo {
   const record = toRecord(input);
   const isWrite = tool.toLowerCase() === 'write';
+  const oldString = typeof record.oldString === 'string' ? record.oldString : undefined;
+  const newString = typeof record.newString === 'string' ? record.newString : undefined;
+
   return {
     filePath: typeof record.filePath === 'string' ? record.filePath : '',
-    oldString: typeof record.oldString === 'string' ? record.oldString : '',
-    newString: typeof record.newString === 'string' ? record.newString : '',
+    oldString,
+    newString,
+    hasOldString: oldString !== undefined,
+    hasNewString: newString !== undefined,
     isWrite,
   };
 }
@@ -107,7 +114,7 @@ export const EditRenderer = React.memo(function EditRenderer({
   const output = stringifyValue(part.state?.output);
   const error = stringifyValue(part.state?.error);
 
-  const { filePath, oldString, newString, isWrite } = useMemo(
+  const { filePath, oldString, newString, hasOldString, hasNewString, isWrite } = useMemo(
     () => extractEditInfo(tool, input),
     [tool, input],
   );
@@ -149,10 +156,26 @@ export const EditRenderer = React.memo(function EditRenderer({
     [filePath],
   );
 
+  const handleDiffClick = useCallback(() => {
+    if (!filePath || oldString === undefined || newString === undefined) {
+      return;
+    }
+
+    postMessage({
+      type: 'diff:show',
+      data: {
+        path: filePath,
+        original: oldString,
+        modified: newString,
+      },
+    });
+  }, [filePath, newString, oldString]);
+
   const baseName = filePath ? getBaseName(filePath) : '';
   const displayPath = filePath ? shortenPath(filePath, 60) : '';
   const toolLabel = isWrite ? 'WRITE' : 'EDIT';
-  const hasDiff = !isWrite && (oldString || newString);
+  const hasPreview = !isWrite && (hasOldString || hasNewString);
+  const canShowDiff = !isWrite && !!filePath && hasOldString && hasNewString && status === 'completed' && !hasError;
 
   return (
     <div className={`msg-edit ${grouped ? 'msg-edit--grouped' : ''}`}>
@@ -189,8 +212,19 @@ export const EditRenderer = React.memo(function EditRenderer({
         <div className="msg-edit__created">Created {baseName}</div>
       )}
 
+      {canShowDiff && (
+        <button
+          className="msg-edit__action"
+          onClick={handleDiffClick}
+          title={`Open diff for ${filePath}`}
+          type="button"
+        >
+          View diff in VS Code
+        </button>
+      )}
+
       {/* Edit: mini diff view */}
-      {hasDiff && <MiniDiff oldStr={oldString} newStr={newString} />}
+      {hasPreview && <MiniDiff oldStr={oldString ?? ''} newStr={newString ?? ''} />}
 
       {/* Error display (always visible) */}
       {hasError && (

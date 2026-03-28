@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import type { ServerManager } from '../services/serverManager';
+import type { DiffService } from '../services/diffService';
 import type { OpenCodeClient } from '../services/openCodeClient';
 import type { EventBus } from '../services/eventBus';
 import type { Logger } from '../services/logger';
@@ -28,6 +29,7 @@ export interface CommandContext {
   editorPanelProvider: SessionEditorPanelProvider;
   statusBarManager: StatusBarManager;
   sessionManager: SessionManager;
+  diffService: DiffService;
   /** Track the currently active session ID. */
   activeSessionId: string | undefined;
 }
@@ -211,6 +213,26 @@ async function resolveLocalConfigFile(pathInfo: { directory: string; worktree: s
     new TextEncoder().encode(DEFAULT_PROJECT_CONFIG_TEMPLATE),
   );
   return file;
+}
+
+function getDirectDiffArgs(
+  filePath: unknown,
+  original: unknown,
+  modified: unknown,
+): { path: string; original: string; modified: string } | undefined {
+  if (typeof filePath !== 'string' || filePath.trim() === '') {
+    return undefined;
+  }
+
+  if (typeof original !== 'string' || typeof modified !== 'string') {
+    return undefined;
+  }
+
+  return {
+    path: filePath,
+    original,
+    modified,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -707,35 +729,24 @@ function openTerminal(ctx: CommandContext): void {
   ctx.logger.debug('Opened OpenCode terminal');
 }
 
-async function showDiff(ctx: CommandContext): Promise<void> {
-  const sessionId = requireSession(ctx);
-  if (!sessionId) { return; }
-
+async function showDiff(
+  ctx: CommandContext,
+  filePath?: unknown,
+  original?: unknown,
+  modified?: unknown,
+): Promise<void> {
   try {
-    const diffs = await ctx.client.getSessionDiff(sessionId);
-
-    if (!diffs || diffs.length === 0) {
-      vscode.window.showInformationMessage('No file changes in the current session.');
+    const direct = getDirectDiffArgs(filePath, original, modified);
+    if (direct) {
+      await ctx.diffService.showTextDiff(direct.path, direct.original, direct.modified);
       return;
     }
 
-    const items = diffs.map(d => ({
-      label: `$(${d.status === 'added' ? 'diff-added' : d.status === 'deleted' ? 'diff-removed' : 'diff-modified'}) ${d.path}`,
-      description: `+${d.additions} -${d.deletions}`,
-      _diff: d,
-    }));
+    const sessionId = requireSession(ctx);
+    if (!sessionId) { return; }
 
-    const pick = await vscode.window.showQuickPick(items, {
-      placeHolder: 'Select a file to view diff',
-    });
-
-    if (pick && pick._diff.diff) {
-      const doc = await vscode.workspace.openTextDocument({
-        content: pick._diff.diff,
-        language: 'diff',
-      });
-      await vscode.window.showTextDocument(doc);
-    }
+    const diffs = await ctx.client.getSessionDiff(sessionId);
+    await ctx.diffService.showSessionDiffs(diffs ?? []);
   } catch (err) {
     ctx.logger.error('Failed to show diff', err);
     vscode.window.showErrorMessage(`Failed to show diff: ${errorMessage(err)}`);
@@ -997,7 +1008,7 @@ export function registerCommands(
     ['opencode.explainCode', () => explainCode(ctx)],
     ['opencode.improveCode', () => improveCode(ctx)],
     ['opencode.openTerminal', () => openTerminal(ctx)],
-    ['opencode.showDiff', () => showDiff(ctx)],
+    ['opencode.showDiff', (filePath?: unknown, original?: unknown, modified?: unknown) => showDiff(ctx, filePath, original, modified)],
     ['opencode.focusChat', () => focusChat(ctx)],
     ['opencode.compactSession', () => compactSession(ctx)],
     ['opencode.openConfigFile', () => openConfigFile(ctx)],

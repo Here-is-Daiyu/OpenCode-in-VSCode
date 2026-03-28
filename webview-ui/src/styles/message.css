@@ -2026,6 +2026,27 @@
   font-style: italic;
 }
 
+.msg-edit__action {
+  align-self: flex-start;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-primary);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.msg-edit__action:hover {
+  text-decoration: underline;
+}
+
+.msg-edit__action:focus-visible {
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
 .msg-edit__diff {
   display: flex;
   flex-direction: column;

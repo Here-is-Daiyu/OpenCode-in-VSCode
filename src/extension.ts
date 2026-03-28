@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { ServerManager, OpenCodeClient, EventBus, Logger } from './services';
+import { ServerManager, OpenCodeClient, EventBus, Logger, DiffService } from './services';
 import type { ServerEvent } from './services/openCodeClient';
 import {
   ChatViewProvider,
@@ -102,6 +102,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   statusBarManager = new StatusBarManager();
   context.subscriptions.push(statusBarManager);
 
+  const diffService = new DiffService(context);
+  context.subscriptions.push(diffService);
+
   // 7. Create session manager (coordinates session switching + sync)
   const sessionManager = new SessionManager(client, eventBus, sessionProvider, chatProvider, logger);
   context.subscriptions.push(sessionManager);
@@ -119,6 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     editorPanelProvider,
     statusBarManager,
     sessionManager,
+    diffService,
     activeSessionId: undefined,
   };
   registerCommands(context, cmdCtx);
