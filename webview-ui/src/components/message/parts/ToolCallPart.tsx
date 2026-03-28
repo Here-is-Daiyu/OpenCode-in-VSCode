@@ -124,6 +124,16 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
   const name = tool.toLowerCase();
   const value = toRecord(input);
 
+  if (name === 'task') {
+    if (typeof value.description === 'string' && value.description.trim()) {
+      return { text: value.description };
+    }
+
+    if (typeof value.subagent_type === 'string' && value.subagent_type.trim()) {
+      return { text: value.subagent_type };
+    }
+  }
+
   if (name === 'read' && value.filePath) {
     const fp = String(value.filePath);
     const short = fp.length > 50 ? '...' + fp.slice(-47) : fp;
@@ -254,6 +264,12 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
 
   const toggle = useCallback(() => setExpanded((v) => !v), []);
   const summaryInfo = getArgsSummaryInfo(tool, input);
+  const childSessionId = tool === 'task'
+    ? (() => {
+      const value = toRecord(part.state?.metadata).sessionId;
+      return typeof value === 'string' && value ? value : undefined;
+    })()
+    : undefined;
 
   const handleFileClick = useCallback((e: React.MouseEvent) => {
     if (summaryInfo.filePath) {
@@ -264,6 +280,17 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
       });
     }
   }, [summaryInfo.filePath, summaryInfo.line]);
+
+  const handleSessionClick = useCallback(() => {
+    if (!childSessionId) {
+      return;
+    }
+
+    postMessage({
+      type: 'session:switch',
+      data: { id: childSessionId },
+    });
+  }, [childSessionId]);
 
   const hasContent = output.trim() || error.trim();
   const toolDisplayName = getToolDisplayName(tool);
@@ -300,6 +327,20 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
           )
         )}
       </div>
+
+      {childSessionId && (
+        <button
+          className="msg-tool-compact__session-link"
+          onClick={handleSessionClick}
+          title={`Open subagent session ${childSessionId}`}
+          type="button"
+        >
+          Open subagent session
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+            <path d="M6 3.5 10.5 8 6 12.5" />
+          </svg>
+        </button>
+      )}
 
       {/* Error display (inline, always visible) */}
       {error.trim() && (

@@ -46,7 +46,7 @@
 - [x] **10. 默认进入最新 session**
   如果当前目录下有历史 session，则默认进入最新的 session，而不是每次都新建。
 
-- [ ] **11. 支持点击 task 事件进入 subagent 会话**
+- [x] **11. 支持点击 task 事件进入 subagent 会话**
   点击 task 事件可进入 subagent 会话，同时在进入 subagent 后添加返回上级的按键。查看 opencode 的实现方式。
 
 - [ ] **12. Task 事件呈现优化**
