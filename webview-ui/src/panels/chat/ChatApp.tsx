@@ -141,7 +141,7 @@ export function ChatApp() {
   // Store state
   const connected = useChatStore((s) => s.connected);
   const currentSession = useChatStore((s) => s.currentSession);
-  const rawMessages = useChatStore((s) => s.messages);
+  const _rawMessages = useChatStore((s) => s.messages);
   const visibleMessages = useChatStore((s) => s.visibleMessages);
   const sessionStatus = useChatStore((s) => s.sessionStatus);
   const isStreaming = useChatStore((s) => s.isStreaming);
@@ -255,7 +255,7 @@ export function ChatApp() {
   );
 
   const prependSessionHistory = useCallback(
-    (sessionID: string, olderMessages: typeof rawMessages) => {
+    (sessionID: string, olderMessages: typeof _rawMessages) => {
       if (useChatStore.getState().currentSession?.id !== sessionID) {
         return;
       }
@@ -605,6 +605,14 @@ export function ChatApp() {
     postMessage({ type: 'session:create' });
   }, []);
 
+  const handleParentSession = useCallback(() => {
+    if (!currentSession?.parentID) {
+      return;
+    }
+
+    postMessage({ type: 'session:switch', data: { id: currentSession.parentID } });
+  }, [currentSession?.parentID]);
+
   const dismissError = useCallback(() => setError(null), []);
 
   // ── Status display helpers ────────────────────────────────────────────
@@ -657,6 +665,19 @@ export function ChatApp() {
       {/* Header */}
       <div className="chat-header">
         <div className="chat-header__left">
+          {currentSession?.parentID && (
+            <button
+              className="chat-header__parent-btn"
+              onClick={handleParentSession}
+              title="Back to parent session"
+              type="button"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                <path d="M9.5 3.5 5 8l4.5 4.5" />
+              </svg>
+              <span>Back</span>
+            </button>
+          )}
           <span className="chat-header__status">
             <span className={`chat-header__status-dot ${getStatusDotClass()}`} />
           </span>

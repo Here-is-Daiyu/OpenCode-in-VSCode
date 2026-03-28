@@ -194,6 +194,34 @@ textarea {
   white-space: nowrap;
 }
 
+.chat-header__parent-btn {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-weak);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.chat-header__parent-btn:hover {
+  background: var(--button-ghost-hover);
+  color: var(--text-strong);
+}
+
+.chat-header__parent-btn svg {
+  flex-shrink: 0;
+}
+
 .chat-header__new-btn {
   width: 28px;
   height: 28px;
@@ -664,6 +692,7 @@ textarea {
 .permission-card__details summary:focus-visible,
 .chat-scroll-bottom:focus-visible,
 .chat-error__dismiss:focus-visible,
+.chat-header__parent-btn:focus-visible,
 .chat-header__new-btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--border-weak-selected);
