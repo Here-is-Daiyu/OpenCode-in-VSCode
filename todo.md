@@ -60,7 +60,7 @@
   - [x] 读取文件：点击打开对应行
   - [x] `webfetch`：点击链接访问
 
-- [ ] **14. Markdown 链接渲染支持点击访问**
+- [x] **14. Markdown 链接渲染支持点击访问**
   对话中的 markdown 链接可以直接点击跳转。
 
 - [ ] **15. 宽屏 Last API Response 面板**

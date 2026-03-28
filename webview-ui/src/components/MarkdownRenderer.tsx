@@ -9,6 +9,9 @@ interface MarkdownRendererProps {
   cacheKey?: string;
 }
 
+const HTTP_URL_PATTERN = /^https?:\/\//i;
+const ABSOLUTE_FILE_PATH_PATTERN = /^[a-zA-Z]:[/\\]/;
+
 function getLanguage(block: HTMLPreElement): string {
   const label = block.dataset.language?.trim();
   if (label) {
@@ -194,14 +197,22 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
       return;
     }
 
-    const link = target.closest<HTMLAnchorElement>('a');
+    const link = target.closest<HTMLAnchorElement>('a[href]');
     const href = link?.getAttribute('href')?.trim();
-    if (!href) {
+    if (!link || !href) {
       return;
     }
 
-    if (href.startsWith('/') || /^[a-zA-Z]:[/\\]/.test(href)) {
+    if (link.classList.contains('external-link') || HTTP_URL_PATTERN.test(href)) {
       event.preventDefault();
+      event.stopPropagation();
+      postMessage({ type: 'url:open', data: { url: href } });
+      return;
+    }
+
+    if (href.startsWith('/') || ABSOLUTE_FILE_PATH_PATTERN.test(href)) {
+      event.preventDefault();
+      event.stopPropagation();
       postMessage({ type: 'file:open', data: { path: href } });
     }
   }, []);
