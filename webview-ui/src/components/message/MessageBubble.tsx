@@ -45,7 +45,7 @@ export const MessageBubble = React.memo(function MessageBubble({
   const isStreaming = useChatStore((s) => s.isStreaming);
 
   // Determine if this is the latest assistant message (for streaming indicator)
-  const messages = useChatStore((s) => s.messages);
+  const messages = useChatStore((s) => s.visibleMessages);
   const isLatestAssistant =
     !isUser &&
     messages.length > 0 &&

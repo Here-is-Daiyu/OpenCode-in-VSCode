@@ -217,6 +217,37 @@
 - `pasteImage()` numbers markers from the current count of image file parts (`[Image 1]`, `[Image 2]`, ...). Because the part/extmark link is positional, the important behavior is stable marker-to-part identity within the current prompt, not aggressive live renumbering.
 - Implementation takeaway for textarea-based UIs: keep stable marker metadata per attachment, remove attachments when their marker disappears from the input, and avoid silently reordering or renumbering markers while the user edits.
 
+## Prompt Input Internals — `@` File References
+
+> Sources:
+> - `vendor/opencode-official/packages/app/src/components/prompt-input.tsx`
+> - `vendor/opencode-official/packages/app/src/context/prompt.tsx`
+> - `vendor/opencode-official/packages/app/src/components/prompt-input/build-request-parts.ts`
+>
+> Last synced: 2026-03-28
+
+- 官方 `@` 文件引用不是额外的服务端 API；它在客户端输入层把选中的文件保存为结构化 prompt part（`type: "file"`）。
+- `handleAtSelect()` 会把选中的文件记为类似 `{ type: "file", path, content: "@" + path }` 的 prompt item，而不是仅仅把 `@filename` 当普通文本发送。
+- 最终请求阶段，官方会把这些 file attachment 转成真正的 prompt `file` part：`mime: "text/plain"`，`filename` 为文件名，`url` 为 `file://...` 本地文件 URL。
+- 当前 VS Code 扩展的近似实现：Webview textarea 仍显示 `@relative/or/absolute/path` 文本，但会在发送时把已选择且仍存在于输入框中的 mention 路径单独随 `chat:send` 传给 extension。
+- Extension 发送前会把这些路径解析成真实文件、去重并做存在性检查；有效引用会追加为 `type: 'file'` / `mime: 'text/plain'` / `url: 'file://...'` 的 prompt parts，无效引用会跳过，不阻塞整条消息。
+
+## Prompt Input Internals — `!` Shell Commands
+
+> Sources:
+> - `vendor/opencode-official/packages/opencode/src/cli/cmd/tui/component/prompt/index.tsx`
+> - `vendor/opencode-official/packages/opencode/src/server/routes/session.ts`
+> - `vendor/opencode-official/packages/opencode/src/session/prompt.ts`
+>
+> Last synced: 2026-03-28
+
+- 官方 TUI 在输入层把前导 `!` 识别为 shell mode；提交时不会把 `!` 当普通聊天文本发到 `/message` 或 `/prompt_async`。
+- 真正执行路径是服务端 `POST /session/:id/shell`，请求体核心字段为 `{ agent, model?, command }`。
+- 服务端会先写入一个用户消息，但其文本 part 标记为 `synthetic: true`；真正展示给用户的主内容通常是随后 assistant message 上的 `tool` part（`tool: "bash"`）。
+- shell 运行中的 stdout/stderr 会持续写回该 `tool` part 的 metadata/output，并通过普通 session SSE 更新流回前端；因此现有 tool part 渲染链路可以直接复用。
+- 当前 VS Code 扩展的近似实现策略：Webview 允许直接输入 `!ls -la` 这种文本；extension 在发送时识别前导 `!`、去掉前缀、必要时先创建 session，再调用 `/session/:id/shell`。普通消息仍走既有 `chat:send -> prompt_async` 流程。
+- 为尽量贴近官方 shell mode，这个近似实现不会把 `!` 指令再转成本地 `child_process` 执行；同时 shell 路径会忽略图片附件和 `@` 文件引用，只依赖服务端返回的会话/tool 更新。
+
 ---
 
 ## Raw Tips List (Original Order)

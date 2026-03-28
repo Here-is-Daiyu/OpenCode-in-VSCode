@@ -11,6 +11,8 @@ nul
 *.txt
 !LICENSE
 docs/cleanup-backups/
+docs/新建文件夹/
 vendor/opencode-official/
 vendor/OpenCodeUI/
 vendor/continue/
+vendor/OpenChamber/

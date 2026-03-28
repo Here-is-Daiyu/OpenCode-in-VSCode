@@ -56,7 +56,7 @@ function computeTotal(tokens: TokenUsage): number {
 }
 
 export function TokenUsageBar() {
-  const messages = useChatStore((s) => s.messages);
+  const messages = useChatStore((s) => s.visibleMessages);
   const getCurrentModel = useModelStore((s) => s.getCurrentModel);
   const [tooltipVisible, setTooltipVisible] = useState(false);
 

@@ -23,9 +23,10 @@ A running opencode instance is available at `http://127.0.0.1:23452`:
 |-----------|---------|---------|-------|
 | `vendor/opencode-official/` | OpenCode CLI/Server official source | MIT | Freely reference for API behavior investigation |
 | `vendor/continue/` | Continue VS Code extension + GUI source | Apache-2.0 | Freely reference command/keybinding/webview integration patterns; still prefer borrowing ideas over large code copies |
+| `vendor/OpenChamber/` | OpenChamber monorepo (web / desktop / VS Code runtimes) | MIT | Reference session UX, settings, terminal, and editor integration patterns; still reimplement in this codebase |
 | `vendor/OpenCodeUI/` | Community OpenCode Desktop WebUI | **GPL-3.0** | **Read for understanding only — do NOT copy/paste any source code** (GPL virality is incompatible with this project's MIT license) |
 
-All three directories are `.gitignore`d and not committed to this repository.
+All vendor reference directories are `.gitignore`d and not committed to this repository.
 
 ### Research Documentation (docs/)
 
@@ -39,6 +40,7 @@ All three directories are `.gitignore`d and not committed to this repository.
 | `feature-gap-analysis.md` | Feature gap analysis, implementation roadmap |
 | `opencode-server-official.md` | opencode server internals analysis |
 | `openchamber-feature-reference.md` | OpenChamber feature/reference notes for extension ideas |
+| `reference-repositories.md` | Local `vendor/` reference repositories, licenses, and when to consult each one |
 | `opencode-tui-tips.md` | TUI interaction patterns reference |
 | `vscode-settings-ui-research.md` | Settings UI implementation research |
 
@@ -98,6 +100,7 @@ webview-ui/src/
 ### Git
 
 - **Create a new branch before any changes** (`feature/<name>` / `fix/<name>`) — never modify `main` directly.
+- **Every task must use its own git branch and be merged promptly after completion** to keep the repository clean and make issue tracking easier.
 - Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, etc.
 - When multiple subagents work sequentially, each must use a different branch to avoid workspace pollution.
 

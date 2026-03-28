@@ -259,8 +259,20 @@ The `docs/research/` directory contains accumulated research notes:
 | `feature-gap-analysis.md` | Feature gap analysis and implementation roadmap |
 | `opencode-server-official.md` | Server internals analysis |
 | `openchamber-feature-reference.md` | OpenChamber feature/reference notes for extension ideas |
+| `reference-repositories.md` | Local `vendor/` reference repositories, licenses, and recommended lookup order |
 | `opencode-tui-tips.md` | TUI interaction patterns reference |
 | `vscode-settings-ui-research.md` | Settings UI implementation research |
+
+## Reference Repositories
+
+The following local `vendor/` repositories are available for read-only comparison during development:
+
+| Directory | Content | License | Notes |
+|-----------|---------|---------|-------|
+| `vendor/opencode-official/` | Official OpenCode source | MIT | First stop for official behavior |
+| `vendor/OpenChamber/` | OpenChamber monorepo | MIT | Useful for settings, session UX, terminal, and VS Code ideas |
+| `vendor/continue/` | Continue extension source | Apache-2.0 | Useful for extension/webview patterns |
+| `vendor/OpenCodeUI/` | Community OpenCode WebUI | GPL-3.0 | Reference only — do not copy code |
 
 ## Git Workflow
 

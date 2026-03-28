@@ -87,10 +87,15 @@ export class SessionManager implements vscode.Disposable {
         this.sessions.set(id, session);
       }
 
+      const hasRevert = Boolean(session.revert?.messageID);
+
       // Fetch only the newest messages first so the webview can paint quickly.
+      // Reverted sessions are the exception: the visible conversation is the
+      // prefix before `session.revert.messageID`, so we need the full message
+      // list up front to avoid briefly rendering reverted turns.
       const messages: MessageWithParts[] = await this.client.listMessages(
         id,
-        INITIAL_SESSION_MESSAGE_LIMIT,
+        hasRevert ? undefined : INITIAL_SESSION_MESSAGE_LIMIT,
       );
 
       // Prevent stale loads from overwriting the current session
@@ -106,7 +111,9 @@ export class SessionManager implements vscode.Disposable {
         data: { session, messages },
       });
 
-      void this.hydrateOlderMessages(id, messages, nonce);
+      if (!hasRevert) {
+        void this.hydrateOlderMessages(id, messages, nonce);
+      }
     } catch (err) {
       if (!this.isCurrentSessionLoad(id, nonce)) {
         // User switched sessions while this request was in-flight.

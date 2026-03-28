@@ -125,6 +125,25 @@ function createOptimisticMessageParts(
   return parts;
 }
 
+function createOptimisticMessage(
+  messageID: string,
+  sessionID: string,
+  text: string,
+  images?: string[],
+): MessageWithParts {
+  return {
+    info: {
+      id: messageID,
+      sessionID,
+      role: 'user' as const,
+      time: { created: Math.floor(Date.now() / 1000) },
+      agent: '',
+      model: { providerID: '', modelID: '' },
+    },
+    parts: createOptimisticMessageParts(messageID, text, images),
+  } satisfies MessageWithParts;
+}
+
 function appendStringField(existing: unknown, delta: string): string {
   return `${typeof existing === 'string' ? existing : ''}${delta}`;
 }
@@ -318,6 +337,180 @@ function getMessageParts(message: MessageWithParts): Part[] {
   return Array.isArray(message.parts) ? message.parts : [];
 }
 
+function getRevertMessageID(session?: Session): string | undefined {
+  return session?.revert?.messageID;
+}
+
+function isUserMessage(message: MessageWithParts): boolean {
+  return message.info.role === 'user';
+}
+
+function getUserMessages(messages: MessageWithParts[]): MessageWithParts[] {
+  return messages.filter(isUserMessage);
+}
+
+function getImageMarker(markerNumber: number): string {
+  return `[Image ${markerNumber}]`;
+}
+
+function ensureImageMarkers(text: string, images: ChatImageAttachment[]): string {
+  if (images.length === 0) {
+    return text;
+  }
+
+  const missingMarkers = images
+    .map((image) => image.marker)
+    .filter((marker) => !text.includes(marker));
+
+  if (missingMarkers.length === 0) {
+    return text;
+  }
+
+  return text ? `${text} ${missingMarkers.join(' ')}` : missingMarkers.join(' ');
+}
+
+function createDraftImageAttachment(part: FilePart, index: number): ChatImageAttachment | undefined {
+  const mime = (part.mime ?? part.mediaType ?? '').toLowerCase();
+  const dataUrl = typeof part.url === 'string' ? part.url.trim() : '';
+
+  if (!mime.startsWith('image/') || !dataUrl) {
+    return undefined;
+  }
+
+  const markerNumber = index + 1;
+  return {
+    id: `revert_${part.id}`,
+    marker: getImageMarker(markerNumber),
+    markerNumber,
+    dataUrl,
+  } satisfies ChatImageAttachment;
+}
+
+function getRevertDraft(message: MessageWithParts): {
+  messageID: string;
+  text: string;
+  images: ChatImageAttachment[];
+} {
+  const text = message.parts
+    .filter((part): part is TextPart => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n')
+    .trim();
+  const images = message.parts
+    .filter((part): part is FilePart => part.type === 'file')
+    .map((part, index) => createDraftImageAttachment(part, index))
+    .filter((image): image is ChatImageAttachment => Boolean(image));
+
+  return {
+    messageID: message.info.id,
+    text: ensureImageMarkers(text, images),
+    images,
+  };
+}
+
+export function getVisibleMessages(messages: MessageWithParts[], session?: Session): MessageWithParts[] {
+  const revertMessageID = getRevertMessageID(session);
+  if (!revertMessageID) {
+    return messages;
+  }
+
+  const revertIndex = messages.findIndex((message) => message.info.id === revertMessageID);
+  return revertIndex >= 0 ? messages.slice(0, revertIndex) : [];
+}
+
+export function getUndoTargetMessage(
+  messages: MessageWithParts[],
+  session?: Session,
+): MessageWithParts | undefined {
+  const userMessages = getUserMessages(messages);
+  if (userMessages.length === 0) {
+    return undefined;
+  }
+
+  const revertMessageID = getRevertMessageID(session);
+  if (!revertMessageID) {
+    return userMessages[userMessages.length - 1];
+  }
+
+  const revertIndex = userMessages.findIndex((message) => message.info.id === revertMessageID);
+  return revertIndex > 0 ? userMessages[revertIndex - 1] : undefined;
+}
+
+export function getRedoTargetMessage(
+  messages: MessageWithParts[],
+  session?: Session,
+): MessageWithParts | undefined {
+  const revertMessageID = getRevertMessageID(session);
+  if (!revertMessageID) {
+    return undefined;
+  }
+
+  const userMessages = getUserMessages(messages);
+  const revertIndex = userMessages.findIndex((message) => message.info.id === revertMessageID);
+  return revertIndex >= 0 && revertIndex < userMessages.length - 1
+    ? userMessages[revertIndex + 1]
+    : undefined;
+}
+
+export function countRevertedUserMessages(messages: MessageWithParts[], session?: Session): number {
+  const revertMessageID = getRevertMessageID(session);
+  if (!revertMessageID) {
+    return 0;
+  }
+
+  const userMessages = getUserMessages(messages);
+  const revertIndex = userMessages.findIndex((message) => message.info.id === revertMessageID);
+  return revertIndex >= 0 ? userMessages.length - revertIndex : 0;
+}
+
+interface DerivedChatStatePatch {
+  visibleMessages: MessageWithParts[];
+  lastAppliedRevertMessageID?: string;
+  inputText?: string;
+  attachedImages?: ChatImageAttachment[];
+}
+
+function getDerivedChatStatePatch(
+  session: Session | undefined,
+  messages: MessageWithParts[],
+  lastAppliedRevertMessageID?: string,
+): DerivedChatStatePatch {
+  const visibleMessages = getVisibleMessages(messages, session);
+  const revertMessageID = getRevertMessageID(session);
+
+  if (!revertMessageID) {
+    return {
+      visibleMessages,
+      lastAppliedRevertMessageID: undefined,
+    };
+  }
+
+  if (lastAppliedRevertMessageID === revertMessageID) {
+    return {
+      visibleMessages,
+      lastAppliedRevertMessageID,
+    };
+  }
+
+  const message = messages.find(
+    (item) => item.info.id === revertMessageID && item.info.role === 'user',
+  );
+  if (!message) {
+    return {
+      visibleMessages,
+      lastAppliedRevertMessageID: undefined,
+    };
+  }
+
+  const draft = getRevertDraft(message);
+  return {
+    visibleMessages,
+    lastAppliedRevertMessageID: revertMessageID,
+    inputText: draft.text,
+    attachedImages: draft.images,
+  };
+}
+
 export interface ChatState {
   // Connection
   connected: boolean;
@@ -326,6 +519,7 @@ export interface ChatState {
   // Session
   currentSession?: Session;
   messages: MessageWithParts[];
+  visibleMessages: MessageWithParts[];
   sessionStatus: ChatSessionStatus;
 
   // UI
@@ -339,6 +533,7 @@ export interface ChatState {
   savedInputText?: string;
   savedAttachedImages?: ChatImageAttachment[];
   bufferedRealtimeParts: BufferedRealtimeParts;
+  lastAppliedRevertMessageID?: string;
 
   // Agents
   agents: Agent[];
@@ -374,7 +569,9 @@ export interface ChatState {
   addImage: (image: ChatImageAttachment) => void;
   removeImage: (id: string) => void;
   removeImages: (ids: string[]) => void;
+  setAttachedImages: (images: ChatImageAttachment[]) => void;
   clearImages: () => void;
+  beginPendingSend: () => void;
   queueInputInsertion: (text: string, focus?: boolean) => void;
   consumeInputInsertion: (id: string) => void;
   setPermission: (permission?: PermissionRequest) => void;
@@ -382,8 +579,11 @@ export interface ChatState {
   setAgents: (agents: Agent[]) => void;
   setSelectedAgent: (agent: string) => void;
   addOptimisticMessage: (text: string, images?: string[]) => string;
+  addQueuedOptimisticMessage: (text: string, images?: string[]) => string;
   rollbackOptimisticMessage: () => void;
-  confirmOptimisticMessage: () => void;
+  confirmOptimisticMessage: (streaming?: boolean) => void;
+  rollbackQueuedOptimisticMessage: () => void;
+  confirmQueuedOptimisticMessage: (streaming?: boolean) => void;
   setActiveSessionCount: (count: number) => void;
   clear: () => void;
 }
@@ -394,6 +594,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   version: undefined,
   currentSession: undefined,
   messages: [],
+  visibleMessages: [],
   sessionStatus: 'idle',
   inputText: '',
   isStreaming: false,
@@ -403,6 +604,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   savedInputText: undefined,
   savedAttachedImages: undefined,
   bufferedRealtimeParts: {},
+  lastAppliedRevertMessageID: undefined,
   agents: [],
   selectedAgent: '',
   pendingPermission: undefined,
@@ -413,34 +615,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setConnected: (connected, version) => set({ connected, version }),
 
   setSession: (session, messages) =>
-    set({
-      currentSession: session,
-      messages: messages.map((message) => {
+    set((state) => {
+      const nextMessages = messages.map((message) => {
         const normalizedMessage = normalizeMessageParts(message);
         return mergeBufferedPartsIntoMessage(
           normalizedMessage,
           get().bufferedRealtimeParts[normalizedMessage.info.id],
         );
-      }),
-      sessionStatus: 'idle',
-      isStreaming: false,
-      bufferedRealtimeParts: {},
-      pendingPermission: undefined,
-      pendingQuestion: undefined,
+      });
+      const derived = getDerivedChatStatePatch(
+        session,
+        nextMessages,
+        state.lastAppliedRevertMessageID,
+      );
+
+      return {
+        currentSession: session,
+        messages: nextMessages,
+        ...derived,
+        sessionStatus: 'idle',
+        isStreaming: false,
+        bufferedRealtimeParts: {},
+        pendingPermission: undefined,
+        pendingQuestion: undefined,
+      };
     }),
 
   updateSession: (session) =>
-    set((state) => ({
-      currentSession: state.currentSession?.id === session.id ? session : state.currentSession,
-    })),
+    set((state) => {
+      const currentSession = state.currentSession?.id === session.id ? session : state.currentSession;
+      if (currentSession === state.currentSession) {
+        return state;
+      }
+
+      return {
+        currentSession,
+        ...getDerivedChatStatePatch(
+          currentSession,
+          state.messages,
+          state.lastAppliedRevertMessageID,
+        ),
+      };
+    }),
 
   clearSession: () =>
     set({
       currentSession: undefined,
       messages: [],
+      visibleMessages: [],
       sessionStatus: 'idle',
       isStreaming: false,
       bufferedRealtimeParts: {},
+      lastAppliedRevertMessageID: undefined,
       pendingPermission: undefined,
       pendingQuestion: undefined,
       optimisticMessageID: undefined,
@@ -497,8 +723,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       prependedCount = uniqueMessages.length;
+      const nextMessages = [...uniqueMessages, ...state.messages];
       return {
-        messages: [...uniqueMessages, ...state.messages],
+        messages: nextMessages,
+        ...getDerivedChatStatePatch(
+          state.currentSession,
+          nextMessages,
+          state.lastAppliedRevertMessageID,
+        ),
         bufferedRealtimeParts:
           incomingMessageIDs.size > 0 ? nextBufferedRealtimeParts : state.bufferedRealtimeParts,
       };
@@ -519,18 +751,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const existingMessage = state.messages.find((m) => m.info.id === mergedMessage.info.id);
       const exists = Boolean(existingMessage);
       if (exists) {
+        const nextMessages = state.messages.map((m) =>
+          m.info.id === mergedMessage.info.id
+            ? normalizeMessageParts(mergedMessage, existingMessage?.parts)
+            : m
+        );
         // Update instead
         return {
-          messages: state.messages.map((m) =>
-            m.info.id === mergedMessage.info.id
-              ? normalizeMessageParts(mergedMessage, existingMessage?.parts)
-              : m
+          messages: nextMessages,
+          ...getDerivedChatStatePatch(
+            state.currentSession,
+            nextMessages,
+            state.lastAppliedRevertMessageID,
           ),
           bufferedRealtimeParts: nextBufferedRealtimeParts,
         };
       }
+      const nextMessages = [...state.messages, mergedMessage];
       return {
-        messages: [...state.messages, mergedMessage],
+        messages: nextMessages,
+        ...getDerivedChatStatePatch(
+          state.currentSession,
+          nextMessages,
+          state.lastAppliedRevertMessageID,
+        ),
         bufferedRealtimeParts: nextBufferedRealtimeParts,
       };
     }),
@@ -547,8 +791,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       if (index === -1) {
         // Message not found, add it
+        const nextMessages = [...state.messages, normalizedMessage];
         return {
-          messages: [...state.messages, normalizedMessage],
+          messages: nextMessages,
+          ...getDerivedChatStatePatch(
+            state.currentSession,
+            nextMessages,
+            state.lastAppliedRevertMessageID,
+          ),
           bufferedRealtimeParts: nextBufferedRealtimeParts,
         };
       }
@@ -556,6 +806,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
       updated[index] = normalizedMessage;
       return {
         messages: updated,
+        ...getDerivedChatStatePatch(
+          state.currentSession,
+          updated,
+          state.lastAppliedRevertMessageID,
+        ),
         bufferedRealtimeParts: nextBufferedRealtimeParts,
       };
     }),
@@ -577,7 +832,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const updated = [...state.messages];
       updated[msgIndex] = { ...msg, parts: newParts };
-      return { messages: updated };
+      return {
+        messages: updated,
+        ...getDerivedChatStatePatch(
+          state.currentSession,
+          updated,
+          state.lastAppliedRevertMessageID,
+        ),
+      };
     });
   },
 
@@ -616,14 +878,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       const updated = [...state.messages];
       updated[msgIndex] = { ...msg, parts: newParts };
-      return { messages: updated };
+      return {
+        messages: updated,
+        ...getDerivedChatStatePatch(
+          state.currentSession,
+          updated,
+          state.lastAppliedRevertMessageID,
+        ),
+      };
     }),
 
   removeMessage: (messageID) =>
-    set((state) => ({
-      messages: state.messages.filter((m) => m.info.id !== messageID),
-      bufferedRealtimeParts: omitBufferedParts(state.bufferedRealtimeParts, messageID),
-    })),
+    set((state) => {
+      const nextMessages = state.messages.filter((message) => message.info.id !== messageID);
+      return {
+        messages: nextMessages,
+        ...getDerivedChatStatePatch(
+          state.currentSession,
+          nextMessages,
+          state.lastAppliedRevertMessageID,
+        ),
+        bufferedRealtimeParts: omitBufferedParts(state.bufferedRealtimeParts, messageID),
+      };
+    }),
 
   setInputText: (text) => set({ inputText: text }),
 
@@ -653,7 +930,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
       };
     }),
 
+  setAttachedImages: (images) => set({ attachedImages: images }),
+
   clearImages: () => set({ attachedImages: [] }),
+
+  beginPendingSend: () =>
+    set((state) => ({
+      optimisticMessageID: undefined,
+      savedInputText: state.inputText,
+      savedAttachedImages: state.attachedImages,
+      inputText: '',
+      attachedImages: [],
+    })),
 
   queueInputInsertion: (text, focus = true) =>
     set((state) => ({
@@ -686,53 +974,114 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const state = get();
     const sessionID = state.currentSession?.id ?? '';
 
-    const optimisticMessage: MessageWithParts = {
-      info: {
-        id: messageID,
-        sessionID,
-        role: 'user' as const,
-        time: { created: Math.floor(Date.now() / 1000) },
-        agent: '',
-        model: { providerID: '', modelID: '' },
-      },
-      parts: createOptimisticMessageParts(messageID, text, images),
-    };
+    const optimisticMessage = createOptimisticMessage(messageID, sessionID, text, images);
 
-      set({
-        messages: [...state.messages, optimisticMessage],
-        optimisticMessageID: messageID,
-        savedInputText: state.inputText,
-        savedAttachedImages: state.attachedImages,
-        inputText: '',
-        attachedImages: [],
-      });
+    const nextMessages = [...state.messages, optimisticMessage];
+    set({
+      messages: nextMessages,
+      ...getDerivedChatStatePatch(
+        state.currentSession,
+        nextMessages,
+        state.lastAppliedRevertMessageID,
+      ),
+      optimisticMessageID: messageID,
+      savedInputText: state.inputText,
+      savedAttachedImages: state.attachedImages,
+      inputText: '',
+      attachedImages: [],
+    });
+
+    return messageID;
+  },
+
+  addQueuedOptimisticMessage: (text, images) => {
+    const messageID = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+    const state = get();
+    const sessionID = state.currentSession?.id ?? '';
+    const optimisticMessage = createOptimisticMessage(messageID, sessionID, text, images);
+    const nextMessages = [...state.messages, optimisticMessage];
+
+    set({
+      messages: nextMessages,
+      ...getDerivedChatStatePatch(
+        state.currentSession,
+        nextMessages,
+        state.lastAppliedRevertMessageID,
+      ),
+      optimisticMessageID: messageID,
+      savedInputText: undefined,
+      savedAttachedImages: undefined,
+    });
 
     return messageID;
   },
 
   rollbackOptimisticMessage: () => {
     const state = get();
-    if (!state.optimisticMessageID) return;
+    if (!state.optimisticMessageID && state.savedInputText === undefined && state.savedAttachedImages === undefined) {
+      return;
+    }
 
-      set({
-        messages: state.messages.filter(m => m.info.id !== state.optimisticMessageID),
-        inputText: state.savedInputText ?? '',
-        attachedImages: state.savedAttachedImages ?? [],
-        optimisticMessageID: undefined,
-        savedInputText: undefined,
-        savedAttachedImages: undefined,
-      });
-    },
+    const shouldRestoreInput =
+      state.savedInputText !== undefined || state.savedAttachedImages !== undefined;
 
-  confirmOptimisticMessage: () => {
+    const nextMessages = state.optimisticMessageID
+      ? state.messages.filter((message) => message.info.id !== state.optimisticMessageID)
+      : state.messages;
+
     set({
+      messages: nextMessages,
+      ...getDerivedChatStatePatch(
+        state.currentSession,
+        nextMessages,
+        state.lastAppliedRevertMessageID,
+      ),
+      inputText: shouldRestoreInput ? (state.savedInputText ?? '') : state.inputText,
+      attachedImages: shouldRestoreInput ? (state.savedAttachedImages ?? []) : state.attachedImages,
       optimisticMessageID: undefined,
       savedInputText: undefined,
       savedAttachedImages: undefined,
-      sessionStatus: 'active',
-      isStreaming: true,
     });
   },
+
+  confirmOptimisticMessage: (streaming = true) =>
+    set((state) => ({
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
+      savedAttachedImages: undefined,
+      sessionStatus: streaming ? 'active' : state.sessionStatus,
+      isStreaming: streaming,
+    })),
+
+  rollbackQueuedOptimisticMessage: () => {
+    const state = get();
+    if (!state.optimisticMessageID) {
+      return;
+    }
+
+    const nextMessages = state.messages.filter((message) => message.info.id !== state.optimisticMessageID);
+    set({
+      messages: nextMessages,
+      ...getDerivedChatStatePatch(
+        state.currentSession,
+        nextMessages,
+        state.lastAppliedRevertMessageID,
+      ),
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
+      savedAttachedImages: undefined,
+    });
+  },
+
+  confirmQueuedOptimisticMessage: (streaming = true) =>
+    set((state) => ({
+      optimisticMessageID: undefined,
+      savedInputText: undefined,
+      savedAttachedImages: undefined,
+      sessionStatus: streaming ? 'active' : state.sessionStatus,
+      isStreaming: streaming,
+    })),
 
   setActiveSessionCount: (count) => set({ activeSessionCount: count }),
 
@@ -740,6 +1089,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       currentSession: undefined,
       messages: [],
+      visibleMessages: [],
       sessionStatus: 'idle',
       inputText: '',
       isStreaming: false,
@@ -749,6 +1099,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       savedInputText: undefined,
       savedAttachedImages: undefined,
       bufferedRealtimeParts: {},
+      lastAppliedRevertMessageID: undefined,
       agents: [],
       selectedAgent: '',
       pendingPermission: undefined,
