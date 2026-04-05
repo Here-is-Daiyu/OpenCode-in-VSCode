@@ -10,6 +10,7 @@ import type {
   PromptFilePart,
   SendMessageData,
 } from '../services/openCodeClient';
+import type { DiagnosticsService } from '../services/diagnosticsService';
 import type { Logger } from '../services/logger';
 import { ModelPreferencesService } from '../services/modelPreferences';
 import { getConfiguredAgent, parseConfiguredModel } from '../utils/opencodeConfig';
@@ -40,6 +41,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private currentSessionID?: string;
   private disposables: vscode.Disposable[] = [];
   private client?: OpenCodeClient;
+  private diagnosticsService?: DiagnosticsService;
   private logger?: Logger;
   private modelPrefs?: ModelPreferencesService;
   private modelPrefsBaseUrlLogged = false;
@@ -58,6 +60,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   constructor(private readonly extensionUri: vscode.Uri) {}
 
   setClient(client: OpenCodeClient): void { this.client = client; }
+  setDiagnosticsService(diagnosticsService: DiagnosticsService): void { this.diagnosticsService = diagnosticsService; }
   setLogger(logger: Logger): void { this.logger = logger; }
 
   /**
@@ -236,14 +239,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * Shows the sidebar, clears the current session so a fresh one is created,
    * then sends a chat:autoSend message to the webview.
    */
-  createNewSessionWithPrompt(prompt: string): void {
+  createNewSessionWithPrompt(prompt: string, options?: { attachDiagnostics?: boolean }): void {
     // Clear current session so handleChatSend will auto-create a new one
     this.currentSessionID = undefined;
     this.lastSessionLoaded = undefined;
     this.view?.show?.(true);
     this.postMessageToWebview({
       type: 'chat:autoSend',
-      data: { text: prompt },
+      data: { text: prompt, attachDiagnostics: options?.attachDiagnostics },
     });
   }
 
@@ -265,7 +268,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'chat:send':
-        this.handleChatSend(message.data.text, message.data.images, message.data.mentions);
+        this.handleChatSend(
+          message.data.text,
+          message.data.images,
+          message.data.mentions,
+          message.data.attachDiagnostics,
+        );
         break;
 
       case 'chat:abort':
@@ -563,7 +571,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
    * - Call promptAsync (returns 204 immediately)
    * - On HTTP error, notify webview to rollback
    */
-  private async handleChatSend(text: string, images?: string[], mentions?: string[]): Promise<void> {
+  private async handleChatSend(
+    text: string,
+    images?: string[],
+    mentions?: string[],
+    attachDiagnostics = true,
+  ): Promise<void> {
     if (!this.client) {
       this.logger?.error('Client not available for chat:send');
       this.postMessage({ type: 'chat:sendResult', data: { success: false, error: 'Client not available' } });
@@ -607,7 +620,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const payload = await this.buildPromptPayload(text, images, mentions);
+    const payload = await this.buildPromptPayload(text, images, mentions, attachDiagnostics);
     if (!payload) {
       this.postMessage({
         type: 'chat:sendResult',
@@ -706,9 +719,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     text: string,
     images?: string[],
     mentions?: string[],
+    attachDiagnostics = true,
   ): Promise<SendMessageData | undefined> {
     const parts: SendMessageData['parts'] = [];
-    const normalizedText = text.trim();
+    const diagnosticsText = this.getDiagnosticsText(attachDiagnostics);
+    const normalizedText = diagnosticsText
+      ? [text.trim(), diagnosticsText].filter(Boolean).join('\n\n')
+      : text.trim();
 
     if (normalizedText) {
       parts.push({ type: 'text', text: normalizedText });
@@ -737,6 +754,22 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     }
 
     return { parts };
+  }
+
+  private getDiagnosticsText(attachDiagnostics: boolean): string | undefined {
+    if (!attachDiagnostics) {
+      return undefined;
+    }
+
+    const enabled = vscode.workspace
+      .getConfiguration('opencode')
+      .get<boolean>('editor.attachDiagnostics', true);
+
+    if (!enabled) {
+      return undefined;
+    }
+
+    return this.diagnosticsService?.getActiveEditorDiagnosticsText();
   }
 
   private async resolveShellPayload(command: string) {

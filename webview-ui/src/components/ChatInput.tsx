@@ -235,6 +235,7 @@ export function ChatInput() {
   );
   const enqueueMessage = useMessageQueueStore((s) => s.enqueue);
   const recallQueuedMessage = useMessageQueueStore((s) => s.recall);
+  const reorderQueuedMessage = useMessageQueueStore((s) => s.reorder);
 
   // Slash command state from store
   const commands = useCommandStore((s) => s.commands);
@@ -354,18 +355,22 @@ export function ChatInput() {
   const adjustHeight = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
+
     if (!textarea.value) {
       textarea.style.height = `${BASE_TEXTAREA_HEIGHT_PX}px`;
       setIsTextareaExpanded(false);
       return;
     }
 
-    textarea.style.height = 'auto';
-    const nextHeight = Math.min(textarea.scrollHeight, MAX_TEXTAREA_HEIGHT_PX);
-    textarea.style.height = `${nextHeight}px`;
-    setIsTextareaExpanded(
-      textarea.scrollHeight > BASE_TEXTAREA_HEIGHT_PX + 1 || nextHeight > BASE_TEXTAREA_HEIGHT_PX + 1,
+    textarea.style.height = '0px';
+    const scrollHeight = textarea.scrollHeight;
+    const nextHeight = Math.min(
+      Math.max(scrollHeight, BASE_TEXTAREA_HEIGHT_PX),
+      MAX_TEXTAREA_HEIGHT_PX,
     );
+
+    textarea.style.height = `${nextHeight}px`;
+    setIsTextareaExpanded(scrollHeight > MAX_TEXTAREA_HEIGHT_PX);
   }, []);
 
   useEffect(() => {
@@ -790,6 +795,17 @@ export function ChatInput() {
     [closeMentionMenu, currentSessionID, recallQueuedMessage, setAttachedImages, setInputText],
   );
 
+  const handleQueuedReorder = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      if (!currentSessionID) {
+        return;
+      }
+
+      reorderQueuedMessage(currentSessionID, fromIndex, toIndex);
+    },
+    [currentSessionID, reorderQueuedMessage],
+  );
+
   const collectValidImageFiles = useCallback((files: Iterable<File>): File[] => {
     return Array.from(files).filter((file) => {
       if (!isImageFile(file)) {
@@ -986,8 +1002,8 @@ export function ChatInput() {
                   placeholder={
                     connected
                       ? shellDraft
-                        ? 'Run a shell command... (!pwd, !git status)'
-                        : 'Type your message... (@ for files, / for commands, ! for shell)'
+                        ? 'Run a shell command... (Shift+Enter for new line)'
+                        : 'Type your message... (Shift+Enter for new line; @ for files, / for commands, ! for shell)'
                       : 'Connecting to OpenCode...'
                   }
                   disabled={!connected}
@@ -1023,6 +1039,7 @@ export function ChatInput() {
                 </button>
               </div>
             </div>
+            <div className="chat-input__context-bar"><TokenUsageBar /></div>
             {hasMeta && (
               <div className="chat-input__meta">
                 {currentSession?.revert && (
@@ -1068,6 +1085,7 @@ export function ChatInput() {
                   sendingMessageID={sendingMessageID}
                   failedMessageID={failedMessageID}
                   onRecall={handleQueuedRecall}
+                  onReorder={handleQueuedReorder}
                 />
                 {shellDraft && (
                   <div className="chat-input__hint" role="status" aria-live="polite">
@@ -1087,9 +1105,6 @@ export function ChatInput() {
             <div className="chat-input__dock-controls">
               <AgentSelector />
               <ModelSelector />
-            </div>
-            <div className="chat-input__dock-status">
-              <TokenUsageBar />
             </div>
           </div>
 

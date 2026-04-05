@@ -84,6 +84,8 @@ type SessionTreeElement = SessionGroupTreeItem | SessionTreeItem;
  * automatically when sessions are created, updated or deleted.
  */
 export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeElement> {
+  private static readonly FILTER_STATE_KEY = 'opencode.sessionFilterText';
+
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeElement | undefined>();
   readonly onDidChangeTreeData = this._onDidChangeTreeData.event;
 
@@ -99,7 +101,18 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
   /** Debounce timer for batching rapid tree refreshes. */
   private refreshTimer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(private eventBus: EventBus) {
+  constructor(
+    private eventBus: EventBus,
+    private readonly workspaceState?: vscode.Memento,
+  ) {
+    const savedFilter = this.workspaceState?.get<string>(SessionTreeProvider.FILTER_STATE_KEY, '') ?? '';
+    this.filterText = savedFilter.toLowerCase();
+    void vscode.commands.executeCommand(
+      'setContext',
+      'opencode.sessionFilterActive',
+      this.filterText.length > 0,
+    );
+
     // Session created/updated/deleted are already handled by
     // refreshSessionsQuietly() in extension.ts which calls setSessions().
     // We only need to react to session:status (lightweight, no server fetch).
@@ -143,6 +156,12 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
    */
   setFilter(text: string): void {
     this.filterText = text.toLowerCase();
+    void this.workspaceState?.update(SessionTreeProvider.FILTER_STATE_KEY, text);
+    void vscode.commands.executeCommand(
+      'setContext',
+      'opencode.sessionFilterActive',
+      this.filterText.length > 0,
+    );
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -151,7 +170,10 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
    */
   getActiveSessionCount(excludeSessionId?: string): number {
     let count = 0;
-    for (const [id, status] of Object.entries(this.sessionStatuses)) {
+    for (const session of this.sessions) {
+      const id = session.id;
+      const status = this.sessionStatuses[id];
+      if (!status) continue;
       if (id === excludeSessionId) continue;
       if (status.status === 'active' || status.status === 'retry') count++;
     }
@@ -168,8 +190,8 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
           this.client.listSessions(),
           this.client.getSessionStatus(),
         ]);
-        this.sessions = sessions;
-        this.sessionStatuses = statuses;
+        this.setSessions(sessions, statuses);
+        return;
       } catch {
         // Keep existing data on error — the tree simply won't update
       }
@@ -183,9 +205,16 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
    */
   setSessions(sessions: Session[], statuses?: Record<string, SessionStatus>): void {
     this.sessions = sessions;
-    if (statuses) {
-      this.sessionStatuses = statuses;
+
+    const nextStatuses: Record<string, SessionStatus> = {};
+    for (const session of sessions) {
+      const status = statuses?.[session.id] ?? this.sessionStatuses[session.id];
+      if (status) {
+        nextStatuses[session.id] = status;
+      }
     }
+
+    this.sessionStatuses = nextStatuses;
     this._onDidChangeTreeData.fire(undefined);
   }
 
@@ -261,6 +290,8 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
   // -------------------------------------------------------------------------
 
   dispose(): void {
+    void vscode.commands.executeCommand('setContext', 'opencode.sessionFilterActive', false);
+
     for (const unsub of this.unsubscribers) {
       unsub();
     }
@@ -324,9 +355,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
 
     // Apply text filter (only at root level to keep subtrees visible)
     if (!parentId && this.filterText) {
-      filtered = filtered.filter(s =>
-        (s.title || '').toLowerCase().includes(this.filterText),
-      );
+      filtered = filtered.filter(s => this.matchesFilter(s));
     }
 
     // Sort by most recently updated first
@@ -338,6 +367,14 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
       const status = this.sessionStatuses[session.id];
       return new SessionTreeItem(session, hasChildren, isActive, status);
     });
+  }
+
+  private matchesFilter(session: Session): boolean {
+    const query = this.filterText;
+
+    return (session.title || '').toLowerCase().includes(query)
+      || session.id.toLowerCase().includes(query)
+      || session.slug.toLowerCase().includes(query);
   }
 }
 

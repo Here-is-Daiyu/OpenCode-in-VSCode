@@ -420,12 +420,12 @@ export function SettingsApp() {
           </div>
         )}
 
-        <div className="settings-layout">
-          <aside className="settings-sidebar">
+        <div className="settings-layout" ref={scrollContainerRef}>
+          <nav className="settings-nav-bar" aria-label="Settings sections">
             <SettingsTabs activeTab={store.activeTab} onTabChange={handleTabChange} />
-          </aside>
+          </nav>
 
-          <div className="settings-content" ref={scrollContainerRef}>
+          <div className="settings-content">
             <div className="settings-panel">
               {store.loaded ? (
                 SETTINGS_TABS.map((tab) => {

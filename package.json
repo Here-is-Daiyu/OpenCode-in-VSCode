@@ -2,7 +2,7 @@
   "name": "opencode-vscode",
   "displayName": "OpenCode-in-VSCode",
   "description": "Full-featured OpenCode AI coding assistant integration for Visual Studio Code",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "publisher": "opencode-community",
   "license": "MIT",
   "repository": {
@@ -52,6 +52,11 @@
           "type": "tree"
         },
         {
+          "id": "opencode.globalSessions",
+          "name": "All Sessions",
+          "type": "tree"
+        },
+        {
           "id": "opencode.status",
           "name": "Status",
           "type": "tree"
@@ -61,13 +66,13 @@
     "commands": [
       {
         "command": "opencode.newSession",
-        "title": "New Session",
+        "title": "Session: New",
         "category": "OpenCode",
         "icon": "$(add)"
       },
       {
         "command": "opencode.deleteSession",
-        "title": "Delete Session",
+        "title": "Session: Delete",
         "category": "OpenCode",
         "icon": "$(trash)"
       },
@@ -78,64 +83,82 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "opencode.refreshGlobalSessions",
+        "title": "Refresh All Sessions",
+        "category": "OpenCode",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "opencode.filterSessions",
+        "title": "Session: Filter",
+        "category": "OpenCode",
+        "icon": "$(search)"
+      },
+      {
+        "command": "opencode.clearSessionFilter",
+        "title": "Session: Clear Filter",
+        "category": "OpenCode",
+        "icon": "$(close)"
+      },
+      {
         "command": "opencode.switchSession",
-        "title": "Switch Session",
+        "title": "Session: Switch",
         "category": "OpenCode"
       },
       {
         "command": "opencode.forkSession",
-        "title": "Fork Session",
+        "title": "Session: Fork",
         "category": "OpenCode",
         "icon": "$(git-branch)"
       },
       {
         "command": "opencode.shareSession",
-        "title": "Share Session",
+        "title": "Session: Share",
         "category": "OpenCode",
         "icon": "$(link)"
       },
       {
         "command": "opencode.abortSession",
-        "title": "Abort Current Session",
+        "title": "Session: Abort",
         "category": "OpenCode",
         "icon": "$(debug-stop)"
       },
       {
         "command": "opencode.undoMessage",
-        "title": "Undo Last Message",
+        "title": "Message: Undo",
         "category": "OpenCode",
         "icon": "$(discard)"
       },
       {
         "command": "opencode.redoMessage",
-        "title": "Redo Message",
+        "title": "Message: Redo",
         "category": "OpenCode",
         "icon": "$(redo)"
       },
       {
         "command": "opencode.startServer",
-        "title": "Start Server",
+        "title": "Server: Start",
         "category": "OpenCode"
       },
       {
         "command": "opencode.stopServer",
-        "title": "Stop Server",
+        "title": "Server: Stop",
         "category": "OpenCode"
       },
       {
         "command": "opencode.restartServer",
-        "title": "Restart Server",
+        "title": "Server: Restart",
         "category": "OpenCode"
       },
       {
         "command": "opencode.selectModel",
-        "title": "Select Model",
+        "title": "Model: Select",
         "category": "OpenCode",
         "icon": "$(symbol-enum)"
       },
       {
         "command": "opencode.selectAgent",
-        "title": "Select Agent",
+        "title": "Agent: Select",
         "category": "OpenCode"
       },
       {
@@ -146,37 +169,75 @@
       },
       {
         "command": "opencode.addFileToPrompt",
-        "title": "Add File to Prompt",
+        "title": "Context: Add File",
         "category": "OpenCode"
       },
       {
         "command": "opencode.addSelectionToPrompt",
-        "title": "Add Selection to Prompt",
+        "title": "Context: Add Selection",
         "category": "OpenCode"
       },
       {
         "command": "opencode.insertEditorCodeToChat",
-        "title": "Insert Current Editor Code into Chat",
+        "title": "Context: Insert Editor Code",
         "category": "OpenCode"
       },
       {
         "command": "opencode.explainCode",
-        "title": "Explain Code",
+        "title": "AI: Explain Code",
         "category": "OpenCode"
       },
       {
         "command": "opencode.improveCode",
-        "title": "Improve Code",
+        "title": "AI: Improve Code",
         "category": "OpenCode"
+      },
+      {
+        "command": "opencode.reviewChanges",
+        "title": "AI: Review Changes",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.generateCommitMessage",
+        "title": "AI: Generate Commit Message",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.fixDiagnostics",
+        "title": "AI: Fix Diagnostics",
+        "category": "OpenCode",
+        "icon": "$(lightbulb-autofix)"
       },
       {
         "command": "opencode.openTerminal",
-        "title": "Open Terminal",
+        "title": "Terminal: Open",
         "category": "OpenCode"
       },
       {
+        "command": "opencode.openPtyTerminal",
+        "title": "Terminal: Open Shared PTY",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.sendTerminalOutput",
+        "title": "Terminal: Send Output",
+        "category": "OpenCode",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "opencode.sendTerminalError",
+        "title": "Terminal: Send Error",
+        "category": "OpenCode",
+        "icon": "$(warning)"
+      },
+      {
         "command": "opencode.showDiff",
-        "title": "Show Session Diff",
+        "title": "Diff: Show Session",
+        "category": "OpenCode"
+      },
+      {
+        "command": "opencode.reviewSessionDiff",
+        "title": "Diff: Review All Changes",
         "category": "OpenCode"
       },
       {
@@ -186,7 +247,7 @@
       },
       {
         "command": "opencode.compactSession",
-        "title": "Compact Session",
+        "title": "Session: Compact",
         "category": "OpenCode"
       },
       {
@@ -237,6 +298,84 @@
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "opencode.deleteSession",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.switchSession",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.forkSession",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.shareSession",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.abortSession",
+          "when": "opencode.sessionBusy"
+        },
+        {
+          "command": "opencode.selectModel",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.selectAgent",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.compactSession",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.showDiff",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.reviewSessionDiff",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.reviewChanges",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.generateCommitMessage",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.fixDiagnostics",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.sendTerminalOutput",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.sendTerminalError",
+          "when": "opencode.serverConnected"
+        },
+        {
+          "command": "opencode.enableMCPServer",
+          "when": "false"
+        },
+        {
+          "command": "opencode.disableMCPServer",
+          "when": "false"
+        },
+        {
+          "command": "opencode.openSessionInEditor",
+          "when": "false"
+        },
+        {
+          "command": "opencode.clearSessionFilter",
+          "when": "opencode.sessionFilterActive"
+        }
+      ],
       "view/title": [
         {
           "command": "opencode.newSession",
@@ -246,6 +385,21 @@
         {
           "command": "opencode.refreshSessions",
           "when": "view == opencode.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.filterSessions",
+          "when": "view == opencode.sessions",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.refreshGlobalSessions",
+          "when": "view == opencode.globalSessions",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.clearSessionFilter",
+          "when": "view == opencode.sessions && opencode.sessionFilterActive",
           "group": "navigation"
         },
         {
@@ -277,6 +431,10 @@
           "group": "1_actions"
         },
         {
+          "command": "opencode.fixDiagnostics",
+          "group": "1_actions"
+        },
+        {
           "command": "opencode.addSelectionToPrompt",
           "when": "editorHasSelection",
           "group": "2_context"
@@ -298,7 +456,17 @@
         },
         {
           "command": "opencode.openSessionInEditor",
+          "when": "view == opencode.globalSessions && (viewItem == session || viewItem == activeSession)",
+          "group": "inline"
+        },
+        {
+          "command": "opencode.openSessionInEditor",
           "when": "view == opencode.sessions && (viewItem == session || viewItem == activeSession)",
+          "group": "navigation"
+        },
+        {
+          "command": "opencode.openSessionInEditor",
+          "when": "view == opencode.globalSessions && (viewItem == session || viewItem == activeSession)",
           "group": "navigation"
         },
         {
@@ -323,6 +491,24 @@
         "command": "opencode.newSession",
         "key": "ctrl+shift+n",
         "mac": "cmd+shift+n",
+        "when": "opencode.serverConnected"
+      },
+      {
+        "command": "opencode.selectModel",
+        "key": "ctrl+shift+m",
+        "mac": "cmd+shift+m",
+        "when": "opencode.serverConnected"
+      },
+      {
+        "command": "opencode.showDiff",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d",
+        "when": "opencode.serverConnected"
+      },
+      {
+        "command": "opencode.compactSession",
+        "key": "ctrl+shift+k",
+        "mac": "cmd+shift+k",
         "when": "opencode.serverConnected"
       },
       {
@@ -421,6 +607,16 @@
           "type": "boolean",
           "default": false,
           "description": "Show AI CodeLens suggestions"
+        },
+        "opencode.editor.attachDiagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically attach current file diagnostics (errors/warnings) when sending messages"
+        },
+        "opencode.editor.attachGitContext": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically attach git diff context when sending messages"
         }
       }
     }

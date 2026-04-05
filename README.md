@@ -22,6 +22,7 @@ OpenCode-in-VSCode is a Visual Studio Code extension that brings [OpenCode](http
 - Question cards (respond to server questions inline)
 - Notification toast system
 - Error boundary for graceful crash recovery
+- **Current model badge** — displays the active model in the chat header (resolved from the latest assistant message or global config); click to switch models
 
 ### Input System
 
@@ -29,8 +30,10 @@ OpenCode-in-VSCode is a Visual Studio Code extension that brings [OpenCode](http
 - **`!` shell commands** — execute shell commands, pipe output back into AI context
 - **`/` slash commands** — server-side command discovery with caching and autocomplete menu
 - **Image attachments** — via file picker, drag-and-drop, and clipboard paste
-- **Pending message queue** — queue multiple messages, cancel individual items, auto-restore to input on cancel
+- **Pending message queue** — queue multiple messages, cancel individual items, auto-restore to input on cancel, **drag-and-drop reorder**
 - **Code insertion from editor** — insert current editor selection/file into chat input with source annotation
+- **Context usage bar** — compact token usage visualization inside the input shell, showing input/output/reasoning/cache segments with percentage and hover tooltip
+- **Multi-line optimization** — Shift+Enter for new lines, unified auto-resize height limit, placeholder hint
 
 ### Session Management
 
@@ -40,6 +43,8 @@ OpenCode-in-VSCode is a Visual Studio Code extension that brings [OpenCode](http
 - Session tree view in activity bar with recent-first ordering
 - Batched older-history hydration for large session lists
 - Active session count indicator (shows how many other sessions are busy)
+- **Session search / filter** — search button in the session tree title bar; filters by title, id, or slug with persistent state
+- **Cross-project session view** — global session tree grouped by project directory, aggregating sessions across projects via SSE global events
 
 ### Message Controls
 
@@ -72,11 +77,20 @@ Every tool call is displayed as a compact card with collapsible results. Special
 
 ### Editor Integration
 
+- **Inline diff decorations** — when AI edits a file, changed lines are highlighted in the editor (green for additions, red for deletions) via `file.edited` SSE events; decorations auto-clear on save or session idle
 - **Show Diff** — open file diffs from edit tool results directly in VS Code's diff editor, or view full session diff
+- **Multi-file diff review** — review all session changes at once in a multi-diff editor (with fallback to grouped tabs)
 - **Open File at Line** — click read tool line numbers to jump to exact lines
-- **Open Terminal** — launch a terminal pre-configured with `OPENCODE_BASE_URL`
+- **Diagnostics auto-attach** — automatically appends current file errors/warnings to messages; includes a dedicated "Fix Diagnostics" command
+- **Git context awareness** — "Review My Changes" and "Generate Commit Message" commands using VS Code's built-in Git API
 - **CodeLens** — optional AI CodeLens suggestions (configurable)
 - **Right-click context menu** — Explain Code, Improve Code, Add Selection to Prompt, Add File to Prompt, Insert Editor Code to Chat
+
+### Terminal Integration
+
+- **Open Terminal** — launch a terminal pre-configured with `OPENCODE_BASE_URL`
+- **Shared PTY terminal** — server-backed pseudo-terminal via WebSocket (`/pty` API), enabling AI and user to share a terminal session with resize support and reconnection
+- **Terminal output capture** — captures shell execution output; "Send Terminal Output" and "Send Terminal Error" commands forward context to AI chat
 
 ### Editor Panel
 
@@ -92,11 +106,11 @@ Every tool call is displayed as a compact card with collapsible results. Special
 
 ### Settings
 
-Dedicated settings webview with 5 tabs:
+Dedicated settings webview with a **sticky horizontal nav bar** and 5 sections in a single scrollable page (with IntersectionObserver-based anchor sync):
 
-| Tab | Features |
-|-----|----------|
-| **Connection** | Server hostname, port, auto-start, executable path |
+| Section | Features |
+|---------|----------|
+| **Connection** | Server mode (local / external), hostname, port, external URL, auto-start, executable path |
 | **Chat** | Font size, timestamps, word wrap, max image size, tool call display mode |
 | **Models** | Browse and switch models across all providers |
 | **Integrations** | MCP server enable/disable, provider status, slash commands |
@@ -114,7 +128,8 @@ Dedicated settings webview with 5 tabs:
 ### Server Management
 
 - Auto-start `opencode serve` on extension activation
-- Start / Stop / Restart server commands
+- **External server mode** — connect to a remote/Docker/SSH OpenCode instance by URL, skipping local auto-start
+- Start / Stop / Restart server commands (adapted for both local and external modes)
 - Health check verification on connect
 - Automatic restart prompt on workspace folder change
 - Configuration change detection with restart prompt
@@ -125,7 +140,23 @@ Dedicated settings webview with 5 tabs:
 - SSE (Server-Sent Events) driven session, message, and status updates
 - Automatic reconnection with full data refresh on reconnect
 - Debounced updates to webview at ~60fps
-- Handles: `session.created`, `session.updated`, `session.deleted`, `session.status`, `message.updated`, `message.part.updated`, `message.part.delta`, `message.removed`, `permission.asked`, `question.asked`, `config.updated`, `todo.updated`, `file.edited`, `mcp.tools.changed`
+- Handles: `session.created`, `session.updated`, `session.deleted`, `session.status`, `message.updated`, `message.part.updated`, `message.part.delta`, `message.removed`, `permission.asked`, `question.asked`, `config.updated`, `todo.updated`, `file.edited`, `mcp.tools.changed`, `pty.created`, `pty.updated`, `pty.exited`, `pty.deleted`
+
+### Command Palette
+
+All commands are organized with semantic prefixes for easy discovery:
+
+| Prefix | Commands |
+|--------|----------|
+| `Session:` | New, Delete, Switch, Fork, Share, Compact, Abort, Filter, Clear Filter |
+| `AI:` | Explain Code, Improve Code, Fix Diagnostics, Review Changes, Generate Commit Message |
+| `Context:` | Add File, Add Selection, Insert Editor Code |
+| `Terminal:` | Open, Open Shared PTY, Send Output, Send Error |
+| `Diff:` | Show Session, Review All Changes |
+| `Server:` | Start, Stop, Restart |
+| `Model:` / `Agent:` | Select |
+
+Commands that require a server connection are hidden from the palette when disconnected.
 
 ### Wide-screen Layout
 
@@ -170,6 +201,9 @@ Then install the generated `.vsix` via **Extensions: Install from VSIX...** in V
 | `Ctrl+Shift+O` / `Cmd+Shift+O` | Focus Chat Panel |
 | `Ctrl+Shift+N` / `Cmd+Shift+N` | New Session |
 | `Ctrl+Shift+E` / `Cmd+Shift+E` | Open Session in Editor |
+| `Ctrl+Shift+M` / `Cmd+Shift+M` | Select Model |
+| `Ctrl+Shift+D` / `Cmd+Shift+D` | Show Session Diff |
+| `Ctrl+Shift+K` / `Cmd+Shift+K` | Compact Session |
 | `Ctrl+Alt+Shift+C` / `Cmd+Alt+Shift+C` | Insert Editor Code into Chat |
 | `Escape` | Abort Current Session (when busy) |
 
@@ -207,12 +241,12 @@ Extension Host (src/)           Webview (webview-ui/src/)
        │                                │
        └──── postMessage (typed) ───────┘
        │
-       └──── REST API + SSE (@opencode-ai/sdk) ──→ opencode serve
+       └──── REST API + SSE + WebSocket (@opencode-ai/sdk) ──→ opencode serve
 ```
 
 ### Communication Patterns
 
-1. **Extension ↔ OpenCode Server** — REST API + SSE via [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk)
+1. **Extension ↔ OpenCode Server** — REST API + SSE + WebSocket (PTY) via [`@opencode-ai/sdk`](https://www.npmjs.com/package/@opencode-ai/sdk)
 2. **Extension ↔ Webview** — Typed bidirectional `postMessage`
 3. **Internal** — Event-driven via [`EventBus`](./src/services/eventBus.ts)
 
@@ -221,11 +255,12 @@ Extension Host (src/)           Webview (webview-ui/src/)
 ```
 src/
   extension.ts                    — Activation entry point
-  commands/index.ts               — Command registration (30+ commands)
+  commands/index.ts               — Command registration (40+ commands)
   providers/
     chatViewProvider.ts           — Chat WebviewViewProvider
     settingsViewProvider.ts       — Settings WebviewViewProvider
-    sessionTreeProvider.ts        — Session TreeDataProvider
+    sessionTreeProvider.ts        — Session TreeDataProvider (with search/filter)
+    globalSessionTreeProvider.ts  — Cross-project Session TreeDataProvider
     statusTreeProvider.ts         — Status TreeDataProvider
     sessionEditorPanelProvider.ts — Full editor tab panel
     codeLensProvider.ts           — CodeLens integration
@@ -233,37 +268,42 @@ src/
     sessionManager.ts             — Session switching & batched history loading
     statusBarManager.ts           — Status bar item management
   services/
-    openCodeClient.ts             — REST + SSE client for OpenCode
+    openCodeClient.ts             — REST + SSE + PTY client for OpenCode
     serverManager.ts              — Start/stop/monitor opencode serve
     eventBus.ts                   — Typed event bus
-    diffService.ts                — Diff viewing
+    diffService.ts                — Inline diff decorations & multi-file diff review
+    diagnosticsService.ts         — VS Code diagnostics auto-attach
+    gitContextService.ts          — Git diff context via VS Code Git API
+    ptyTerminalService.ts         — Server-backed PTY terminal via WebSocket
+    terminalOutputService.ts      — Terminal shell execution output capture
     modelPreferences.ts           — Model preference persistence
     logger.ts                     — Extension logging
   types/
     messages.ts                   — Extension ↔ Webview message types
-    events.ts                     — Internal event types
-    opencode.ts                   — OpenCode API response types
+    events.ts                     — Internal event types (including PTY events)
+    opencode.ts                   — OpenCode API response types (including PTY types)
   utils/
     webviewHtml.ts                — Webview HTML generation with nonce CSP
     opencodeConfig.ts             — Config resolution helpers
 
 webview-ui/src/
   panels/
-    chat/ChatApp.tsx              — Main chat panel
-    settings/SettingsApp.tsx      — Settings panel with 5 tabs
+    chat/ChatApp.tsx              — Main chat panel (with model badge)
+    settings/SettingsApp.tsx      — Settings panel with sticky nav bar
   components/
     ChatInput.tsx                 — Message input with @mention/!shell//slash support
+    CurrentModelBadge.tsx         — Active model display badge
     VirtualizedMessageList.tsx    — Virtualized message rendering
     MarkdownRenderer.tsx          — Markdown + KaTeX + Shiki rendering
     ModelSelector.tsx             — Model switching dropdown
     AgentSelector.tsx             — Agent variant selector
+    TokenUsageBar.tsx             — Token usage visualization (in input shell)
     LastApiResponsePanel.tsx      — Wide-screen side panel
     MentionMenu.tsx               — @ file mention autocomplete
     SlashCommandMenu.tsx          — / slash command autocomplete
-    QueuedMessageList.tsx         — Pending message queue display
+    QueuedMessageList.tsx         — Pending message queue with drag reorder
     PermissionCard.tsx            — Permission request UI
     QuestionCard.tsx              — Question response UI
-    TokenUsageBar.tsx             — Token usage visualization
     OutlineIndex.tsx              — Message outline navigation
     NotificationToast.tsx         — Toast notifications
     ErrorBoundary.tsx             — Crash recovery
@@ -280,7 +320,7 @@ webview-ui/src/
     settingsStore.ts              — Settings state
     agentStore.ts                 — Agent state
     commandStore.ts               — Slash command state
-    messageQueueStore.ts          — Pending message queue
+    messageQueueStore.ts          — Pending message queue (with reorder)
     notificationStore.ts          — Notification state
   hooks/
     useMentionSearch.ts           — File mention search
@@ -335,6 +375,7 @@ webview-ui/src/
 - Webview has no direct filesystem access (goes through extension host)
 - SSE connection must handle reconnection gracefully
 - Windows process management requires `taskkill /T`
+- PTY terminal requires server-side `/pty` API support (not all OpenCode versions may include this)
 
 ## Dependencies
 
@@ -368,7 +409,7 @@ The workflow in [`.github/workflows/release-vsix-on-tag.yml`](./.github/workflow
 - Tags matching `v*` / `V*` → also package into VSIX and upload as workflow artifact
 - Does **not** auto-create GitHub Releases
 
-## 参考的仓库
+## References
 
 The following repositories are used for read-only comparison during development:
 

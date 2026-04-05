@@ -46,6 +46,40 @@ export interface SessionStatus {
   error?: string;
 }
 
+// PTY types
+export interface Pty {
+  id: string;
+  title: string;
+  command: string;
+  args: string[];
+  cwd: string;
+  status: 'running' | 'exited';
+  pid: number;
+}
+
+export interface PtySize {
+  rows: number;
+  cols: number;
+}
+
+export interface PtyCreateOptions {
+  command?: string;
+  args?: string[];
+  cwd?: string;
+  title?: string;
+  env?: Record<string, string>;
+}
+
+export interface PtyUpdateOptions {
+  title?: string;
+  size?: PtySize;
+}
+
+export interface PtyExitInfo {
+  id: string;
+  exitCode: number;
+}
+
 /** Raw session status as returned by `GET /session/status`. */
 export interface RawSessionStatus {
   type: 'busy' | 'idle';

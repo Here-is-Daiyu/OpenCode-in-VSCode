@@ -23,6 +23,7 @@ import { VirtualizedMessageList } from '../../components/VirtualizedMessageList'
 import { OutlineIndex } from '../../components/OutlineIndex';
 import { LastApiResponsePanel } from '../../components/LastApiResponsePanel';
 import { NotificationToastContainer } from '../../components/NotificationToast';
+import { CurrentModelBadge } from '../../components/CurrentModelBadge';
 import { useNotificationStore } from '../../stores/notificationStore';
 import { useMessageQueueStore } from '../../stores/messageQueueStore';
 import type { ExtensionToWebviewMessage } from '../../types/messages';
@@ -521,7 +522,10 @@ export function ChatApp() {
               }
               postMessage({
                 type: 'chat:send',
-                data: { text: autoSendText },
+                data: {
+                  text: autoSendText,
+                  attachDiagnostics: message.data.attachDiagnostics,
+                },
               });
             }
             break;
@@ -697,6 +701,7 @@ export function ChatApp() {
           <span className="chat-header__title">
             {currentSession?.title || 'OpenCode'}
           </span>
+          <CurrentModelBadge />
         </div>
         <div className="chat-header__actions">
           {activeSessionCount > 0 && (

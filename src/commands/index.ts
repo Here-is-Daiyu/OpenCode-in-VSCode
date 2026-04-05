@@ -2,7 +2,11 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import type { ServerManager } from '../services/serverManager';
 import type { DiffService } from '../services/diffService';
+import type { DiagnosticsService } from '../services/diagnosticsService';
+import type { GitContextService } from '../services/gitContextService';
 import type { OpenCodeClient } from '../services/openCodeClient';
+import type { TerminalOutputService } from '../services/terminalOutputService';
+import type { PtyTerminalService } from '../services/ptyTerminalService';
 import type { EventBus } from '../services/eventBus';
 import type { Logger } from '../services/logger';
 import type { ChatViewProvider } from '../providers/chatViewProvider';
@@ -32,6 +36,10 @@ export interface CommandContext {
   statusBarManager: StatusBarManager;
   sessionManager: SessionManager;
   diffService: DiffService;
+  diagnosticsService: DiagnosticsService;
+  gitContextService: GitContextService;
+  terminalOutputService: TerminalOutputService;
+  ptyTerminalService: PtyTerminalService;
   isServerConnected: () => boolean;
   getServerMode: () => ServerMode;
   getExternalServerUrl: () => string;
@@ -258,9 +266,6 @@ async function newSession(ctx: CommandContext): Promise<void> {
     const session = await ctx.client.createSession();
     ctx.activeSessionId = session.id;
     ctx.eventBus.emit('session:created', session);
-    // Refresh tree with fresh data from server
-    const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.info(`Created new session: ${session.id}`);
   } catch (err) {
     ctx.logger.error('Failed to create session', err);
@@ -290,8 +295,6 @@ async function deleteSession(ctx: CommandContext, sessionId?: string): Promise<v
       ctx.activeSessionId = undefined;
     }
     ctx.eventBus.emit('session:deleted', { id });
-    const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.info(`Deleted session: ${id}`);
   } catch (err) {
     ctx.logger.error('Failed to delete session', err);
@@ -302,13 +305,42 @@ async function deleteSession(ctx: CommandContext, sessionId?: string): Promise<v
 async function refreshSessions(ctx: CommandContext): Promise<void> {
   if (!requireConnected(ctx)) { return; }
   try {
-    const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.setSessions(sessions);
-    ctx.logger.debug(`Refreshed sessions: ${sessions.length} found`);
+    await ctx.sessionManager.refreshSessions();
+    ctx.logger.debug('Refreshed current-project sessions');
   } catch (err) {
     ctx.logger.error('Failed to refresh sessions', err);
     vscode.window.showErrorMessage(`Failed to refresh sessions: ${errorMessage(err)}`);
   }
+}
+
+async function refreshGlobalSessions(ctx: CommandContext): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+  try {
+    await ctx.sessionManager.refreshGlobalSessions();
+    ctx.logger.debug('Refreshed global sessions');
+  } catch (err) {
+    ctx.logger.error('Failed to refresh global sessions', err);
+    vscode.window.showErrorMessage(`Failed to refresh global sessions: ${errorMessage(err)}`);
+  }
+}
+
+async function filterSessions(ctx: CommandContext): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  const result = await vscode.window.showInputBox({
+    prompt: 'Filter sessions by title, ID, or slug',
+    placeHolder: 'Type to filter sessions...',
+  });
+
+  if (result !== undefined) {
+    ctx.sessionProvider.setFilter(result.trim());
+  }
+}
+
+function clearSessionFilter(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+
+  ctx.sessionProvider.setFilter('');
 }
 
 async function switchSession(ctx: CommandContext, sessionId?: unknown): Promise<void> {
@@ -333,8 +365,6 @@ async function forkSession(ctx: CommandContext): Promise<void> {
     const forked = await ctx.client.forkSession(sessionId);
     ctx.activeSessionId = forked.id;
     ctx.eventBus.emit('session:created', forked);
-    const sessions = await ctx.client.listSessions();
-    ctx.sessionProvider.setSessions(sessions);
     ctx.logger.info(`Forked session ${sessionId} → ${forked.id}`);
     vscode.window.showInformationMessage('Session forked successfully.');
   } catch (err) {
@@ -792,7 +822,7 @@ async function insertEditorCodeToChat(ctx: CommandContext): Promise<void> {
   );
 }
 
-function openTerminal(ctx: CommandContext): void {
+function openRegularTerminal(ctx: CommandContext): void {
   const baseUrl = ctx.client.getBaseUrl() || ctx.serverManager.getBaseUrl();
   const terminal = vscode.window.createTerminal({
     name: 'OpenCode',
@@ -802,6 +832,81 @@ function openTerminal(ctx: CommandContext): void {
   });
   terminal.show();
   ctx.logger.debug('Opened OpenCode terminal');
+}
+
+async function openPtyTerminal(ctx: CommandContext, title?: string): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  const terminalTitle = title?.trim() ? title.trim() : undefined;
+
+  try {
+    await ctx.ptyTerminalService.createTerminal(terminalTitle);
+  } catch (err) {
+    ctx.logger.error('Failed to open shared PTY terminal', err);
+    vscode.window.showErrorMessage(`Failed to open shared PTY terminal: ${errorMessage(err)}`);
+  }
+}
+
+async function openTerminal(ctx: CommandContext): Promise<void> {
+  const pick = await vscode.window.showQuickPick(
+    [
+      {
+        label: '$(terminal) Regular VS Code Terminal',
+        description: 'Local integrated terminal with OpenCode env vars',
+        _target: 'regular' as const,
+      },
+      {
+        label: '$(plug) Shared OpenCode PTY Terminal',
+        description: 'Server-backed terminal shared with the OpenCode session',
+        _target: 'pty' as const,
+      },
+    ],
+    {
+      placeHolder: 'Choose which terminal to open',
+      matchOnDescription: true,
+    },
+  );
+
+  if (!pick) {
+    return;
+  }
+
+  if (pick._target === 'pty') {
+    await openPtyTerminal(ctx);
+    return;
+  }
+
+  openRegularTerminal(ctx);
+}
+
+function sendTerminalOutput(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+
+  const entry = ctx.terminalOutputService.getLastOutput();
+  if (!entry) {
+    vscode.window.showInformationMessage('No recent terminal output captured yet. Run a command in the integrated terminal first.');
+    return;
+  }
+
+  ctx.chatProvider.createNewSessionWithPrompt(
+    ctx.terminalOutputService.formatOutputForChat(entry),
+    { attachDiagnostics: false }
+  );
+  ctx.logger.debug(`Sent terminal output to chat from ${entry.terminal}`);
+}
+
+function sendTerminalError(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+
+  const entry = ctx.terminalOutputService.getLastErrorOutput();
+  if (!entry) {
+    vscode.window.showInformationMessage('No recent terminal error output captured yet. Run a failing command in the integrated terminal first.');
+    return;
+  }
+
+  const prompt = `Please help fix this terminal error:\n\n${ctx.terminalOutputService.formatOutputForChat(entry)}`;
+  ctx.chatProvider.createNewSessionWithPrompt(prompt, { attachDiagnostics: false });
+  ctx.logger.debug(`Sent terminal error to chat from ${entry.terminal} (exit code ${entry.exitCode})`);
 }
 
 async function showDiff(
@@ -828,8 +933,75 @@ async function showDiff(
   }
 }
 
+async function reviewSessionDiff(ctx: CommandContext): Promise<void> {
+  try {
+    const sessionId = requireSession(ctx);
+    if (!sessionId) { return; }
+
+    const diffs = await ctx.client.getSessionDiff(sessionId);
+    await ctx.diffService.showAllSessionDiffs(diffs ?? []);
+  } catch (err) {
+    ctx.logger.error('Failed to review session diff', err);
+    vscode.window.showErrorMessage(`Failed to review session diff: ${errorMessage(err)}`);
+  }
+}
+
 function focusChat(_ctx: CommandContext): void {
   vscode.commands.executeCommand('opencode.chatView.focus');
+}
+
+function joinGitDiffs(...diffs: string[]): string {
+  return diffs
+    .map(diff => diff.trim())
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+async function reviewChanges(ctx: CommandContext): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  try {
+    const [unstagedDiff, stagedDiff] = await Promise.all([
+      ctx.gitContextService.getUnstagedDiff(),
+      ctx.gitContextService.getStagedDiff(),
+    ]);
+    const diff = joinGitDiffs(unstagedDiff, stagedDiff);
+
+    if (!diff) {
+      vscode.window.showInformationMessage('No git changes to review.');
+      return;
+    }
+
+    const prompt = `Please review my changes:\n\n\`\`\`diff\n${diff}\n\`\`\``;
+    ctx.chatProvider.createNewSessionWithPrompt(prompt);
+    ctx.logger.debug('Created review changes prompt from git diff');
+  } catch (err) {
+    ctx.logger.error('Failed to review git changes', err);
+    vscode.window.showErrorMessage(`Failed to review git changes: ${errorMessage(err)}`);
+  }
+}
+
+async function generateCommitMessage(ctx: CommandContext): Promise<void> {
+  if (!requireConnected(ctx)) { return; }
+
+  try {
+    const stagedDiff = await ctx.gitContextService.getStagedDiff();
+    const hasStagedDiff = stagedDiff.length > 0;
+    const unstagedDiff = hasStagedDiff ? '' : await ctx.gitContextService.getUnstagedDiff();
+    const diff = joinGitDiffs(stagedDiff, unstagedDiff);
+
+    if (!diff) {
+      vscode.window.showInformationMessage('No git changes available to generate a commit message.');
+      return;
+    }
+
+    const prompt = `Generate a concise commit message for these changes:\n\n\`\`\`diff\n${diff}\n\`\`\``;
+    ctx.chatProvider.createNewSessionWithPrompt(prompt);
+    ctx.logger.debug(`Created generate commit message prompt from ${hasStagedDiff ? 'staged' : 'unstaged'} git diff`);
+  } catch (err) {
+    ctx.logger.error('Failed to generate commit message from git changes', err);
+    vscode.window.showErrorMessage(`Failed to generate commit message: ${errorMessage(err)}`);
+  }
 }
 
 function explainCode(ctx: CommandContext): void {
@@ -866,6 +1038,26 @@ function improveCode(ctx: CommandContext): void {
 
   const prompt = `Improve the following code:\n\n${filePath}:${lineRange}\n\`\`\`${languageId}\n${selectedText}\n\`\`\``;
   ctx.chatProvider.createNewSessionWithPrompt(prompt);
+}
+
+function fixDiagnostics(ctx: CommandContext): void {
+  if (!requireConnected(ctx)) { return; }
+
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showWarningMessage('No active editor. Open a file first.');
+    return;
+  }
+
+  const diagnosticsText = ctx.diagnosticsService.getActiveEditorDiagnosticsText();
+  if (!diagnosticsText) {
+    vscode.window.showInformationMessage('No diagnostics found for the active editor.');
+    return;
+  }
+
+  const prompt = `Please fix these errors:\n${diagnosticsText}`;
+  ctx.chatProvider.createNewSessionWithPrompt(prompt, { attachDiagnostics: false });
+  ctx.logger.debug(`Created fix diagnostics prompt for ${editor.document.uri.fsPath}`);
 }
 
 async function compactSession(ctx: CommandContext): Promise<void> {
@@ -1063,6 +1255,9 @@ export function registerCommands(
     ['opencode.newSession', () => newSession(ctx)],
     ['opencode.deleteSession', (sessionId?: unknown) => deleteSession(ctx, sessionId as string | undefined)],
     ['opencode.refreshSessions', () => refreshSessions(ctx)],
+    ['opencode.refreshGlobalSessions', () => refreshGlobalSessions(ctx)],
+    ['opencode.filterSessions', () => filterSessions(ctx)],
+    ['opencode.clearSessionFilter', () => clearSessionFilter(ctx)],
     ['opencode.switchSession', (sessionId?: unknown) => switchSession(ctx, sessionId)],
     ['opencode.forkSession', () => forkSession(ctx)],
     ['opencode.shareSession', () => shareSession(ctx)],
@@ -1082,8 +1277,15 @@ export function registerCommands(
     ['opencode.insertEditorCodeToChat', () => insertEditorCodeToChat(ctx)],
     ['opencode.explainCode', () => explainCode(ctx)],
     ['opencode.improveCode', () => improveCode(ctx)],
+    ['opencode.reviewChanges', () => reviewChanges(ctx)],
+    ['opencode.generateCommitMessage', () => generateCommitMessage(ctx)],
+    ['opencode.fixDiagnostics', () => fixDiagnostics(ctx)],
     ['opencode.openTerminal', () => openTerminal(ctx)],
+    ['opencode.openPtyTerminal', (title?: unknown) => openPtyTerminal(ctx, typeof title === 'string' ? title : undefined)],
+    ['opencode.sendTerminalOutput', () => sendTerminalOutput(ctx)],
+    ['opencode.sendTerminalError', () => sendTerminalError(ctx)],
     ['opencode.showDiff', (filePath?: unknown, original?: unknown, modified?: unknown) => showDiff(ctx, filePath, original, modified)],
+    ['opencode.reviewSessionDiff', () => reviewSessionDiff(ctx)],
     ['opencode.focusChat', () => focusChat(ctx)],
     ['opencode.compactSession', () => compactSession(ctx)],
     ['opencode.openConfigFile', () => openConfigFile(ctx)],

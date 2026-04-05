@@ -87,6 +87,22 @@ const deletedDecoration = vscode.window.createTextEditorDecorationType({
   overviewRulerLane: vscode.OverviewRulerLane.Left,
 });
 
+type LineDiffOp = 'equal' | 'insert' | 'delete';
+
+type ChangesEditorResource = [
+  // Resource shown in the multi-diff file list.
+  resource: vscode.Uri,
+  original: vscode.Uri | undefined,
+  modified: vscode.Uri | undefined,
+];
+
+type SessionDiffQuickPickItem = vscode.QuickPickItem & {
+  action: 'review-all' | 'open-file';
+  diff?: FileDiff;
+};
+
+const MAX_INLINE_DIFF_MATRIX_CELLS = 1_000_000;
+
 // ---------------------------------------------------------------------------
 //  DiffService
 // ---------------------------------------------------------------------------
@@ -122,7 +138,7 @@ export class DiffService implements vscode.Disposable {
    * with `-` or ` `) and served via a virtual document.  The *modified* side
    * points to the real file on disk.
    */
-  async showFileDiff(fileDiff: FileDiff): Promise<void> {
+  async showFileDiff(fileDiff: FileDiff, options?: vscode.TextDocumentShowOptions): Promise<void> {
     const fullPath = this.resolvePath(fileDiff.path);
 
     const filename = path.basename(fileDiff.path);
@@ -130,7 +146,7 @@ export class DiffService implements vscode.Disposable {
     if (fileDiff.status === 'added') {
       // New file — just open it (no original to compare against)
       const uri = vscode.Uri.file(fullPath);
-      await vscode.window.showTextDocument(uri);
+      await vscode.window.showTextDocument(uri, options ?? {});
       return;
     }
 
@@ -149,6 +165,7 @@ export class DiffService implements vscode.Disposable {
         originalUri,
         deletedUri,
         `${filename} (Deleted by AI)`,
+        options,
       );
       return;
     }
@@ -160,6 +177,7 @@ export class DiffService implements vscode.Disposable {
       originalUri,
       modifiedUri,
       `${filename} (AI Changes)`,
+      options,
     );
   }
 
@@ -194,29 +212,46 @@ export class DiffService implements vscode.Disposable {
     }
 
     // Multi-file: show quick-pick
-    const items = diffs.map(d => ({
+    const items: SessionDiffQuickPickItem[] = diffs.map(d => ({
       label: `$(${this.statusIcon(d.status)}) ${d.path}`,
       description: `+${d.additions} -${d.deletions}`,
-      _diff: d,
+      action: 'open-file',
+      diff: d,
     }));
 
-    // Add an "Open All" option at the top
-    const ALL_LABEL = '$(files) Open All Diffs';
-    const picks = await vscode.window.showQuickPick(
-      [{ label: ALL_LABEL, description: `${diffs.length} files changed`, _diff: undefined as unknown as FileDiff }, ...items],
-      { placeHolder: 'Select a file to view diff', canPickMany: false },
+    const picks = await vscode.window.showQuickPick<SessionDiffQuickPickItem>(
+      [
+        {
+          label: '$(files) Review All Changes',
+          description: `${diffs.length} files changed`,
+          action: 'review-all',
+        },
+        ...items,
+      ],
+      { placeHolder: 'Select a file to view diff or review all changes', canPickMany: false },
     );
 
     if (!picks) {
       return;
     }
 
-    if (picks.label === ALL_LABEL) {
-      for (const d of diffs) {
-        await this.showFileDiff(d);
-      }
-    } else if (picks._diff) {
-      await this.showFileDiff(picks._diff);
+    if (picks.action === 'review-all') {
+      await this.showAllSessionDiffs(diffs);
+    } else if (picks.diff) {
+      await this.showFileDiff(picks.diff);
+    }
+  }
+
+  async showAllSessionDiffs(diffs: FileDiff[]): Promise<void> {
+    if (diffs.length === 0) {
+      vscode.window.showInformationMessage('No file changes in the current session.');
+      return;
+    }
+
+    try {
+      await this.openMultiDiffEditor(diffs);
+    } catch {
+      await this.openAllDiffsInGroup(diffs);
     }
   }
 
@@ -232,6 +267,33 @@ export class DiffService implements vscode.Disposable {
     const normalised = this.normalisePath(filePath);
     this.inlineDiffDecorations.set(normalised, { additions, deletions });
     this.applyInlineDecorations(normalised);
+  }
+
+  /**
+   * Compute and apply inline diff decorations by comparing the current file on
+   * disk with the updated content received from the server.
+   */
+  async applyInlineDiffFromContent(filePath: string, newContent: string): Promise<void> {
+    const fullPath = this.resolvePath(filePath);
+    const fileUri = vscode.Uri.file(fullPath);
+
+    let originalContent = '';
+    try {
+      const bytes = await vscode.workspace.fs.readFile(fileUri);
+      originalContent = new TextDecoder().decode(bytes);
+    } catch (error) {
+      if (!(error instanceof vscode.FileSystemError) || error.code !== 'FileNotFound') {
+        throw error;
+      }
+    }
+
+    const { additions, deletions } = this.computeInlineDiffRanges(originalContent, newContent);
+    if (additions.length === 0 && deletions.length === 0) {
+      this.clearInlineDiff(fullPath);
+      return;
+    }
+
+    this.showInlineDiff(fullPath, additions, deletions);
   }
 
   /**
@@ -288,6 +350,152 @@ export class DiffService implements vscode.Disposable {
   }
 
   /**
+   * Build line-level addition / deletion ranges for inline diff decorations.
+   */
+  private computeInlineDiffRanges(
+    originalContent: string,
+    newContent: string,
+  ): { additions: vscode.Range[]; deletions: vscode.Range[] } {
+    const originalLines = this.splitLines(originalContent);
+    const newLines = this.splitLines(newContent);
+    const operations = this.diffLineOperations(originalLines, newLines);
+
+    const additions: vscode.Range[] = [];
+    const deletions: vscode.Range[] = [];
+
+    let currentNewLine = 0;
+    let blockStartLine: number | undefined;
+    let blockAdditionCount = 0;
+    let blockDeletionCount = 0;
+
+    const flushBlock = (): void => {
+      if (blockStartLine === undefined) {
+        return;
+      }
+
+      for (let offset = 0; offset < blockAdditionCount; offset += 1) {
+        additions.push(this.createWholeLineRange(blockStartLine + offset));
+      }
+
+      if (blockDeletionCount > 0) {
+        const maxLine = Math.max(newLines.length - 1, 0);
+        const deletionStartLine = blockAdditionCount > 0
+          ? blockStartLine
+          : Math.min(currentNewLine, maxLine);
+
+        const visibleDeletionCount = Math.min(blockDeletionCount, maxLine + 1);
+        const availableForwardLines = maxLine - deletionStartLine + 1;
+        const adjustedStartLine = availableForwardLines >= visibleDeletionCount
+          ? deletionStartLine
+          : Math.max(maxLine - visibleDeletionCount + 1, 0);
+
+        for (let offset = 0; offset < visibleDeletionCount; offset += 1) {
+          deletions.push(this.createWholeLineRange(adjustedStartLine + offset));
+        }
+      }
+
+      blockStartLine = undefined;
+      blockAdditionCount = 0;
+      blockDeletionCount = 0;
+    };
+
+    for (const operation of operations) {
+      switch (operation) {
+        case 'equal':
+          flushBlock();
+          currentNewLine += 1;
+          break;
+
+        case 'insert':
+          blockStartLine ??= currentNewLine;
+          blockAdditionCount += 1;
+          currentNewLine += 1;
+          break;
+
+        case 'delete':
+          blockStartLine ??= currentNewLine;
+          blockDeletionCount += 1;
+          break;
+      }
+    }
+
+    flushBlock();
+
+    return { additions, deletions };
+  }
+
+  /**
+   * Compute a simple line diff using LCS, with a fallback for very large files.
+   */
+  private diffLineOperations(originalLines: string[], newLines: string[]): LineDiffOp[] {
+    const prefixLength = this.commonPrefixLength(originalLines, newLines);
+    const suffixLength = this.commonSuffixLength(originalLines, newLines, prefixLength);
+
+    const originalMiddle = originalLines.slice(prefixLength, originalLines.length - suffixLength);
+    const newMiddle = newLines.slice(prefixLength, newLines.length - suffixLength);
+
+    const operations: LineDiffOp[] = [];
+    for (let index = 0; index < prefixLength; index += 1) {
+      operations.push('equal');
+    }
+
+    const matrixCells = originalMiddle.length * newMiddle.length;
+    if (matrixCells > MAX_INLINE_DIFF_MATRIX_CELLS) {
+      for (let index = 0; index < originalMiddle.length; index += 1) {
+        operations.push('delete');
+      }
+      for (let index = 0; index < newMiddle.length; index += 1) {
+        operations.push('insert');
+      }
+    } else {
+      const lcs = Array.from(
+        { length: originalMiddle.length + 1 },
+        () => new Uint32Array(newMiddle.length + 1),
+      );
+
+      for (let i = originalMiddle.length - 1; i >= 0; i -= 1) {
+        for (let j = newMiddle.length - 1; j >= 0; j -= 1) {
+          lcs[i][j] = originalMiddle[i] === newMiddle[j]
+            ? lcs[i + 1][j + 1] + 1
+            : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+        }
+      }
+
+      let i = 0;
+      let j = 0;
+      while (i < originalMiddle.length && j < newMiddle.length) {
+        if (originalMiddle[i] === newMiddle[j]) {
+          operations.push('equal');
+          i += 1;
+          j += 1;
+        } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+          operations.push('delete');
+          i += 1;
+        } else {
+          operations.push('insert');
+          j += 1;
+        }
+      }
+
+      while (i < originalMiddle.length) {
+        operations.push('delete');
+        i += 1;
+      }
+
+      while (j < newMiddle.length) {
+        operations.push('insert');
+        j += 1;
+      }
+    }
+
+    for (let index = 0; index < suffixLength; index += 1) {
+      operations.push('equal');
+    }
+
+    return operations;
+  }
+
+  /**
    * Apply stored inline decorations for a file to all matching visible
    * editors.
    */
@@ -296,10 +504,113 @@ export class DiffService implements vscode.Disposable {
     for (const editor of vscode.window.visibleTextEditors) {
       const editorPath = this.normalisePath(editor.document.uri.fsPath);
       if (editorPath === normalisedPath) {
-        editor.setDecorations(addedDecoration, data?.additions ?? []);
         editor.setDecorations(deletedDecoration, data?.deletions ?? []);
+        editor.setDecorations(addedDecoration, data?.additions ?? []);
       }
     }
+  }
+
+  private commonPrefixLength(originalLines: string[], newLines: string[]): number {
+    let index = 0;
+    while (
+      index < originalLines.length
+      && index < newLines.length
+      && originalLines[index] === newLines[index]
+    ) {
+      index += 1;
+    }
+    return index;
+  }
+
+  private commonSuffixLength(
+    originalLines: string[],
+    newLines: string[],
+    prefixLength: number,
+  ): number {
+    let index = 0;
+    while (
+      index < originalLines.length - prefixLength
+      && index < newLines.length - prefixLength
+      && originalLines[originalLines.length - 1 - index] === newLines[newLines.length - 1 - index]
+    ) {
+      index += 1;
+    }
+    return index;
+  }
+
+  private splitLines(content: string): string[] {
+    return content.split(/\r?\n/u);
+  }
+
+  private createWholeLineRange(line: number): vscode.Range {
+    const safeLine = Math.max(line, 0);
+    return new vscode.Range(safeLine, 0, safeLine, 0);
+  }
+
+  private async openMultiDiffEditor(diffs: FileDiff[]): Promise<void> {
+    const resources = diffs.map(diff => this.buildChangesEditorResource(diff));
+
+    // `vscode.changes` is VS Code's stable command for opening the multi diff editor.
+    await vscode.commands.executeCommand(
+      'vscode.changes',
+      'OpenCode Session Changes',
+      resources,
+    );
+  }
+
+  private async openAllDiffsInGroup(diffs: FileDiff[]): Promise<void> {
+    const existingColumns = new Set(
+      vscode.window.tabGroups.all
+        .map(group => group.viewColumn)
+        .filter((column): column is vscode.ViewColumn => column !== undefined),
+    );
+
+    await this.showFileDiff(diffs[0], {
+      preview: false,
+      viewColumn: vscode.ViewColumn.Beside,
+    });
+
+    const targetColumn = this.findBesideGroupColumn(existingColumns)
+      ?? this.getActiveViewColumn()
+      ?? vscode.ViewColumn.Beside;
+
+    for (const diff of diffs.slice(1)) {
+      await this.showFileDiff(diff, {
+        preview: false,
+        viewColumn: targetColumn,
+      });
+    }
+  }
+
+  private buildChangesEditorResource(fileDiff: FileDiff): ChangesEditorResource {
+    const fullPath = this.resolvePath(fileDiff.path);
+    const resourceUri = vscode.Uri.file(fullPath);
+
+    if (fileDiff.status === 'added') {
+      return [resourceUri, undefined, resourceUri];
+    }
+
+    const originalContent = fileDiff.diff
+      ? this.extractOriginalFromDiff(fileDiff.diff)
+      : '';
+    const originalUri = this.diffContentProvider.setContent(fullPath, originalContent, 'original');
+
+    if (fileDiff.status === 'deleted') {
+      return [resourceUri, originalUri, undefined];
+    }
+
+    return [resourceUri, originalUri, resourceUri];
+  }
+
+  private findBesideGroupColumn(existingColumns: ReadonlySet<vscode.ViewColumn>): vscode.ViewColumn | undefined {
+    return vscode.window.tabGroups.all.find(group => {
+      const { viewColumn } = group;
+      return viewColumn !== undefined && !existingColumns.has(viewColumn);
+    })?.viewColumn;
+  }
+
+  private getActiveViewColumn(): vscode.ViewColumn | undefined {
+    return vscode.window.activeTextEditor?.viewColumn ?? vscode.window.tabGroups.activeTabGroup.viewColumn;
   }
 
   private normalisePath(p: string): string {

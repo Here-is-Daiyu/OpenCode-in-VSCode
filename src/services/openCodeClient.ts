@@ -1,6 +1,9 @@
 import type {
   HealthResponse,
   OpenCodeConfig,
+  Pty,
+  PtyCreateOptions,
+  PtyUpdateOptions,
   Provider,
   Session,
   SessionStatus,
@@ -314,6 +317,86 @@ export class OpenCodeClient {
   }
 
   // ---------------------------------------------------------------------------
+  //  PTY
+  // ---------------------------------------------------------------------------
+
+  /**
+   * List all PTY sessions.
+   *
+   * `GET /pty`
+   */
+  async listPtys(): Promise<Pty[]> {
+    return this.get<Pty[]>('/pty');
+  }
+
+  /**
+   * Create a PTY session.
+   *
+   * `POST /pty`
+   */
+  async createPty(opts: PtyCreateOptions): Promise<Pty> {
+    return this.post<Pty>('/pty', opts);
+  }
+
+  /**
+   * Get PTY metadata.
+   *
+   * `GET /pty/:ptyID`
+   */
+  async getPty(ptyID: string): Promise<Pty> {
+    this.requireId(ptyID, 'PTY ID');
+    return this.get<Pty>(`/pty/${enc(ptyID)}`);
+  }
+
+  /**
+   * Update PTY metadata or terminal size.
+   *
+   * `PATCH /pty/:ptyID`
+   */
+  async updatePty(ptyID: string, opts: PtyUpdateOptions): Promise<Pty> {
+    this.requireId(ptyID, 'PTY ID');
+    return this.patch<Pty>(`/pty/${enc(ptyID)}`, opts);
+  }
+
+  /**
+   * Remove and terminate a PTY session.
+   *
+   * `DELETE /pty/:ptyID`
+   */
+  async removePty(ptyID: string): Promise<void> {
+    this.requireId(ptyID, 'PTY ID');
+    await this.delete(`/pty/${enc(ptyID)}`);
+  }
+
+  /**
+   * Build the WebSocket URL for connecting to a PTY session.
+   */
+  getPtyConnectUrl(ptyID: string): string {
+    this.requireId(ptyID, 'PTY ID');
+
+    if (!this.baseUrl) {
+      throw new Error('OpenCode base URL is not configured');
+    }
+
+    let url: URL;
+    try {
+      url = new URL(this.baseUrl);
+    } catch {
+      throw new Error(`OpenCode base URL is invalid: ${this.baseUrl}`);
+    }
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      throw new Error(`Unsupported OpenCode base URL protocol: ${url.protocol}`);
+    }
+
+    url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+    url.pathname = `${url.pathname.replace(/\/+$/u, '')}/pty/${enc(ptyID)}/connect`;
+    url.search = '';
+    url.hash = '';
+    return url.toString();
+  }
+
+  // ---------------------------------------------------------------------------
   //  Sessions
   // ---------------------------------------------------------------------------
 
@@ -324,6 +407,20 @@ export class OpenCodeClient {
    */
   async listSessions(): Promise<Session[]> {
     return this.get<Session[]>('/session');
+  }
+
+  /**
+   * List sessions across all projects when supported by the server.
+   * Falls back to the current project's sessions on older servers.
+   *
+   * `GET /global/session`
+   */
+  async listAllSessions(): Promise<Session[]> {
+    try {
+      return await this.get<Session[]>('/global/session');
+    } catch {
+      return this.listSessions();
+    }
   }
 
   /**

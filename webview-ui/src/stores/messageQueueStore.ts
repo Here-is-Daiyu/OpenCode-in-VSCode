@@ -19,6 +19,7 @@ interface MessageQueueState {
   ) => QueuedChatMessage;
   recall: (sessionID: string, messageID: string) => QueuedChatMessage | undefined;
   remove: (sessionID: string, messageID: string) => void;
+  reorder: (sessionID: string, fromIndex: number, toIndex: number) => void;
   peek: (sessionID: string) => QueuedChatMessage | undefined;
   markSending: (sessionID: string, messageID: string) => void;
   finishSending: (sessionID: string, messageID: string) => void;
@@ -132,6 +133,37 @@ export const useMessageQueueStore = create<MessageQueueState>((set, get) => ({
         failedMessageIDs: state.failedMessageIDs[sessionID] === messageID
           ? omitKey(state.failedMessageIDs, sessionID)
           : state.failedMessageIDs,
+      };
+    });
+  },
+
+  reorder: (sessionID, fromIndex, toIndex) => {
+    set((state) => {
+      const queue = state.queuedMessages[sessionID];
+      if (
+        !queue
+        || fromIndex === toIndex
+        || fromIndex < 0
+        || toIndex < 0
+        || fromIndex >= queue.length
+        || toIndex >= queue.length
+      ) {
+        return state;
+      }
+
+      const newQueue = [...queue];
+      const [item] = newQueue.splice(fromIndex, 1);
+      if (!item) {
+        return state;
+      }
+
+      newQueue.splice(toIndex, 0, item);
+
+      return {
+        queuedMessages: {
+          ...state.queuedMessages,
+          [sessionID]: newQueue,
+        },
       };
     });
   },

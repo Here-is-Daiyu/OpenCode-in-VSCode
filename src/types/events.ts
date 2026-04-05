@@ -2,7 +2,18 @@
  * Internal event types for the extension's event bus
  */
 
-import type { Session, MessageWithParts, SessionStatus, Part, PermissionRequest, Question, Todo, OpenCodeConfig } from './opencode';
+import type {
+  Session,
+  MessageWithParts,
+  SessionStatus,
+  Part,
+  PermissionRequest,
+  Question,
+  Todo,
+  OpenCodeConfig,
+  Pty,
+  PtyExitInfo,
+} from './opencode';
 
 export type EventType =
   | 'server:connected'
@@ -24,7 +35,11 @@ export type EventType =
   | 'todo:updated'
   | 'config:updated'
   | 'file:edited'
-  | 'project:updated';
+  | 'project:updated'
+  | 'pty:created'
+  | 'pty:updated'
+  | 'pty:exited'
+  | 'pty:deleted';
 
 export interface EventPayloads {
   'server:connected': { version: string };
@@ -47,4 +62,8 @@ export interface EventPayloads {
   'config:updated': OpenCodeConfig;
   'file:edited': { path: string; content: string };
   'project:updated': { id: string; name: string };
+  'pty:created': Pty;
+  'pty:updated': Pty;
+  'pty:exited': PtyExitInfo;
+  'pty:deleted': { id: string };
 }

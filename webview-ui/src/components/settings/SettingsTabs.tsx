@@ -69,30 +69,26 @@ export function SettingsTabs({ activeTab, onTabChange }: SettingsTabProps) {
   }, [onTabChange]);
 
   return (
-    <nav className="settings-tabs" aria-label="Settings sections">
+    <div className="settings-tabs">
       {SETTINGS_TABS.map((tab) => (
         <a
           key={tab.id}
           href={`#${getSettingsSectionId(tab.id)}`}
           className={`settings-tabs__tab ${activeTab === tab.id ? 'settings-tabs__tab--active' : ''}`}
+          title={tab.description}
           onClick={(event) => {
             event.preventDefault();
             handleClick(tab.id);
           }}
+          aria-label={`${tab.label}: ${tab.description}`}
           aria-current={activeTab === tab.id ? 'location' : undefined}
         >
           <span className="settings-tabs__icon">
             <span className={`codicon codicon-${tab.icon}`} aria-hidden="true" />
           </span>
-          <span className="settings-tabs__text">
-            <span className="settings-tabs__label">{tab.label}</span>
-            <span className="settings-tabs__description">{tab.description}</span>
-          </span>
-          <span className="settings-tabs__chevron">
-            <span className="codicon codicon-chevron-right" aria-hidden="true" />
-          </span>
+          <span className="settings-tabs__label">{tab.label}</span>
         </a>
       ))}
-    </nav>
+    </div>
   );
 }

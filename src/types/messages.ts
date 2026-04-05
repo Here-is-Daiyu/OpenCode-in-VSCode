@@ -31,7 +31,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'file:added'; data: { path: string; name: string; content: string } }
   | { type: 'selection:added'; data: { path: string; name: string; content: string; startLine: number; endLine: number } }
   | { type: 'command:listed'; data: { commands: Array<{ name: string; description?: string }> } }
-  | { type: 'chat:autoSend'; data: { text: string } }
+  | { type: 'chat:autoSend'; data: { text: string; attachDiagnostics?: boolean } }
   | { type: 'chat:insertText'; data: { text: string; focus?: boolean } }
   | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } }
   | { type: 'mention:results'; data: { query: string; results: Array<{ name: string; path: string; type: 'file' | 'folder' }> } }
@@ -39,7 +39,7 @@ export type ExtensionToWebviewMessage =
 
 // Webview → Extension messages
 export type WebviewToExtensionMessage =
-  | { type: 'chat:send'; data: { text: string; images?: string[]; mentions?: string[] } }
+  | { type: 'chat:send'; data: { text: string; images?: string[]; mentions?: string[]; attachDiagnostics?: boolean } }
   | { type: 'chat:abort' }
   | { type: 'session:create'; data?: { title?: string } }
   | { type: 'session:switch'; data: { id: string } }

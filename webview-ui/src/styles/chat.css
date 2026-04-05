@@ -245,6 +245,46 @@ textarea {
   letter-spacing: var(--letter-spacing-tight);
 }
 
+.current-model-badge {
+  min-width: 0;
+  max-width: min(42vw, 18rem);
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-raised-base) 70%, transparent);
+  color: var(--text-weaker);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.current-model-badge:hover {
+  background: color-mix(in srgb, var(--button-ghost-hover) 88%, transparent);
+  color: var(--text-strong);
+}
+
+.current-model-badge:focus-visible {
+  outline: none;
+  border-color: var(--border-selected);
+  box-shadow: 0 0 0 3px var(--border-weak-selected);
+  color: var(--text-strong);
+}
+
+.current-model-badge__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .chat-header__status {
   display: inline-flex;
   align-items: center;
@@ -652,22 +692,6 @@ textarea {
   flex-shrink: 0;
 }
 
-.chat-input__dock-status {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
-
-.chat-input__dock-status:empty {
-  display: none;
-}
-
-.chat-input__dock-status .token-bar {
-  flex: 1 1 auto;
-}
-
 .chat-input__shell {
   position: relative;
   z-index: 1;
@@ -675,7 +699,7 @@ textarea {
   border-radius: var(--radius-lg);
   background: var(--surface-raised-stronger-non-alpha);
   box-shadow: var(--shadow-xs-border-base);
-  overflow: clip;
+  overflow: visible;
 }
 
 .chat-input__row {
@@ -684,6 +708,14 @@ textarea {
   gap: 10px;
   min-height: 36px;
   padding: 8px 10px 6px;
+}
+
+.chat-input__context-bar {
+  padding: 4px 12px 6px;
+}
+
+.chat-input__context-bar:empty {
+  display: none;
 }
 
 .chat-input__shell:focus-within {
@@ -699,7 +731,7 @@ textarea {
 .chat-input__textarea {
   width: 100%;
   min-height: 24px;
-  max-height: 220px;
+  max-height: 200px;
   resize: none;
   overflow-y: hidden;
   padding: 4px 0;
@@ -884,6 +916,11 @@ textarea {
   background: color-mix(in srgb, var(--surface-raised-base) 74%, transparent);
 }
 
+.chat-input__meta:last-child {
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+}
+
 .chat-input__hint {
   display: flex;
   align-items: center;
@@ -1029,6 +1066,14 @@ textarea {
   background: color-mix(in srgb, var(--surface-raised-base) 88%, transparent);
 }
 
+.chat-queue__item--dragging {
+  opacity: 0.4;
+}
+
+.chat-queue__item--drop-target {
+  border-top: 2px solid var(--accent-primary);
+}
+
 .chat-queue__item[data-sending='true'] {
   border-color: var(--border-focus-base);
 }
@@ -1044,6 +1089,24 @@ textarea {
   min-width: 0;
   flex-direction: column;
   gap: 4px;
+}
+
+.chat-queue__drag-handle {
+  cursor: grab;
+  opacity: 0.4;
+  user-select: none;
+}
+
+.chat-queue__drag-handle:hover {
+  opacity: 0.8;
+}
+
+.chat-queue__item[draggable='true'] {
+  cursor: grab;
+}
+
+.chat-queue__item[draggable='true']:active {
+  cursor: grabbing;
 }
 
 .chat-queue__item-header {
@@ -2053,16 +2116,16 @@ textarea {
   position: relative;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
-  min-height: 18px;
-  padding: 0 2px 0;
+  min-height: 14px;
+  padding: 0;
 }
 
 .token-bar__track {
   flex: 1 1 auto;
   display: flex;
-  height: 4px;
+  height: 3px;
   border-radius: 999px;
   background: var(--surface-base);
   overflow: hidden;
@@ -2091,6 +2154,7 @@ textarea {
   color: var(--text-weaker);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+  line-height: 1;
   white-space: nowrap;
 }
 
@@ -2102,7 +2166,7 @@ textarea {
   right: 0;
   z-index: 50;
   min-width: 160px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   border: 1px solid var(--border-weak-base);
   border-radius: var(--radius-lg);
   background: var(--surface-raised-stronger-non-alpha);
@@ -2125,9 +2189,9 @@ textarea {
 .token-bar__tooltip-row {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 2px 0;
-  font-size: 11px;
+  gap: 5px;
+  padding: 1px 0;
+  font-size: 10px;
 }
 
 .token-bar__tooltip-row--total {
@@ -2137,8 +2201,8 @@ textarea {
 }
 
 .token-bar__tooltip-dot {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   flex-shrink: 0;
 }

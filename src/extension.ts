@@ -1,8 +1,19 @@
 import * as vscode from 'vscode';
-import { ServerManager, OpenCodeClient, EventBus, Logger, DiffService } from './services';
+import {
+  ServerManager,
+  OpenCodeClient,
+  EventBus,
+  Logger,
+  DiffService,
+  DiagnosticsService,
+  GitContextService,
+  PtyTerminalService,
+  TerminalOutputService,
+} from './services';
 import type { ServerEvent } from './services/openCodeClient';
 import {
   ChatViewProvider,
+  GlobalSessionTreeProvider,
   SessionTreeProvider,
   StatusTreeProvider,
   SettingsViewProvider,
@@ -19,6 +30,8 @@ import type {
   Question,
   OpenCodeConfig,
   Todo,
+  Pty,
+  PtyExitInfo,
 } from './types/opencode';
 import { getConfiguredModel } from './utils/opencodeConfig';
 
@@ -64,7 +77,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const chatProvider = new ChatViewProvider(context.extensionUri);
   chatProvider.setClient(client);
   chatProvider.setLogger(logger);
-  const sessionProvider = new SessionTreeProvider(eventBus);
+  const sessionProvider = new SessionTreeProvider(eventBus, context.workspaceState);
+  const globalSessionProvider = new GlobalSessionTreeProvider(eventBus);
+  globalSessionProvider.setClient(client);
   const statusProvider = new StatusTreeProvider(eventBus);
   statusProvider.setClient(client);
   statusProvider.setLogger(logger);
@@ -95,6 +110,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(
+    vscode.window.createTreeView('opencode.globalSessions', {
+      treeDataProvider: globalSessionProvider,
+      showCollapseAll: true,
+    })
+  );
+
+  context.subscriptions.push(
     vscode.window.createTreeView('opencode.status', {
       treeDataProvider: statusProvider,
       showCollapseAll: true,
@@ -108,8 +130,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const diffService = new DiffService(context);
   context.subscriptions.push(diffService);
 
+  const diagnosticsService = new DiagnosticsService();
+  context.subscriptions.push(diagnosticsService);
+
+  const gitContextService = new GitContextService();
+  context.subscriptions.push(gitContextService);
+
+  const ptyTerminalService = new PtyTerminalService(client, eventBus, logger);
+  context.subscriptions.push(ptyTerminalService);
+
+  const terminalOutputService = new TerminalOutputService();
+  context.subscriptions.push(terminalOutputService);
+
+  chatProvider.setDiagnosticsService(diagnosticsService);
+
   // 7. Create session manager (coordinates session switching + sync)
-  const sessionManager = new SessionManager(client, eventBus, sessionProvider, chatProvider, logger);
+  const sessionManager = new SessionManager(
+    client,
+    eventBus,
+    sessionProvider,
+    globalSessionProvider,
+    chatProvider,
+    logger,
+  );
   context.subscriptions.push(sessionManager);
 
   // 8. Build command context and register commands
@@ -126,6 +169,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBarManager,
     sessionManager,
     diffService,
+    diagnosticsService,
+    gitContextService,
+    ptyTerminalService,
+    terminalOutputService,
     isServerConnected: () => serverConnected,
     getServerMode,
     getExternalServerUrl,
@@ -141,6 +188,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // 10. Subscribe to EventBus events (extension-internal routing)
   subscribeToEvents(cmdCtx);
+
+  // 10b. Clear inline diff decorations once files are saved
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      if (document.uri.scheme === 'file') {
+        diffService.clearInlineDiff(document.uri.fsPath);
+      }
+    })
+  );
 
   // 11. Listen to VSCode configuration changes
   context.subscriptions.push(
@@ -292,11 +348,12 @@ function clearConnectionState(ctx: CommandContext): void {
   serverConnected = false;
 
   ctx.activeSessionId = undefined;
+  ctx.ptyTerminalService.disconnectAll();
   ctx.client.setBaseUrl('');
   // Also clears SessionManager's active-session cache and notifies the chat view.
-  ctx.sessionManager.setSessions([]);
-  ctx.sessionProvider.setSessions([], {});
-  ctx.sessionProvider.setActiveSession(undefined);
+  ctx.sessionManager.setSessions([], {});
+  ctx.sessionManager.setGlobalSessions([], {});
+  ctx.sessionManager.setCurrentDirectory(undefined);
   ctx.statusProvider.setServerInfo({ connected: false });
   ctx.statusBarManager.clearTokenUsage();
   ctx.statusBarManager.setDisconnected();
@@ -368,16 +425,25 @@ async function onServerStarted(ctx: CommandContext): Promise<void> {
 
 async function loadInitialData(ctx: CommandContext): Promise<void> {
   const sessionsPromise = ctx.client.listSessions();
+  const globalSessionsPromise = ctx.client.listAllSessions();
+  const pathInfoPromise = ctx.client.getPathInfo();
   const configPromise = ctx.client.getConfig();
   const providersPromise = ctx.client.getProviderInfo();
   const agentsPromise = ctx.client.listAgents();
+  const ptysPromise = ctx.ptyTerminalService.listAndReconnect();
+
+  try {
+    const pathInfo = await pathInfoPromise;
+    ctx.sessionManager.setCurrentDirectory(pathInfo.directory);
+  } catch (err) {
+    ctx.logger.warn('Failed to load current project directory', err);
+  }
 
   try {
     const sessions = await sessionsPromise;
     const previousActiveSessionId = ctx.activeSessionId ?? ctx.sessionManager.getActiveSessionId();
 
     ctx.sessionManager.setSessions(sessions);
-    ctx.sessionProvider.setSessions(sessions);
 
     if (previousActiveSessionId && ctx.sessionManager.getSession(previousActiveSessionId)) {
       if (ctx.sessionManager.getActiveSessionId() !== previousActiveSessionId) {
@@ -400,6 +466,14 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
     ctx.logger.debug(`Loaded ${sessions.length} sessions`);
   } catch (err) {
     ctx.logger.error('Failed to load sessions', err);
+  }
+
+  try {
+    const globalSessions = await globalSessionsPromise;
+    ctx.sessionManager.setGlobalSessions(globalSessions);
+    ctx.logger.debug(`Loaded ${globalSessions.length} global session(s)`);
+  } catch (err) {
+    ctx.logger.error('Failed to load global sessions', err);
   }
 
   try {
@@ -445,6 +519,12 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
     ctx.logger.debug(`Loaded ${agents.length} agents`);
   } catch (err) {
     ctx.logger.error('Failed to load agents', err);
+  }
+
+  try {
+    await ptysPromise;
+  } catch (err) {
+    ctx.logger.error('Failed to reconnect PTY terminals', err);
   }
 
   void ctx.statusProvider.refresh();
@@ -616,31 +696,81 @@ function normalizeSessionStatusPayload(
   }
 }
 
+function normalizeSessionPayload(
+  properties: Record<string, unknown>,
+  directory?: string,
+): Session | undefined {
+  const session = properties as Partial<Session>;
+  if (!session.id) {
+    return undefined;
+  }
+
+  return {
+    ...(session as Session),
+    directory: session.directory || directory || '',
+  };
+}
+
+function normalizePtyInfoPayload(
+  properties: Record<string, unknown>,
+): Pty | undefined {
+  const payload = properties as { info?: Pty };
+  return payload.info?.id ? payload.info : undefined;
+}
+
+function normalizePtyExitedPayload(
+  properties: Record<string, unknown>,
+): PtyExitInfo | undefined {
+  const payload = properties as Partial<PtyExitInfo>;
+  if (!payload.id || typeof payload.exitCode !== 'number') {
+    return undefined;
+  }
+
+  return {
+    id: payload.id,
+    exitCode: payload.exitCode,
+  };
+}
+
+function normalizePtyDeletedPayload(
+  properties: Record<string, unknown>,
+): { id: string } | undefined {
+  const payload = properties as { id?: string };
+  return payload.id ? { id: payload.id } : undefined;
+}
+
 /**
  * Route an incoming SSE event to the correct EventBus event and webview messages.
  */
 function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
-  const { type, properties } = event;
+  const { type, properties, directory } = event;
   ctx.logger.debug(`SSE event: ${type}`);
 
   switch (type) {
     case 'session.created': {
-      const session = properties as unknown as Session;
+      const session = normalizeSessionPayload(properties, directory);
       if (!session?.id) { break; }
-      ctx.activeSessionId = session.id;
+      const shouldRouteToSessionUI =
+        ctx.activeSessionId === session.id || ctx.sessionManager.isCurrentProjectSession(session);
       ctx.eventBus.emit('session:created', session);
-      ctx.chatProvider.postMessageToWebview({ type: 'session:created', data: session });
-      ctx.editorPanelProvider.routeSessionMessage(session.id, { type: 'session:created', data: session });
+      if (shouldRouteToSessionUI) {
+        ctx.chatProvider.postMessageToWebview({ type: 'session:created', data: session });
+        ctx.editorPanelProvider.routeSessionMessage(session.id, { type: 'session:created', data: session });
+      }
       refreshSessionsQuietly(ctx);
       break;
     }
 
     case 'session.updated': {
-      const session = properties as unknown as Session;
+      const session = normalizeSessionPayload(properties, directory);
       if (!session?.id) { break; }
+      const shouldRouteToSessionUI =
+        ctx.activeSessionId === session.id || ctx.sessionManager.isCurrentProjectSession(session);
       ctx.eventBus.emit('session:updated', session);
-      ctx.chatProvider.postMessageToWebview({ type: 'session:updated', data: session });
-      ctx.editorPanelProvider.routeSessionMessage(session.id, { type: 'session:updated', data: session });
+      if (shouldRouteToSessionUI) {
+        ctx.chatProvider.postMessageToWebview({ type: 'session:updated', data: session });
+        ctx.editorPanelProvider.routeSessionMessage(session.id, { type: 'session:updated', data: session });
+      }
       refreshSessionsQuietly(ctx);
       break;
     }
@@ -648,9 +778,13 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
     case 'session.deleted': {
       const payload = properties as unknown as { id: string };
       if (!payload?.id) { break; }
+      const shouldRouteToSessionUI =
+        ctx.activeSessionId === payload.id || ctx.sessionManager.isCurrentProjectDirectory(directory);
       ctx.eventBus.emit('session:deleted', payload);
-      ctx.chatProvider.postMessageToWebview({ type: 'session:deleted', data: payload });
-      ctx.editorPanelProvider.routeSessionMessage(payload.id, { type: 'session:deleted', data: payload });
+      if (shouldRouteToSessionUI) {
+        ctx.chatProvider.postMessageToWebview({ type: 'session:deleted', data: payload });
+        ctx.editorPanelProvider.routeSessionMessage(payload.id, { type: 'session:deleted', data: payload });
+      }
       if (ctx.activeSessionId === payload.id) {
         ctx.activeSessionId = undefined;
       }
@@ -665,9 +799,11 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       ctx.chatProvider.postMessageToWebview({ type: 'session:status', data: status });
       ctx.editorPanelProvider.routeSessionMessage(status.sessionID, { type: 'session:status', data: status });
 
-      const busy = status.status.status === 'active';
-      vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', busy);
-      ctx.statusBarManager.setBusy(busy);
+      if (ctx.activeSessionId === status.sessionID) {
+        const busy = status.status.status === 'active';
+        vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', busy);
+        ctx.statusBarManager.setBusy(busy);
+      }
 
       // Send active session count (excluding current session) to webview
       const activeCount = ctx.sessionProvider.getActiveSessionCount(ctx.activeSessionId);
@@ -779,6 +915,34 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       break;
     }
 
+    case 'pty.created': {
+      const pty = normalizePtyInfoPayload(properties);
+      if (!pty) { break; }
+      ctx.eventBus.emit('pty:created', pty);
+      break;
+    }
+
+    case 'pty.updated': {
+      const pty = normalizePtyInfoPayload(properties);
+      if (!pty) { break; }
+      ctx.eventBus.emit('pty:updated', pty);
+      break;
+    }
+
+    case 'pty.exited': {
+      const payload = normalizePtyExitedPayload(properties);
+      if (!payload) { break; }
+      ctx.eventBus.emit('pty:exited', payload);
+      break;
+    }
+
+    case 'pty.deleted': {
+      const payload = normalizePtyDeletedPayload(properties);
+      if (!payload) { break; }
+      ctx.eventBus.emit('pty:deleted', payload);
+      break;
+    }
+
     case 'mcp.tools.changed': {
       ctx.logger.debug('MCP tools changed, refreshing MCP status');
       // Refresh status tree to show updated MCP info
@@ -796,11 +960,13 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 /** Refresh session tree without showing errors (best-effort). */
 async function refreshSessionsQuietly(ctx: CommandContext): Promise<void> {
   try {
-    const [sessions, statuses] = await Promise.all([
+    const [sessions, statuses, globalSessions] = await Promise.all([
       ctx.client.listSessions(),
       ctx.client.getSessionStatus(),
+      ctx.client.listAllSessions(),
     ]);
-    ctx.sessionProvider.setSessions(sessions, statuses);
+    ctx.sessionManager.setSessions(sessions, statuses);
+    ctx.sessionManager.setGlobalSessions(globalSessions, statuses);
   } catch {
     // Silently ignore — the tree will be stale but that's acceptable
   }
@@ -858,6 +1024,33 @@ function subscribeToEvents(ctx: CommandContext): void {
       ctx.statusBarManager.setModelAuto();
     })
   );
+
+  // File edited — compute and show inline diff decorations
+  eventUnsubscribers.push(
+    ctx.eventBus.on('file:edited', ({ path, content }) => {
+      const showInlineDiffs = vscode.workspace
+        .getConfiguration('opencode.editor')
+        .get<boolean>('showInlineDiffs', true);
+
+      if (!showInlineDiffs) {
+        ctx.diffService.clearInlineDiff(path);
+        return;
+      }
+
+      void ctx.diffService.applyInlineDiffFromContent(path, content).catch((error) => {
+        ctx.logger.warn('Failed to apply inline diff', error);
+      });
+    })
+  );
+
+  // Session idle — clear inline diff decorations once edits settle
+  eventUnsubscribers.push(
+    ctx.eventBus.on('session:status', ({ status }) => {
+      if (status.status === 'idle') {
+        ctx.diffService.clearInlineDiff();
+      }
+    })
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -908,6 +1101,17 @@ function handleConfigChange(
       .get<boolean>('debug', false);
     ctx.logger.setDebug(debug);
     ctx.logger.info(`Debug mode ${debug ? 'enabled' : 'disabled'}`);
+  }
+
+  // Inline diff visibility changed
+  if (e.affectsConfiguration('opencode.editor.showInlineDiffs')) {
+    const showInlineDiffs = vscode.workspace
+      .getConfiguration('opencode.editor')
+      .get<boolean>('showInlineDiffs', true);
+
+    if (!showInlineDiffs) {
+      ctx.diffService.clearInlineDiff();
+    }
   }
 }
 
