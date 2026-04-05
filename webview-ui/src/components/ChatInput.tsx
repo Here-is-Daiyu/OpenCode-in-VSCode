@@ -11,7 +11,6 @@ import {
   type ChatImageAttachment,
 } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
-import { ModelSelector } from './ModelSelector';
 import { AgentSelector } from './AgentSelector';
 import { TokenUsageBar } from './TokenUsageBar';
 import { QueuedMessageList } from './QueuedMessageList';
@@ -988,6 +987,9 @@ export function ChatInput() {
             onSelect={handleMentionSelect}
             onClose={closeMentionMenu}
           />
+          <div className="chat-input__agent-selector">
+            <AgentSelector />
+          </div>
           <div className="chat-input__shell">
             <div className="chat-input__row">
               <div className="chat-input__field">
@@ -1092,16 +1094,9 @@ export function ChatInput() {
             )}
           </div>
 
-          <div className="chat-input__dock-tray">
-            <div className="chat-input__dock-controls">
-              <AgentSelector />
-              <ModelSelector />
-            </div>
-          </div>
-
           {attachedImages.length > 0 && (
             <div className="chat-input__tray">
-                <div className="chat-input__images">
+              <div className="chat-input__images">
                 {attachedImages.map((image) => (
                   <div key={image.id} className="chat-input__image-preview" title={image.marker}>
                     <img src={image.dataUrl} alt={`Attachment ${image.marker}`} />

@@ -17,7 +17,6 @@ import { ConnectionTab } from './tabs/ConnectionTab';
 import { ChatTab } from './tabs/ChatTab';
 import { ModelsTab } from './tabs/ModelsTab';
 import { IntegrationsTab } from './tabs/IntegrationsTab';
-import { PermissionsTab } from './tabs/PermissionsTab';
 import type { ExtensionToSettingsMessage, SettingsToExtensionMessage } from '../../types/messages';
 import type { MCPServerConfig, OpenCodeConfig } from '../../types/opencode';
 import { getConfiguredAgent, getConfiguredModel } from '../../utils/opencodeConfig';
@@ -337,15 +336,6 @@ export function SettingsApp() {
             onMCPToggle={toggleMCPServer}
           />
         );
-      case 'permissions':
-        return (
-          <PermissionsTab
-            config={store.opencodeConfig}
-            settings={store.vscodeSettings}
-            onUpdateConfig={updateOpenCodeConfig}
-            onUpdateSetting={updateVSCodeSetting}
-          />
-        );
       default:
         return null;
     }
@@ -361,11 +351,24 @@ export function SettingsApp() {
           <div className="settings-header__main">
             <div className="settings-header__title-row">
               <div className="settings-header__heading">
-                <h1 className="settings-header__title">Settings</h1>
-                <p className="settings-header__description">
-                  Edit VS Code preferences and OpenCode server configuration from one
-                  place.
-                </p>
+                <div className="settings-header__title-line">
+                  <h1 className="settings-header__title">Settings</h1>
+                  {store.saveIndicator && (
+                    <span className="settings-header__indicator settings-header__indicator--saved">
+                      Saved
+                    </span>
+                  )}
+                  {store.isDirty && !store.saveIndicator && (
+                    <span className="settings-header__indicator settings-header__indicator--dirty">
+                      Unsaved
+                    </span>
+                  )}
+                  {!store.isDirty && !store.saveIndicator && store.loaded && (
+                    <span className="settings-header__indicator settings-header__indicator--idle">
+                      Auto-save on
+                    </span>
+                  )}
+                </div>
                 <div className="settings-header__summary">
                   {settingsSummary.map((item) => (
                     <div key={item.label} className="settings-header__summary-item">
@@ -387,21 +390,6 @@ export function SettingsApp() {
                 >
                   Open local config
                 </button>
-                {store.saveIndicator && (
-                  <span className="settings-header__indicator settings-header__indicator--saved">
-                    Saved
-                  </span>
-                )}
-                {store.isDirty && !store.saveIndicator && (
-                  <span className="settings-header__indicator settings-header__indicator--dirty">
-                    Unsaved
-                  </span>
-                )}
-                {!store.isDirty && !store.saveIndicator && store.loaded && (
-                  <span className="settings-header__indicator settings-header__indicator--idle">
-                    Auto-save on
-                  </span>
-                )}
               </div>
             </div>
           </div>

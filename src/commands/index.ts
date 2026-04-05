@@ -165,81 +165,6 @@ function buildChatCodeInsertText(editor: vscode.TextEditor): string {
   return `Source: \`${relativePath}:${lineRange}\`\n\`\`\`${language}\n${code}\n\`\`\``;
 }
 
-const DEFAULT_PROJECT_CONFIG_FILE = 'opencode.jsonc';
-const DEFAULT_PROJECT_CONFIG_TEMPLATE = `{
-  "$schema": "https://opencode.ai/config.json"
-}
-`;
-
-function normalizePathForComparison(filePath: string): string {
-  const resolved = path.resolve(filePath);
-  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
-}
-
-function getConfigSearchDirectories(directory: string, worktree: string): string[] {
-  const folders: string[] = [];
-  const stop = normalizePathForComparison(worktree);
-  let current = path.resolve(directory);
-
-  while (true) {
-    folders.push(current);
-
-    if (normalizePathForComparison(current) === stop) {
-      return folders;
-    }
-
-    const parent = path.dirname(current);
-    if (normalizePathForComparison(parent) === normalizePathForComparison(current)) {
-      return folders;
-    }
-
-    current = parent;
-  }
-}
-
-function getLocalConfigCandidates(directory: string, worktree: string): vscode.Uri[] {
-  const folders = getConfigSearchDirectories(directory, worktree);
-  const dotFolders = [...folders].reverse();
-  const files = [
-    // Official config loading merges plain project files first and `.opencode` files after,
-    // so `.opencode` wins over `opencode.json{,c}` when both exist. Project `.opencode`
-    // directories are walked from the current directory up to the worktree, which means the
-    // farthest matching `.opencode` file is applied last and therefore has the highest priority.
-    ...dotFolders.flatMap((folder) => [
-      path.join(folder, '.opencode', 'opencode.json'),
-      path.join(folder, '.opencode', 'opencode.jsonc'),
-    ]),
-    ...folders.map((folder) => path.join(folder, 'opencode.json')),
-    ...folders.map((folder) => path.join(folder, 'opencode.jsonc')),
-  ];
-
-  return files.map((filePath) => vscode.Uri.file(filePath));
-}
-
-async function fileExists(uri: vscode.Uri): Promise<boolean> {
-  try {
-    await vscode.workspace.fs.stat(uri);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function resolveLocalConfigFile(pathInfo: { directory: string; worktree: string }): Promise<vscode.Uri> {
-  for (const candidate of getLocalConfigCandidates(pathInfo.directory, pathInfo.worktree)) {
-    if (await fileExists(candidate)) {
-      return candidate;
-    }
-  }
-
-  const file = vscode.Uri.file(path.join(pathInfo.directory, DEFAULT_PROJECT_CONFIG_FILE));
-  await vscode.workspace.fs.writeFile(
-    file,
-    new TextEncoder().encode(DEFAULT_PROJECT_CONFIG_TEMPLATE),
-  );
-  return file;
-}
-
 function getDirectDiffArgs(
   filePath: unknown,
   original: unknown,
@@ -1081,24 +1006,43 @@ async function compactSession(ctx: CommandContext): Promise<void> {
 }
 
 async function openConfigFile(ctx: CommandContext): Promise<void> {
-  if (!requireConnected(ctx)) { return; }
   try {
-    const pathInfo = await ctx.client.getPathInfo();
-    const directory = pathInfo.directory?.trim();
-    const worktree = pathInfo.worktree?.trim();
-    if (!directory) {
-      throw new Error('OpenCode server did not report a project directory.');
-    }
-    if (!worktree) {
-      throw new Error('OpenCode server did not report a project worktree.');
+    const os = await import('os');
+    const path = await import('path');
+    const fs = await import('fs');
+
+    // Try common global config locations
+    const homeDir = os.homedir();
+    const candidates = [
+      path.join(homeDir, '.config', 'opencode', 'config.json'),
+      path.join(homeDir, '.config', 'opencode', 'config.jsonc'),
+      path.join(homeDir, '.opencode', 'config.json'),
+      path.join(homeDir, '.opencode', 'config.jsonc'),
+    ];
+
+    let configPath: string | undefined;
+    for (const candidate of candidates) {
+      try {
+        await fs.promises.access(candidate);
+        configPath = candidate;
+        break;
+      } catch {
+        // Not found, try next
+      }
     }
 
-    const configPath = await resolveLocalConfigFile({ directory, worktree });
+    if (!configPath) {
+      // Default: create at ~/.config/opencode/config.json
+      configPath = candidates[0];
+      await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
+      await fs.promises.writeFile(configPath, '{\n  "$schema": "https://opencode.ai/config.json"\n}\n', 'utf-8');
+    }
+
     const doc = await vscode.workspace.openTextDocument(configPath);
     await vscode.window.showTextDocument(doc);
   } catch (err) {
-    ctx.logger.error('Failed to open config file', err);
-    vscode.window.showErrorMessage(`Failed to open config file: ${errorMessage(err)}`);
+    ctx.logger.error('Failed to open global config file', err);
+    vscode.window.showErrorMessage(`Failed to open global config file: ${errorMessage(err)}`);
   }
 }
 

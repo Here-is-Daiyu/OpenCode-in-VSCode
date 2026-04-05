@@ -78,7 +78,20 @@ export const BashRenderer = React.memo(function BashRenderer({
   return (
     <div className={`msg-bash ${grouped ? 'msg-bash--grouped' : ''}`}>
       {/* Terminal header */}
-      <div className="msg-bash__header">
+      <div
+        className="msg-bash__header"
+        onClick={hasContent ? toggle : undefined}
+        style={hasContent ? { cursor: 'pointer' } : undefined}
+        role={hasContent ? 'button' : undefined}
+        tabIndex={hasContent ? 0 : undefined}
+        aria-expanded={hasContent ? expanded : undefined}
+        onKeyDown={hasContent ? (e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        } : undefined}
+      >
         <span className="msg-bash__status-dot" data-status={hasError ? 'error' : status} />
         <span className="msg-bash__prompt">$</span>
         <span className="msg-bash__command" title={command}>{displayCommand}</span>
@@ -90,6 +103,16 @@ export const BashRenderer = React.memo(function BashRenderer({
         {showDuration && duration !== undefined && (
           <span className="msg-bash__duration">{formatDuration(duration)}</span>
         )}
+        {hasContent && (
+          <span
+            className="msg-tool-compact__chevron"
+            style={showDuration && duration !== undefined ? { marginLeft: 0 } : undefined}
+          >
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.5 }}>
+              {expanded ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
+            </svg>
+          </span>
+        )}
       </div>
 
       {/* Description subtitle */}
@@ -100,18 +123,6 @@ export const BashRenderer = React.memo(function BashRenderer({
       {/* Error display (always visible) */}
       {error.trim() && (
         <div className="msg-bash__error">{error}</div>
-      )}
-
-      {/* Collapsible result toggle */}
-      {hasContent && (
-        <button className="msg-tool-compact__toggle" onClick={toggle} type="button">
-          <span className="msg-tool-compact__toggle-icon">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.85 }}>
-              {expanded ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
-            </svg>
-          </span>
-          {expanded ? 'Hide output' : 'Show output'}
-        </button>
       )}
 
       {/* Collapsible body */}

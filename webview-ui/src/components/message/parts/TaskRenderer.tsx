@@ -175,7 +175,20 @@ export const TaskRenderer = React.memo(function TaskRenderer({
           <span className={`msg-task__badge msg-task__badge--${tone}`}>{statusLabel}</span>
         </div>
 
-        <div className="msg-task__title-row">
+        <div
+          className="msg-task__title-row"
+          onClick={hasContent ? toggle : undefined}
+          style={hasContent ? { cursor: 'pointer' } : undefined}
+          role={hasContent ? 'button' : undefined}
+          tabIndex={hasContent ? 0 : undefined}
+          aria-expanded={hasContent ? expanded : undefined}
+          onKeyDown={hasContent ? (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              toggle();
+            }
+          } : undefined}
+        >
           <div className="msg-task__title-wrap">
             <span className="msg-task__title">{title}</span>
             {isRunning && (
@@ -187,6 +200,17 @@ export const TaskRenderer = React.memo(function TaskRenderer({
 
           {showDuration && duration !== undefined && (
             <span className="msg-task__duration">{formatDuration(duration)}</span>
+          )}
+
+          {hasContent && (
+            <span
+              className="msg-tool-compact__chevron"
+              style={showDuration && duration !== undefined ? { marginLeft: 0 } : undefined}
+            >
+              <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.5 }}>
+                {expanded ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
+              </svg>
+            </span>
           )}
         </div>
 
@@ -211,17 +235,6 @@ export const TaskRenderer = React.memo(function TaskRenderer({
             </svg>
           </button>
         </div>
-      )}
-
-      {hasContent && (
-        <button className="msg-tool-compact__toggle" onClick={toggle} type="button">
-          <span className="msg-tool-compact__toggle-icon">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.85 }}>
-              {expanded ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
-            </svg>
-          </span>
-          {expanded ? 'Hide details' : 'Show details'}
-        </button>
       )}
 
       {hasContent && (

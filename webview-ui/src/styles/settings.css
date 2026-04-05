@@ -131,6 +131,12 @@ textarea {
   gap: 12px;
 }
 
+.settings-header__title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .settings-header__title {
   margin: 0;
   color: var(--text-strong);

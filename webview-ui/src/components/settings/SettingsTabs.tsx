@@ -39,12 +39,6 @@ export const SETTINGS_TABS: SettingsTabDef[] = [
     description: 'MCP servers, commands, and providers',
     icon: 'extensions',
   },
-  {
-    id: 'permissions',
-    label: 'Permissions',
-    description: 'Access control and safety rules',
-    icon: 'shield',
-  },
 ];
 
 export function getSettingsTabDef(activeTab: SettingsTab): SettingsTabDef {

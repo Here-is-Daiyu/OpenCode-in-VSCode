@@ -134,8 +134,8 @@ function getLanguageLabel(lang: string): string {
 }
 
 function injectLanguage(html: string, lang: string): string {
-  if (!lang) {
-    return html;
+  if (!lang || !html) {
+    return html ?? '';
   }
 
   return html.replace(/<pre(?![^>]*\bdata-language=)([^>]*)>/, `<pre data-language="${escapeAttribute(lang)}"$1>`);
@@ -213,13 +213,14 @@ export async function initMarkdownRenderer(): Promise<void> {
           const name = label || TEXT_LANG;
 
           try {
-            return injectLanguage(
-              highlighter.codeToHtml(code, {
-                lang: name,
-                theme: SHIKI_THEME,
-              }),
-              label,
-            );
+            const highlighted = highlighter.codeToHtml(code, {
+              lang: name,
+              theme: SHIKI_THEME,
+            });
+            if (typeof highlighted !== 'string') {
+              return fallbackCodeBlock(code, label);
+            }
+            return injectLanguage(highlighted, label);
           } catch (error) {
             console.warn('[markdown] Shiki highlight failed, using plain code block:', error);
             return fallbackCodeBlock(code, label);

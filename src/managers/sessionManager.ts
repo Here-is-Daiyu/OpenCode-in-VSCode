@@ -8,6 +8,21 @@ import type { GlobalSessionTreeProvider } from '../providers/globalSessionTreePr
 import type { ChatViewProvider } from '../providers/chatViewProvider';
 import type { Logger } from '../services/logger';
 
+/** Ensure session.time exists with defaults to prevent runtime errors. */
+function normalizeSessionTime(session: Session): Session {
+  if (session.time?.updated != null && session.time?.created != null) {
+    return session;
+  }
+  const now = Date.now();
+  return {
+    ...session,
+    time: {
+      created: session.time?.created ?? now,
+      updated: session.time?.updated ?? now,
+    },
+  };
+}
+
 const INITIAL_SESSION_MESSAGE_LIMIT = 50;
 const SESSION_HISTORY_BATCH_SIZE = 50;
 
@@ -298,8 +313,9 @@ export class SessionManager implements vscode.Disposable {
 
     this.sessions.clear();
     for (const session of sessions) {
-      this.sessions.set(session.id, session);
-      this.globalSessions.set(session.id, session);
+      const normalized = normalizeSessionTime(session);
+      this.sessions.set(normalized.id, normalized);
+      this.globalSessions.set(normalized.id, normalized);
     }
 
     if (this.activeSessionId && !this.sessions.has(this.activeSessionId) && !this.globalSessions.has(this.activeSessionId)) {
@@ -315,7 +331,8 @@ export class SessionManager implements vscode.Disposable {
 
     this.globalSessions.clear();
     for (const session of sessions) {
-      this.globalSessions.set(session.id, session);
+      const normalized = normalizeSessionTime(session);
+      this.globalSessions.set(normalized.id, normalized);
     }
     for (const session of currentSessions) {
       this.globalSessions.set(session.id, session);

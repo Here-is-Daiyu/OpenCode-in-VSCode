@@ -427,7 +427,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
     });
   }, [childSessionId]);
 
-  const hasContent = output.trim() || error.trim();
+  const hasContent = Boolean(output.trim() || error.trim());
   const toolDisplayName = getToolDisplayName(tool);
   const canOpenUrl = Boolean(summaryInfo.url && status !== 'pending' && status !== 'running');
   const outputHtml = useMemo(
@@ -445,7 +445,24 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
   return (
     <div className={`msg-tool-compact ${grouped ? 'msg-tool-compact--grouped' : ''}`}>
       {/* Title line: TOOL_NAME target */}
-      <div className="msg-tool-compact__title">
+      <div
+        className="msg-tool-compact__title"
+        onClick={hasContent ? toggle : undefined}
+        style={hasContent ? { cursor: 'pointer' } : undefined}
+        role={hasContent ? 'button' : undefined}
+        tabIndex={hasContent ? 0 : undefined}
+        aria-expanded={hasContent ? expanded : undefined}
+        onKeyDown={hasContent ? (e) => {
+          if (e.currentTarget !== e.target) {
+            return;
+          }
+
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggle();
+          }
+        } : undefined}
+      >
         <span className="msg-tool-compact__name">{toolDisplayName}</span>
         {status === 'running' && (
           <svg width="12" height="12" viewBox="0 0 16 16" className="msg-tool-compact__spinner">
@@ -492,6 +509,13 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
             </span>
           )
         )}
+        {hasContent && (
+          <span className="msg-tool-compact__chevron">
+            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.5 }}>
+              {expanded ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
+            </svg>
+          </span>
+        )}
       </div>
 
       {childSessionId && (
@@ -511,18 +535,6 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
       {/* Error display (inline, always visible) */}
       {error.trim() && (
         <div className="msg-tool-compact__error">{error}</div>
-      )}
-
-      {/* Collapsible result toggle */}
-      {hasContent && (
-        <button className="msg-tool-compact__toggle" onClick={toggle} type="button">
-          <span className="msg-tool-compact__toggle-icon">
-            <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" style={{ opacity: 0.85 }}>
-              {expanded ? <path d="M4 6l4 4 4-4" /> : <path d="M6 4l4 4-4 4" />}
-            </svg>
-          </span>
-          {expanded ? 'Hide results' : 'Show results'}
-        </button>
       )}
 
       {/* Collapsible body */}
