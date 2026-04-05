@@ -790,6 +790,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const nextBufferedRealtimeParts = omitBufferedParts(state.bufferedRealtimeParts, message.info.id);
 
       if (index === -1) {
+        const optimisticID = state.optimisticMessageID;
+        if (optimisticID && normalizedMessage.info.role === 'user') {
+          const optIndex = state.messages.findIndex(m => m.info.id === optimisticID);
+          if (optIndex !== -1) {
+            const nextMessages = [...state.messages];
+            nextMessages[optIndex] = normalizedMessage;
+            return {
+              messages: nextMessages,
+              ...getDerivedChatStatePatch(
+                state.currentSession,
+                nextMessages,
+                state.lastAppliedRevertMessageID,
+              ),
+              bufferedRealtimeParts: nextBufferedRealtimeParts,
+              optimisticMessageID: undefined,
+            };
+          }
+        }
+
         // Message not found, add it
         const nextMessages = [...state.messages, normalizedMessage];
         return {

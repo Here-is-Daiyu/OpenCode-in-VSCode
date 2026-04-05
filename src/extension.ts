@@ -705,8 +705,16 @@ function normalizeSessionPayload(
     return undefined;
   }
 
+  const now = Date.now();
+  const time = session.time ?? { created: now, updated: now };
+
   return {
     ...(session as Session),
+    time: {
+      ...time,
+      created: time.created ?? now,
+      updated: time.updated ?? now,
+    },
     directory: session.directory || directory || '',
   };
 }

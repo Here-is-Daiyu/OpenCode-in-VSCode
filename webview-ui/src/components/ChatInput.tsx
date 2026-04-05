@@ -298,7 +298,6 @@ export function ChatInput() {
     && !optimisticMessageID
     && (inputText.trim().length > 0 || attachedImages.length > 0);
   const hasMeta = Boolean(currentSession?.revert)
-    || (queuesFollowups && queuedMessages.length === 0)
     || queuedMessages.length > 0
     || shellDraft;
 
@@ -1070,14 +1069,6 @@ export function ChatInput() {
                         </button>
                       )}
                     </div>
-                  </div>
-                )}
-                {queuesFollowups && queuedMessages.length === 0 && (
-                  <div className="chat-input__hint" role="status" aria-live="polite">
-                    <span className="chat-input__hint-badge">Queue</span>
-                    <span className="chat-input__hint-text">
-                      This session is still generating. New chat follow-ups will be queued and sent automatically.
-                    </span>
                   </div>
                 )}
                 <QueuedMessageList

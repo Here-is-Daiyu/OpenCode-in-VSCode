@@ -98,24 +98,21 @@ textarea {
 .settings-header {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
-  border: 1px solid var(--settings-border-soft);
-  border-radius: 12px;
-  background: var(--settings-surface-primary);
+  gap: 6px;
+  padding: 8px 0 6px;
 }
 
 .settings-header__main {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
 }
 
 .settings-header__heading {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .setting-select__group-label,
@@ -137,9 +134,9 @@ textarea {
 .settings-header__title {
   margin: 0;
   color: var(--text-strong);
-  font-size: clamp(20px, 3.5vw, 24px);
+  font-size: 16px;
   font-weight: 600;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 
 .settings-header__description {
@@ -151,28 +148,30 @@ textarea {
 }
 
 .settings-header__summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 2px;
 }
 
 .settings-header__summary-item {
   min-width: 0;
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 10px 12px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
   border: 1px solid var(--settings-border-soft);
-  border-radius: 10px;
+  border-radius: 6px;
   background: var(--settings-surface-secondary);
 }
 
 .settings-header__summary-label {
   color: var(--text-weaker);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-weight: 500;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .settings-header__summary-value {
@@ -181,7 +180,7 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-strong);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
 }
 

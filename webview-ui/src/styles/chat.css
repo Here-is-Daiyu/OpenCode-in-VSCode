@@ -391,6 +391,7 @@ textarea {
   scrollbar-width: none;
   -ms-overflow-style: none;
   scroll-behavior: auto;
+  overscroll-behavior: contain;
 }
 
 .chat-messages::-webkit-scrollbar,

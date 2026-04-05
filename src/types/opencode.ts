@@ -319,7 +319,7 @@ export interface ProviderConfig {
 
 export interface OpenCodeConfig {
   model?: string | null;
-  agent?: string | Record<string, unknown> | null;
+  agent?: Record<string, unknown> | null;
   default_agent?: string | null;
   theme?: 'dark' | 'light' | 'system';
   permission?: PermissionRuleset;

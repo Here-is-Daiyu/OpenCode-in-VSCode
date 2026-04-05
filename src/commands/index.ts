@@ -75,6 +75,10 @@ function requireConnected(ctx: CommandContext): boolean {
   return true;
 }
 
+function isConfigUpdatePayload(value: unknown): value is Partial<OpenCodeConfig> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 /** Guard: server connected + active session required. */
 function requireSession(ctx: CommandContext): string | undefined {
   if (!requireConnected(ctx)) {
@@ -637,7 +641,7 @@ async function updateSelectedModel(
 }
 
 async function updateSelectedAgent(ctx: CommandContext, agentId: string): Promise<void> {
-  const config = await ctx.client.updateConfig({ agent: agentId });
+  const config = await ctx.client.updateConfig({ default_agent: agentId });
   syncConfig(ctx, config);
   ctx.logger.info(`Selected agent: ${agentId}`);
 }
@@ -1256,6 +1260,27 @@ export function registerCommands(
     ['opencode.deleteSession', (sessionId?: unknown) => deleteSession(ctx, sessionId as string | undefined)],
     ['opencode.refreshSessions', () => refreshSessions(ctx)],
     ['opencode.refreshGlobalSessions', () => refreshGlobalSessions(ctx)],
+    ['opencode.getConfig', async () => {
+      try {
+        const config = await ctx.client.getConfig();
+        syncConfig(ctx, config);
+      } catch (err) {
+        ctx.logger.error('Failed to get config', err);
+      }
+    }],
+    ['opencode.updateConfig', async (data?: unknown) => {
+      try {
+        if (isConfigUpdatePayload(data)) {
+          const config = await ctx.client.updateConfig(data);
+          syncConfig(ctx, config);
+          return;
+        }
+
+        ctx.logger.warn('Ignored invalid config update payload', data);
+      } catch (err) {
+        ctx.logger.error('Failed to update config', err);
+      }
+    }],
     ['opencode.filterSessions', () => filterSessions(ctx)],
     ['opencode.clearSessionFilter', () => clearSessionFilter(ctx)],
     ['opencode.switchSession', (sessionId?: unknown) => switchSession(ctx, sessionId)],

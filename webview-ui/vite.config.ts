@@ -71,6 +71,7 @@ function getManualChunk(id: string): string | undefined {
 
 export default defineConfig({
   plugins: [react()],
+  base: '',
   build: {
     outDir: '../out/webview',
     emptyOutDir: true,

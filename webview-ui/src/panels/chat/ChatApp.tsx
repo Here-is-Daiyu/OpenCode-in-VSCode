@@ -139,6 +139,8 @@ export function ChatApp() {
     previousScrollTop: number;
   } | null>(null);
   const skipNextAutoScrollRef = useRef(false);
+  const isProgrammaticScrollRef = useRef(false);
+  const scrollRafRef = useRef(0);
   const bufferedSessionMessagesRef = useRef<Map<string, SessionScopedWebviewMessage[]>>(new Map());
 
   // Store state
@@ -148,6 +150,7 @@ export function ChatApp() {
   const visibleMessages = useChatStore((s) => s.visibleMessages);
   const sessionStatus = useChatStore((s) => s.sessionStatus);
   const isStreaming = useChatStore((s) => s.isStreaming);
+  const optimisticMessageID = useChatStore((s) => s.optimisticMessageID);
   const pendingPermission = useChatStore((s) => s.pendingPermission);
   const pendingQuestion = useChatStore((s) => s.pendingQuestion);
   const activeSessionCount = useChatStore((s) => s.activeSessionCount);
@@ -290,13 +293,25 @@ export function ChatApp() {
 
   /** Scroll to the bottom of the messages container */
   const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = messagesRef.current;
     atBottomRef.current = true;
     setAtBottom(true);
-    bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+    if (el) {
+      isProgrammaticScrollRef.current = true;
+      if (behavior === 'instant') {
+        el.scrollTop = el.scrollHeight;
+      } else {
+        el.scrollTo({ top: el.scrollHeight, behavior });
+      }
+      requestAnimationFrame(() => {
+        isProgrammaticScrollRef.current = false;
+      });
+    }
   }, []);
 
   // Track scroll position to update atBottom state
   const handleScroll = useCallback(() => {
+    if (isProgrammaticScrollRef.current) return;
     const next = checkAtBottom();
     atBottomRef.current = next;
     setAtBottom(prev => (prev === next ? prev : next));
@@ -341,7 +356,10 @@ export function ChatApp() {
       return;
     }
 
-    scrollToBottom('instant');
+    cancelAnimationFrame(scrollRafRef.current);
+    scrollRafRef.current = requestAnimationFrame(() => {
+      scrollToBottom('instant');
+    });
   }, [visibleMessages, scrollToBottom]);
 
   // Scroll to bottom when permission or question cards appear
@@ -808,8 +826,8 @@ export function ChatApp() {
                         <QuestionCard question={pendingQuestion} />
                       )}
 
-                      {/* Streaming indicator */}
-                      {isStreaming && (
+                      {/* Streaming indicator — hidden when a queued message is already displayed */}
+                      {isStreaming && !optimisticMessageID && (
                         <div className="chat-streaming-indicator">
                           <div className="chat-streaming-indicator__dots">
                             <span className="chat-streaming-indicator__dot" />

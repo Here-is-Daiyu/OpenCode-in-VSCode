@@ -51,6 +51,15 @@ export const MessageBubble = React.memo(function MessageBubble({
     messages.length > 0 &&
     messages[messages.length - 1].info.id === info.id;
   const showStreamingEffects = isStreaming && isLatestAssistant;
+  const isLastInTurn = useMemo(() => {
+    if (isUser) return false;
+    const currentIndex = messages.findIndex((m) => m.info.id === info.id);
+    if (currentIndex === -1) return false;
+    const nextMessage = messages[currentIndex + 1];
+    if (!nextMessage) return true;
+    if (nextMessage.info.role !== 'assistant') return true;
+    return (nextMessage.info as AssistantMessage).parentID !== (info as AssistantMessage).parentID;
+  }, [messages, info, isUser]);
 
   // --- Collapsible user messages ---
   const isLongUserMessage = useMemo(() => {
@@ -111,6 +120,11 @@ export const MessageBubble = React.memo(function MessageBubble({
         />
       )}
 
+      {/* Queued indicator for optimistic messages */}
+      {isUser && isOptimistic && (
+        <div className="msg-bubble__queued-badge">Queued</div>
+      )}
+
       {/* Error display */}
       {!isUser && (info as AssistantMessage).error && (() => {
         const err = (info as AssistantMessage).error as MessageError;
@@ -125,8 +139,8 @@ export const MessageBubble = React.memo(function MessageBubble({
         );
       })()}
 
-      {/* Footer for completed assistant messages */}
-      {!isUser && !showStreamingEffects && (
+      {/* Footer for the last assistant message in a turn (non-streaming) */}
+      {!isUser && !showStreamingEffects && isLastInTurn && (
         <MessageFooter info={info as AssistantMessage} />
       )}
     </div>
