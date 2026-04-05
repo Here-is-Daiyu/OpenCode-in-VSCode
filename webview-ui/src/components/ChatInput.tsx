@@ -16,6 +16,7 @@ import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
 import { MentionMenu } from './MentionMenu';
 import type { MentionMenuHandle } from './MentionMenu';
+import { AgentSelector } from './AgentSelector';
 import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
 import { useCommandStore } from '../stores/commandStore';
 import { useMessageQueueStore, type QueuedChatMessage } from '../stores/messageQueueStore';
@@ -1043,6 +1044,12 @@ export function ChatInput() {
                 />
               </div>
             )}
+          </div>
+
+          <div className="chat-input__dock-tray">
+            <div className="chat-input__dock-controls">
+              <AgentSelector />
+            </div>
           </div>
 
           {attachedImages.length > 0 && (

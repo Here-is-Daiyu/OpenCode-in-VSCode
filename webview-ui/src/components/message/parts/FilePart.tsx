@@ -1,5 +1,8 @@
 /**
  * FilePart - Renders a file reference / attachment display.
+ *
+ * Images display as compact `[IMG n]` tag pills with a tinted background.
+ * Click to open a lightbox with the full image.
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
@@ -8,6 +11,8 @@ import { postMessage } from '../../../utils/vscodeApi';
 
 interface FilePartProps {
   part: FilePartType;
+  /** 1-based image index for the label (only used for images). */
+  imageIndex?: number;
 }
 
 function getBaseName(path?: string): string | undefined {
@@ -52,7 +57,7 @@ function getOpenTarget(part: FilePartType): string | undefined {
   return part.filename;
 }
 
-export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
+export const FilePart = React.memo(function FilePart({ part, imageIndex }: FilePartProps) {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const mimeType = part.mime ?? part.mediaType ?? '';
   const isImage = mimeType.startsWith('image/');
@@ -95,8 +100,8 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
     setLightboxOpen(false);
   }, []);
 
-  const handleImageKeyDown = useCallback(
-    (event: React.KeyboardEvent<HTMLDivElement>) => {
+  const handleTagKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLSpanElement>) => {
       if (!canOpenLightbox) {
         return;
       }
@@ -128,27 +133,21 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
   }, [lightboxOpen]);
 
   if (isImage) {
+    const label = imageIndex != null ? `IMG${imageIndex}` : 'img';
+
     return (
       <>
-        <div
-          className={`msg-file msg-file--image${canOpenLightbox ? ' msg-file--image-clickable' : ''}`}
-          title={fileName}
+        <span
+          className={`msg-image-tag${canOpenLightbox ? ' msg-image-tag--clickable' : ''}`}
+          title={`${fileName} — click to view`}
           onClick={canOpenLightbox ? handleLightboxOpen : undefined}
-          onKeyDown={canOpenLightbox ? handleImageKeyDown : undefined}
+          onKeyDown={canOpenLightbox ? handleTagKeyDown : undefined}
           role={canOpenLightbox ? 'button' : undefined}
           tabIndex={canOpenLightbox ? 0 : undefined}
-          aria-label={canOpenLightbox ? `Open image ${fileName}` : undefined}
+          aria-label={canOpenLightbox ? `View image ${fileName}` : undefined}
         >
-          {imageUrl ? (
-            <img className="msg-file__image" src={imageUrl} alt={fileName} loading="lazy" />
-          ) : (
-            <span className="msg-file__image-fallback" aria-label={fileName}>
-              <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-                <path d="M14 1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm0 13H2V2h12v12zM4 11l2-3 1.5 2L10 7l3 4H4z" />
-              </svg>
-            </span>
-          )}
-        </div>
+          {label}
+        </span>
         {lightboxOpen && imageUrl ? (
           <div
             className="msg-lightbox"

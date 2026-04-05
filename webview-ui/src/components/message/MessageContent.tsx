@@ -372,12 +372,12 @@ export const MessageContent = React.memo(function MessageContent({
           case 'step-finish':
             return <StepFinishIndicator key={chunk.id} part={chunk.part} />;
           case 'file':
-            return <FilePart key={chunk.id} part={chunk.part} />;
+            return <FilePart key={chunk.id} part={chunk.part} imageIndex={isImageFilePart(chunk.part) ? 1 : undefined} />;
           case 'file-group':
             return (
               <div key={chunk.id} className="msg-file-images">
-                {chunk.files.map((file) => (
-                  <FilePart key={file.id} part={file} />
+                {chunk.files.map((file, idx) => (
+                  <FilePart key={file.id} part={file} imageIndex={idx + 1} />
                 ))}
               </div>
             );

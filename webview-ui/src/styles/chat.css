@@ -465,12 +465,30 @@ textarea {
 
 .chat-scroll-bottom-zone {
   position: absolute;
+  /* Align with the content column, not the viewport edge. */
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100%, var(--chat-column-max-width, 100%));
+  bottom: 0;
+  height: 120px;
+  z-index: 14;
+  pointer-events: none;
+}
+
+/* Invisible hover trigger area near the button */
+.chat-scroll-bottom-zone::after {
+  content: '';
+  position: absolute;
   right: 0;
   bottom: 0;
   width: 160px;
-  height: 120px;
-  z-index: 14;
+  height: 100%;
   pointer-events: auto;
+}
+
+.chat-scroll-bottom-zone .chat-scroll-bottom {
+  /* Position inside the zone at its right edge */
+  right: calc(var(--chat-column-padding, 16px) + 2px);
 }
 
 .chat-scroll-bottom-zone:hover .chat-scroll-bottom,

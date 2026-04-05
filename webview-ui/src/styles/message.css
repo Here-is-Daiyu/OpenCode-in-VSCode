@@ -899,32 +899,6 @@
   word-break: break-word;
 }
 
-.chat-app--roomy .msg-task__header {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-}
-
-.chat-app--roomy .msg-task__meta {
-  /* Keep inline */
-}
-
-.chat-app--roomy .msg-task__title-row {
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-app--roomy .msg-task__subtitle {
-  flex-basis: 100%;
-}
-
-.chat-app--roomy .msg-task__session {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-}
-
 /* ====================================================================
  * Context tool group — collapsible grouped tool calls
  * ==================================================================== */
@@ -1077,33 +1051,48 @@
   border-color: var(--border-hover);
 }
 
-.msg-file--image {
-  display: block;
-  padding: 0;
-  overflow: hidden;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--surface-base) 85%, transparent);
+/* Image tags — compact [IMG1] pills with tinted background */
+.msg-image-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--surface-info-weak) 70%, var(--surface-base));
+  color: var(--text-interactive-base);
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+  vertical-align: middle;
 }
 
-.msg-bubble--user .msg-file--image {
-  width: auto;
+.msg-image-tag--clickable {
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.msg-image-tag--clickable:hover {
+  background: color-mix(in srgb, var(--surface-info-weak) 100%, var(--surface-base));
+  color: var(--text-on-interactive-base);
+}
+
+.msg-image-tag--clickable:focus-visible {
+  outline: 2px solid var(--border-interactive-base);
+  outline-offset: 1px;
 }
 
 .msg-file-images {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  width: 100%;
-}
-
-.msg-file-images .msg-file--image {
-  width: calc(25% - 5px);
-  min-width: 60px;
-  flex-shrink: 0;
-}
-
-.msg-file--image-clickable {
-  cursor: zoom-in;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--surface-inset-base) 60%, transparent);
 }
 
 .msg-file__icon {
@@ -1119,25 +1108,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.msg-file__image,
-.msg-file__image-fallback {
-  display: block;
-  width: 100%;
-  aspect-ratio: 1 / 1;
-}
-
-.msg-file__image {
-  object-fit: cover;
-}
-
-.msg-file__image-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--icon-weak-base);
-  background: color-mix(in srgb, var(--surface-inset-base) 80%, transparent);
 }
 
 .msg-file__preview {
@@ -2454,4 +2424,106 @@
 .msg-tool-timeline__content {
   flex: 1;
   min-width: 0;
+}
+
+/* ====================================================================
+ * Widescreen (roomy) overrides — cards fill column width
+ * ==================================================================== */
+
+/* All card types: stretch to the full column width (same as the input box). */
+.chat-app--roomy .msg-tool-compact,
+.chat-app--roomy .msg-context-group,
+.chat-app--roomy .msg-task,
+.chat-app--roomy .msg-bash,
+.chat-app--roomy .msg-edit,
+.chat-app--roomy .msg-subtask,
+.chat-app--roomy .msg-patch,
+.chat-app--roomy .msg-snapshot,
+.chat-app--roomy .msg-retry,
+.chat-app--roomy .msg-compaction,
+.chat-app--roomy .msg-tool-timeline__item {
+  width: min(100%, var(--chat-column-max-width));
+  max-width: min(100%, var(--chat-column-max-width));
+}
+
+/* Child elements also get the wider max-width so content doesn't clip. */
+.chat-app--roomy .msg-tool-compact__result,
+.chat-app--roomy .msg-tool-compact__error,
+.chat-app--roomy .msg-bash__error,
+.chat-app--roomy .msg-bash__output,
+.chat-app--roomy .msg-edit__error,
+.chat-app--roomy .msg-edit__output,
+.chat-app--roomy .msg-patch__diff {
+  max-width: 100%;
+}
+
+/* ── Task card ── header left, session right via grid */
+.chat-app--roomy .msg-task {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.625rem;
+}
+
+.chat-app--roomy .msg-task__header {
+  grid-column: 1;
+  grid-row: 1;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.chat-app--roomy .msg-task__meta {
+  flex-shrink: 0;
+}
+
+.chat-app--roomy .msg-task__title-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-app--roomy .msg-task__duration {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.chat-app--roomy .msg-task__subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Session: right column, vertically centered */
+.chat-app--roomy .msg-task__session {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+
+/* Collapse: spans full width below */
+.chat-app--roomy .msg-task .msg-tool-compact__collapse {
+  grid-column: 1 / -1;
+}
+
+/* ── Generic tool card (READ, GREP, GLOB, etc.) ── title row stretches */
+.chat-app--roomy .msg-tool-compact__title {
+  gap: 8px;
+}
+
+/* ── Bash card ── make command + output use full width */
+.chat-app--roomy .msg-bash__header {
+  gap: 8px;
+}
+
+/* ── User message bubble ── widen to match input in roomy mode */
+.chat-app--roomy .msg-bubble--user .msg-text {
+  max-width: min(100%, var(--chat-column-max-width));
+}
+
+.chat-app--roomy .msg-bubble--user .msg-file {
+  max-width: min(100%, var(--chat-column-max-width));
 }
