@@ -9,7 +9,7 @@
  * - Collapsible full output if available
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolCallPartProps } from './ToolCallPart';
 import { getToolName, toRecord, stringifyValue } from './ToolCallPart';
 import { postMessage } from '../../../utils/vscodeApi';
@@ -127,7 +127,7 @@ export const EditRenderer = React.memo(function EditRenderer({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }

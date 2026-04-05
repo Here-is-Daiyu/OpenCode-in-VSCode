@@ -32,6 +32,8 @@ const DATA_URL_PREFIX = /^data:/i;
 const DATA_URL_MIME_PATTERN = /^data:([^;,]+)(?:;[^,]*)?,/i;
 const BASE64_PATTERN = /^[A-Za-z0-9+/=\s]+$/;
 const TERMINAL_MENTION_PREFIX = 'terminal:';
+const WARNINGS_MENTION_CURRENT = '@warnings';
+const WARNINGS_MENTION_ALL = '@warnings-all';
 
 /**
  * Provides the chat WebviewView for the sidebar panel.
@@ -279,7 +281,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           message.data.text,
           message.data.images,
           message.data.mentions,
-          message.data.attachDiagnostics,
         );
         break;
 
@@ -582,7 +583,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     text: string,
     images?: string[],
     mentions?: string[],
-    attachDiagnostics = true,
   ): Promise<void> {
     if (!this.client) {
       this.logger?.error('Client not available for chat:send');
@@ -590,7 +590,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const payload = await this.buildPromptPayload(text, images, mentions, attachDiagnostics);
+    const payload = await this.buildPromptPayload(text, images, mentions);
     if (!payload) {
       this.postMessage({
         type: 'chat:sendResult',
@@ -663,7 +663,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const results: MentionSearchResult[] = [];
 
-      if (isTerminalMentionQuery(query)) {
+      if (isWarningsMentionQuery(query)) {
+        results.push(...getWarningsMentionSearchResults(query));
+      } else if (isTerminalMentionQuery(query)) {
         const entries = this.terminalOutputService?.getRecentOutputs(10) ?? [];
         for (let index = entries.length - 1; index >= 0; index -= 1) {
           results.push(toTerminalMentionSearchResult(entries[index]));
@@ -698,13 +700,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     text: string,
     images?: string[],
     mentions?: string[],
-    attachDiagnostics = true,
   ): Promise<SendMessageData | undefined> {
     const parts: SendMessageData['parts'] = [];
-    const diagnosticsText = this.getDiagnosticsText(attachDiagnostics);
-    const normalizedText = diagnosticsText
-      ? [text.trim(), diagnosticsText].filter(Boolean).join('\n\n')
-      : text.trim();
+    const normalizedText = text.trim();
 
     if (normalizedText) {
       parts.push({ type: 'text', text: normalizedText });
@@ -735,22 +733,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return { parts };
   }
 
-  private getDiagnosticsText(attachDiagnostics: boolean): string | undefined {
-    if (!attachDiagnostics) {
-      return undefined;
-    }
-
-    const enabled = vscode.workspace
-      .getConfiguration('opencode')
-      .get<boolean>('editor.attachDiagnostics', true);
-
-    if (!enabled) {
-      return undefined;
-    }
-
-    return this.diagnosticsService?.getActiveEditorDiagnosticsText();
-  }
-
   private async resolveMentionParts(mentions: string[]): Promise<PromptPart[]> {
     const refs = Array.from(new Set(
       mentions
@@ -762,7 +744,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return [];
     }
 
-    const roots = refs.some((mention) => !isTerminalMentionReference(mention))
+    const roots = refs.some((mention) => !isTerminalMentionReference(mention) && !isWarningsMentionReference(mention))
       ? await this.getMentionRoots()
       : [];
     const parts = await Promise.all(refs.map((mention) => this.normalizeMentionPart(mention, roots)));
@@ -808,6 +790,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     mention: string,
     roots: string[],
   ): Promise<PromptPart | undefined> {
+    const lowerMention = mention.toLowerCase();
+    if (lowerMention === WARNINGS_MENTION_CURRENT) {
+      const text = this.diagnosticsService?.getActiveEditorDiagnosticsText();
+      return text ? { type: 'text', text } : undefined;
+    }
+
+    if (lowerMention === WARNINGS_MENTION_ALL) {
+      const text = this.diagnosticsService?.getAllDiagnosticsText();
+      return text ? { type: 'text', text } : undefined;
+    }
+
     if (isTerminalMentionReference(mention)) {
       return this.resolveTerminalMentionPart(mention);
     }
@@ -951,7 +944,12 @@ function stripWrappingQuotes(value: string): string {
 }
 
 function normalizeMentionReference(value: string): string {
-  return stripWrappingQuotes(value).replace(/^@+/, '').trim();
+  const normalized = stripWrappingQuotes(value).trim();
+  if (isWarningsMentionValue(normalized)) {
+    return normalized;
+  }
+
+  return normalized.replace(/^@+/, '').trim();
 }
 
 function extractMimeFromDataUrl(value: string): string | undefined {
@@ -1022,6 +1020,21 @@ function isTerminalMentionQuery(query: string): boolean {
     || lowerQuery.startsWith(TERMINAL_MENTION_PREFIX);
 }
 
+function isWarningsMentionQuery(query: string): boolean {
+  const lowerQuery = query.trim().toLowerCase();
+  return WARNINGS_MENTION_CURRENT.slice(1).startsWith(lowerQuery)
+    || WARNINGS_MENTION_ALL.slice(1).startsWith(lowerQuery);
+}
+
+function isWarningsMentionReference(reference: string): boolean {
+  return isWarningsMentionValue(normalizeMentionReference(reference));
+}
+
+function isWarningsMentionValue(value: string): boolean {
+  const lowerValue = value.trim().toLowerCase();
+  return lowerValue === WARNINGS_MENTION_CURRENT || lowerValue === WARNINGS_MENTION_ALL;
+}
+
 function isTerminalMentionReference(reference: string): boolean {
   return normalizeMentionReference(reference).toLowerCase().startsWith(TERMINAL_MENTION_PREFIX);
 }
@@ -1039,6 +1052,29 @@ function parseTerminalMentionTimestamp(reference: string): number | undefined {
 
   const timestamp = Number.parseInt(rawTimestamp, 10);
   return Number.isSafeInteger(timestamp) ? timestamp : undefined;
+}
+
+function getWarningsMentionSearchResults(query: string): MentionSearchResult[] {
+  const lowerQuery = query.trim().toLowerCase();
+  const results: MentionSearchResult[] = [];
+
+  if (WARNINGS_MENTION_CURRENT.slice(1).startsWith(lowerQuery)) {
+    results.push({
+      name: '@warnings — Current file diagnostics',
+      path: WARNINGS_MENTION_CURRENT,
+      type: 'file',
+    });
+  }
+
+  if (WARNINGS_MENTION_ALL.slice(1).startsWith(lowerQuery)) {
+    results.push({
+      name: '@warnings-all — All workspace diagnostics',
+      path: WARNINGS_MENTION_ALL,
+      type: 'file',
+    });
+  }
+
+  return results;
 }
 
 function toTerminalMentionSearchResult(entry: TerminalOutputEntry): MentionSearchResult {

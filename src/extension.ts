@@ -13,7 +13,6 @@ import {
 import type { ServerEvent } from './services/openCodeClient';
 import {
   ChatViewProvider,
-  GlobalSessionTreeProvider,
   SessionTreeProvider,
   StatusTreeProvider,
   SettingsViewProvider,
@@ -33,7 +32,6 @@ import type {
   Pty,
   PtyExitInfo,
 } from './types/opencode';
-import { getConfiguredModel } from './utils/opencodeConfig';
 
 // ---------------------------------------------------------------------------
 // Module-level references for deactivate()
@@ -78,8 +76,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   chatProvider.setClient(client);
   chatProvider.setLogger(logger);
   const sessionProvider = new SessionTreeProvider(eventBus, context.workspaceState);
-  const globalSessionProvider = new GlobalSessionTreeProvider(eventBus);
-  globalSessionProvider.setClient(client);
   const statusProvider = new StatusTreeProvider(eventBus);
   statusProvider.setClient(client);
   statusProvider.setLogger(logger);
@@ -106,13 +102,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.window.createTreeView('opencode.sessions', {
       treeDataProvider: sessionProvider,
       showCollapseAll: false,
-    })
-  );
-
-  context.subscriptions.push(
-    vscode.window.createTreeView('opencode.globalSessions', {
-      treeDataProvider: globalSessionProvider,
-      showCollapseAll: true,
     })
   );
 
@@ -151,7 +140,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     client,
     eventBus,
     sessionProvider,
-    globalSessionProvider,
     chatProvider,
     logger,
   );
@@ -354,10 +342,8 @@ function clearConnectionState(ctx: CommandContext): void {
   ctx.client.setBaseUrl('');
   // Also clears SessionManager's active-session cache and notifies the chat view.
   ctx.sessionManager.setSessions([], {});
-  ctx.sessionManager.setGlobalSessions([], {});
   ctx.sessionManager.setCurrentDirectory(undefined);
   ctx.statusProvider.setServerInfo({ connected: false });
-  ctx.statusBarManager.clearTokenUsage();
   ctx.statusBarManager.setDisconnected();
   void vscode.commands.executeCommand('setContext', 'opencode.serverConnected', false);
   void vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', false);
@@ -427,7 +413,6 @@ async function onServerStarted(ctx: CommandContext): Promise<void> {
 
 async function loadInitialData(ctx: CommandContext): Promise<void> {
   const sessionsPromise = ctx.client.listSessions();
-  const globalSessionsPromise = ctx.client.listAllSessions();
   const pathInfoPromise = ctx.client.getPathInfo();
   const configPromise = ctx.client.getConfig();
   const providersPromise = ctx.client.getProviderInfo();
@@ -471,25 +456,7 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
   }
 
   try {
-    const globalSessions = await globalSessionsPromise;
-    ctx.sessionManager.setGlobalSessions(globalSessions);
-    ctx.logger.debug(`Loaded ${globalSessions.length} global session(s)`);
-  } catch (err) {
-    ctx.logger.error('Failed to load global sessions', err);
-  }
-
-  try {
     const config = await configPromise;
-    const model = getConfiguredModel(config);
-    if (model) {
-      const parts = model.split('/');
-      if (parts.length === 2) {
-        ctx.statusBarManager.setModel(parts[0], parts[1]);
-      }
-    } else {
-      ctx.statusBarManager.setModelAuto();
-    }
-
     const message = { type: 'config:updated' as const, data: config };
     ctx.chatProvider.postMessageToWebview(message);
     ctx.editorPanelProvider.broadcastMessage(message);
@@ -832,10 +799,6 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       ctx.chatProvider.postMessageToWebview({ type: 'message:updated', data: msg });
       ctx.editorPanelProvider.routeSessionMessage(msg.info.sessionID, { type: 'message:updated', data: msg });
 
-      // Update token usage from assistant messages
-      if (msg.info.role === 'assistant' && 'tokens' in msg.info && msg.info.tokens) {
-        ctx.statusBarManager.setTokenUsage(msg.info.tokens);
-      }
       break;
     }
 
@@ -988,13 +951,11 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
 /** Refresh session tree without showing errors (best-effort). */
 async function refreshSessionsQuietly(ctx: CommandContext): Promise<void> {
   try {
-    const [sessions, statuses, globalSessions] = await Promise.all([
+    const [sessions, statuses] = await Promise.all([
       ctx.client.listSessions(),
       ctx.client.getSessionStatus(),
-      ctx.client.listAllSessions(),
     ]);
     ctx.sessionManager.setSessions(sessions, statuses);
-    ctx.sessionManager.setGlobalSessions(globalSessions, statuses);
   } catch {
     // Silently ignore — the tree will be stale but that's acceptable
   }
@@ -1034,22 +995,6 @@ function subscribeToEvents(ctx: CommandContext): void {
       };
       ctx.chatProvider.postMessageToWebview(serverStatusMsg);
       ctx.editorPanelProvider.broadcastMessage(serverStatusMsg);
-    })
-  );
-
-  // Config update — update model in status bar
-  eventUnsubscribers.push(
-    ctx.eventBus.on('config:updated', (config) => {
-      const model = getConfiguredModel(config);
-      if (model) {
-        const parts = model.split('/');
-        if (parts.length === 2) {
-          ctx.statusBarManager.setModel(parts[0], parts[1]);
-        }
-        return;
-      }
-
-      ctx.statusBarManager.setModelAuto();
     })
   );
 

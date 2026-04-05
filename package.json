@@ -52,11 +52,6 @@
           "type": "tree"
         },
         {
-          "id": "opencode.globalSessions",
-          "name": "All Sessions",
-          "type": "tree"
-        },
-        {
           "id": "opencode.status",
           "name": "Status",
           "type": "tree"
@@ -79,12 +74,6 @@
       {
         "command": "opencode.refreshSessions",
         "title": "Refresh Sessions",
-        "category": "OpenCode",
-        "icon": "$(refresh)"
-      },
-      {
-        "command": "opencode.refreshGlobalSessions",
-        "title": "Refresh All Sessions",
         "category": "OpenCode",
         "icon": "$(refresh)"
       },
@@ -393,22 +382,12 @@
           "group": "navigation"
         },
         {
-          "command": "opencode.refreshGlobalSessions",
-          "when": "view == opencode.globalSessions",
-          "group": "navigation"
-        },
-        {
           "command": "opencode.clearSessionFilter",
           "when": "view == opencode.sessions && opencode.sessionFilterActive",
           "group": "navigation"
         },
         {
           "command": "opencode.openSettings",
-          "when": "view == opencode.status",
-          "group": "navigation"
-        },
-        {
-          "command": "opencode.openConfigFile",
           "when": "view == opencode.status",
           "group": "navigation"
         }
@@ -456,17 +435,7 @@
         },
         {
           "command": "opencode.openSessionInEditor",
-          "when": "view == opencode.globalSessions && (viewItem == session || viewItem == activeSession)",
-          "group": "inline"
-        },
-        {
-          "command": "opencode.openSessionInEditor",
           "when": "view == opencode.sessions && (viewItem == session || viewItem == activeSession)",
-          "group": "navigation"
-        },
-        {
-          "command": "opencode.openSessionInEditor",
-          "when": "view == opencode.globalSessions && (viewItem == session || viewItem == activeSession)",
           "group": "navigation"
         },
         {

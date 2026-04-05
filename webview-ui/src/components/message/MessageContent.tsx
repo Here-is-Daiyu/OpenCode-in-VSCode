@@ -50,12 +50,17 @@ type RenderChunk =
   | { kind: 'step-start'; id: string; part: StepStartPart }
   | { kind: 'step-finish'; id: string; part: StepFinishPart }
   | { kind: 'file'; id: string; part: FilePartType }
+  | { kind: 'file-group'; id: string; files: FilePartType[] }
   | { kind: 'subtask'; id: string; part: SubtaskPartType }
   | { kind: 'snapshot'; id: string; part: SnapshotPart }
   | { kind: 'patch'; id: string; part: PatchPart }
   | { kind: 'agent-marker'; id: string; part: AgentPart }
   | { kind: 'retry'; id: string; part: RetryPart }
   | { kind: 'compaction'; id: string; part: CompactionPart };
+
+function isImageFilePart(part: FilePartType): boolean {
+  return (part.mime ?? part.mediaType ?? '').startsWith('image/');
+}
 
 /**
  * Groups consecutive context-tool parts into ContextToolGroup chunks,
@@ -114,9 +119,10 @@ function buildRenderChunks(
   for (const part of parts) {
     switch (part.type) {
       case 'text': {
+        const partText = part.text ?? '';
         const text = hideImageMarkers
-          ? stripImageMarkers(toDisplayText(part.text, 'message.text'))
-          : toDisplayText(part.text, 'message.text');
+          ? stripImageMarkers(toDisplayText(partText, 'message.text'))
+          : toDisplayText(partText, 'message.text');
         if (!text.trim()) {
           break;
         }
@@ -127,15 +133,17 @@ function buildRenderChunks(
         break;
       }
 
-      case 'reasoning':
-        if (!hasDisplayText(part.text, 'message.reasoning')) {
+      case 'reasoning': {
+        const partText = part.text ?? '';
+        if (!hasDisplayText(partText, 'message.reasoning')) {
           break;
         }
         flushText();
         flushContext();
         if (!reasoningId) reasoningId = part.id;
-        reasoningBuffer += toDisplayText(part.text, 'message.reasoning');
+        reasoningBuffer += toDisplayText(partText, 'message.reasoning');
         break;
+      }
 
       case 'tool': {
         flushText();
@@ -258,6 +266,35 @@ function groupConsecutiveTools(chunks: RenderChunk[]): RenderChunk[] {
   return result;
 }
 
+function groupConsecutiveImageFiles(chunks: RenderChunk[]): RenderChunk[] {
+  const result: RenderChunk[] = [];
+  let imageBuffer: FilePartType[] = [];
+
+  const flushImages = () => {
+    if (imageBuffer.length > 0) {
+      result.push({
+        kind: 'file-group',
+        id: `fg_${imageBuffer[0].id}`,
+        files: [...imageBuffer],
+      });
+      imageBuffer = [];
+    }
+  };
+
+  for (const chunk of chunks) {
+    if (chunk.kind === 'file' && isImageFilePart(chunk.part)) {
+      imageBuffer.push(chunk.part);
+    } else {
+      flushImages();
+      result.push(chunk);
+    }
+  }
+
+  flushImages();
+
+  return result;
+}
+
 /**
  * Filter parts before rendering (matching official OpenCode web UI).
  * Removes step-finish, duplicate step-starts, etc.
@@ -268,7 +305,8 @@ function filterParts(parts: Part[]): Part[] {
     if (part.type === 'tool' && part.tool === 'todoread') return false;
     if (part.type === 'step-start' && index > 0) return false; // Only first step-start
     if (part.type === 'text' && 'synthetic' in part && (part as Record<string, unknown>).synthetic) return false;
-    if (part.type === 'text' && !part.text) return false; // Empty text
+    if (part.type === 'text' && !(part.text ?? '').trim()) return false; // Empty text
+    if (part.type === 'reasoning' && !(part.text ?? '').trim()) return false; // Empty reasoning
     // Note: we still show running tools for streaming UX
     return true;
   });
@@ -281,13 +319,11 @@ export const MessageContent = React.memo(function MessageContent({
 }: MessageContentProps) {
   const filtered = useMemo(() => filterParts(parts ?? []), [parts]);
   const hideImageMarkers = useMemo(
-    () => filtered.some(
-      (part) => part.type === 'file' && (part.mime ?? part.mediaType ?? '').startsWith('image/'),
-    ),
+    () => filtered.some((part) => part.type === 'file' && isImageFilePart(part)),
     [filtered],
   );
   const chunks = useMemo(
-    () => groupConsecutiveTools(buildRenderChunks(filtered, isStreaming, hideImageMarkers)),
+    () => groupConsecutiveTools(groupConsecutiveImageFiles(buildRenderChunks(filtered, isStreaming, hideImageMarkers))),
     [filtered, hideImageMarkers, isStreaming],
   );
 
@@ -299,7 +335,7 @@ export const MessageContent = React.memo(function MessageContent({
             return (
               <TextPart
                 key={chunk.id}
-                text={chunk.text}
+                text={chunk.text ?? ''}
                 cacheKey={chunk.id}
                 isStreaming={chunk.isStreaming}
               />
@@ -308,7 +344,7 @@ export const MessageContent = React.memo(function MessageContent({
             return (
               <ReasoningPart
                 key={chunk.id}
-                text={chunk.text}
+                text={chunk.text ?? ''}
                 isStreaming={chunk.isStreaming}
                 cacheKey={chunk.id}
               />
@@ -337,6 +373,14 @@ export const MessageContent = React.memo(function MessageContent({
             return <StepFinishIndicator key={chunk.id} part={chunk.part} />;
           case 'file':
             return <FilePart key={chunk.id} part={chunk.part} />;
+          case 'file-group':
+            return (
+              <div key={chunk.id} className="msg-file-images">
+                {chunk.files.map((file) => (
+                  <FilePart key={file.id} part={file} />
+                ))}
+              </div>
+            );
           case 'subtask':
             return <SubtaskPartComponent key={chunk.id} part={chunk.part} />;
           case 'snapshot':

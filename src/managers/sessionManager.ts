@@ -4,22 +4,31 @@ import type { Session, MessageWithParts, SessionStatus } from '../types/opencode
 import type { OpenCodeClient } from '../services/openCodeClient';
 import type { EventBus } from '../services/eventBus';
 import type { SessionTreeProvider } from '../providers/sessionTreeProvider';
-import type { GlobalSessionTreeProvider } from '../providers/globalSessionTreeProvider';
 import type { ChatViewProvider } from '../providers/chatViewProvider';
 import type { Logger } from '../services/logger';
 
-/** Ensure session.time exists with defaults to prevent runtime errors. */
-function normalizeSessionTime(session: Session): Session {
-  if (session.time?.updated != null && session.time?.created != null) {
+/** Ensure session fields used by the extension exist with defaults. */
+function normalizeSession(session: Session): Session {
+  const normalizedDirectory = session.directory ?? '';
+  const needsNormalizedTime = session.time?.updated == null || session.time?.created == null;
+
+  if (!needsNormalizedTime && session.directory === normalizedDirectory) {
     return session;
   }
+
   const now = Date.now();
   return {
     ...session,
-    time: {
-      created: session.time?.created ?? now,
-      updated: session.time?.updated ?? now,
-    },
+    directory: normalizedDirectory,
+    ...(needsNormalizedTime
+      ? {
+          time: {
+            ...session.time,
+            created: session.time?.created ?? now,
+            updated: session.time?.updated ?? now,
+          },
+        }
+      : {}),
   };
 }
 
@@ -35,7 +44,6 @@ const SESSION_HISTORY_BATCH_SIZE = 50;
 export class SessionManager implements vscode.Disposable {
   private activeSessionId?: string;
   private sessions: Map<string, Session> = new Map();
-  private globalSessions: Map<string, Session> = new Map();
   private currentDirectory?: string;
   private activeSessionLoadNonce = 0;
 
@@ -46,38 +54,30 @@ export class SessionManager implements vscode.Disposable {
     private client: OpenCodeClient,
     private eventBus: EventBus,
     private sessionProvider: SessionTreeProvider,
-    private globalSessionProvider: GlobalSessionTreeProvider,
     private chatProvider: ChatViewProvider,
     private logger: Logger,
   ) {
     // Keep local cache up-to-date when EventBus fires
     this.unsubscribers.push(
       eventBus.on('session:created', (session) => {
-        this.globalSessions.set(session.id, session);
-        if (this.isCurrentProjectSession(session)) {
-          this.sessions.set(session.id, session);
+        const normalizedSession = normalizeSession(session);
+        if (this.isCurrentProjectSession(normalizedSession)) {
+          this.sessions.set(normalizedSession.id, normalizedSession);
           this.sessionProvider.setSessions(this.getSessions());
         }
-        this.globalSessionProvider.setSessions(this.getGlobalSessions());
-        this.logger.debug(`SessionManager: session created ${session.id}`);
+        this.logger.debug(`SessionManager: session created ${normalizedSession.id}`);
       }),
       eventBus.on('session:updated', (session) => {
-        this.globalSessions.set(session.id, session);
-        if (this.isCurrentProjectSession(session)) {
-          this.sessions.set(session.id, session);
+        const normalizedSession = normalizeSession(session);
+        if (this.isCurrentProjectSession(normalizedSession)) {
+          this.sessions.set(normalizedSession.id, normalizedSession);
           this.sessionProvider.setSessions(this.getSessions());
         }
-        this.globalSessionProvider.setSessions(this.getGlobalSessions());
-        this.logger.debug(`SessionManager: session updated ${session.id}`);
+        this.logger.debug(`SessionManager: session updated ${normalizedSession.id}`);
       }),
       eventBus.on('session:deleted', ({ id }) => {
-        const deletedCurrentSession = this.sessions.delete(id);
-        const deletedGlobalSession = this.globalSessions.delete(id);
-        if (deletedCurrentSession) {
+        if (this.sessions.delete(id)) {
           this.sessionProvider.setSessions(this.getSessions());
-        }
-        if (deletedGlobalSession) {
-          this.globalSessionProvider.setSessions(this.getGlobalSessions());
         }
         this.logger.debug(`SessionManager: session deleted ${id}`);
 
@@ -99,7 +99,7 @@ export class SessionManager implements vscode.Disposable {
 
   getActiveSession(): Session | undefined {
     if (!this.activeSessionId) { return undefined; }
-    return this.sessions.get(this.activeSessionId) ?? this.globalSessions.get(this.activeSessionId);
+    return this.sessions.get(this.activeSessionId);
   }
 
   /**
@@ -110,20 +110,17 @@ export class SessionManager implements vscode.Disposable {
     const nonce = ++this.activeSessionLoadNonce;
     this.activeSessionId = id;
     this.sessionProvider.setActiveSession(id);
-    this.globalSessionProvider.setActiveSession(id);
     this.logger.info(`SessionManager: switching to session ${id}`);
 
     try {
       // Ensure we have the session object
-      let session = this.sessions.get(id) ?? this.globalSessions.get(id);
+      let session = this.sessions.get(id);
       if (!session) {
-        session = await this.client.getSession(id);
-        this.globalSessions.set(id, session);
+        session = normalizeSession(await this.client.getSession(id));
         if (this.isCurrentProjectSession(session)) {
           this.sessions.set(id, session);
           this.sessionProvider.setSessions(this.getSessions());
         }
-        this.globalSessionProvider.setSessions(this.getGlobalSessions());
       }
 
       const hasRevert = Boolean(session.revert?.messageID);
@@ -242,9 +239,8 @@ export class SessionManager implements vscode.Disposable {
    * Create a new session and switch to it.
    */
   async createSession(title?: string): Promise<Session> {
-    const session = await this.client.createSession({ title });
+    const session = normalizeSession(await this.client.createSession({ title }));
     this.sessions.set(session.id, session);
-    this.globalSessions.set(session.id, session);
     this.logger.info(`SessionManager: created session ${session.id}`);
     this.eventBus.emit('session:created', session);
     await this.setActiveSession(session.id);
@@ -257,7 +253,6 @@ export class SessionManager implements vscode.Disposable {
   async deleteSession(id: string): Promise<void> {
     await this.client.deleteSession(id);
     this.sessions.delete(id);
-    this.globalSessions.delete(id);
     this.logger.info(`SessionManager: deleted session ${id}`);
     this.eventBus.emit('session:deleted', { id });
 
@@ -267,7 +262,6 @@ export class SessionManager implements vscode.Disposable {
     }
 
     this.sessionProvider.setSessions(this.getSessions());
-    this.globalSessionProvider.setSessions(this.getGlobalSessions());
   }
 
   /**
@@ -277,9 +271,8 @@ export class SessionManager implements vscode.Disposable {
     if (!this.activeSessionId) {
       throw new Error('No active session to fork');
     }
-    const forked = await this.client.forkSession(this.activeSessionId, messageID);
+    const forked = normalizeSession(await this.client.forkSession(this.activeSessionId, messageID));
     this.sessions.set(forked.id, forked);
-    this.globalSessions.set(forked.id, forked);
     this.logger.info(`SessionManager: forked session ${this.activeSessionId} → ${forked.id}`);
     this.eventBus.emit('session:created', forked);
     await this.setActiveSession(forked.id);
@@ -294,12 +287,8 @@ export class SessionManager implements vscode.Disposable {
     return Array.from(this.sessions.values());
   }
 
-  getGlobalSessions(): Session[] {
-    return Array.from(this.globalSessions.values());
-  }
-
   getSession(id: string): Session | undefined {
-    return this.sessions.get(id) ?? this.globalSessions.get(id);
+    return this.sessions.get(id);
   }
 
   setSessions(sessions: Session[], statuses?: Record<string, SessionStatus>): void {
@@ -307,42 +296,17 @@ export class SessionManager implements vscode.Disposable {
       this.setCurrentDirectory(sessions[0].directory);
     }
 
-    for (const id of this.sessions.keys()) {
-      this.globalSessions.delete(id);
-    }
-
     this.sessions.clear();
     for (const session of sessions) {
-      const normalized = normalizeSessionTime(session);
+      const normalized = normalizeSession(session);
       this.sessions.set(normalized.id, normalized);
-      this.globalSessions.set(normalized.id, normalized);
     }
 
-    if (this.activeSessionId && !this.sessions.has(this.activeSessionId) && !this.globalSessions.has(this.activeSessionId)) {
+    if (this.activeSessionId && !this.sessions.has(this.activeSessionId)) {
       this.clearActiveSession();
     }
 
     this.sessionProvider.setSessions(this.getSessions(), statuses);
-    this.globalSessionProvider.setSessions(this.getGlobalSessions(), statuses);
-  }
-
-  setGlobalSessions(sessions: Session[], statuses?: Record<string, SessionStatus>): void {
-    const currentSessions = this.getSessions();
-
-    this.globalSessions.clear();
-    for (const session of sessions) {
-      const normalized = normalizeSessionTime(session);
-      this.globalSessions.set(normalized.id, normalized);
-    }
-    for (const session of currentSessions) {
-      this.globalSessions.set(session.id, session);
-    }
-
-    if (this.activeSessionId && !this.sessions.has(this.activeSessionId) && !this.globalSessions.has(this.activeSessionId)) {
-      this.clearActiveSession();
-    }
-
-    this.globalSessionProvider.setSessions(this.getGlobalSessions(), statuses);
   }
 
   setCurrentDirectory(directory?: string): void {
@@ -392,22 +356,6 @@ export class SessionManager implements vscode.Disposable {
     }
   }
 
-  async refreshGlobalSessions(): Promise<void> {
-    try {
-      const [list, statuses] = await Promise.all([
-        this.client.listAllSessions(),
-        this.client.getSessionStatus(),
-      ]);
-      this.setGlobalSessions(list, statuses);
-      this.logger.debug(`SessionManager: refreshed ${list.length} global session(s)`);
-    } catch (err) {
-      this.logger.error(
-        'SessionManager: failed to refresh global sessions',
-        err instanceof Error ? err.message : String(err),
-      );
-    }
-  }
-
   // -------------------------------------------------------------------------
   //  Dispose
   // -------------------------------------------------------------------------
@@ -428,7 +376,6 @@ export class SessionManager implements vscode.Disposable {
     this.activeSessionId = undefined;
     this.activeSessionLoadNonce++;
     this.sessionProvider.setActiveSession(undefined);
-    this.globalSessionProvider.setActiveSession(undefined);
     this.chatProvider.postMessage({
       type: 'session:cleared',
       data: undefined,
@@ -463,7 +410,11 @@ function waitForNextTick(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function normalizeDirectory(directory: string): string {
+function normalizeDirectory(directory: string | undefined): string {
+  if (!directory) {
+    return '';
+  }
+
   const normalized = path.normalize(directory);
   return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
 }

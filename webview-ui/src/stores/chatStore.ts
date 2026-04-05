@@ -157,7 +157,7 @@ function applyDeltaToExistingPart(part: Part, field: string | undefined, delta: 
     if (part.type === 'text' || part.type === 'reasoning') {
       return {
         ...part,
-        text: `${part.text}${delta}`,
+        text: `${part.text ?? ''}${delta}`,
       };
     }
 
@@ -337,12 +337,64 @@ function getMessageParts(message: MessageWithParts): Part[] {
   return Array.isArray(message.parts) ? message.parts : [];
 }
 
+function getMessageTextContent(message: MessageWithParts): string {
+  return getMessageParts(message)
+    .filter((part): part is TextPart => part.type === 'text')
+    .map((part) => part.text.trim())
+    .filter(Boolean)
+    .join('\n');
+}
+
+function getMessageFilePartCount(message: MessageWithParts): number {
+  return getMessageParts(message).filter((part): part is FilePart => part.type === 'file').length;
+}
+
 function getRevertMessageID(session?: Session): string | undefined {
   return session?.revert?.messageID;
 }
 
 function isUserMessage(message: MessageWithParts): boolean {
   return message.info.role === 'user';
+}
+
+function isOptimisticUserMessage(message: MessageWithParts): boolean {
+  return isUserMessage(message) && message.info.id.startsWith('opt_');
+}
+
+function findMatchingStaleOptimisticMessageIndex(
+  messages: MessageWithParts[],
+  incomingMessage: MessageWithParts,
+): number {
+  if (!isUserMessage(incomingMessage)) {
+    return -1;
+  }
+
+  const incomingText = getMessageTextContent(incomingMessage);
+  const incomingFileCount = getMessageFilePartCount(incomingMessage);
+  let matchedIndex = -1;
+  let matchedTimeDelta = Number.POSITIVE_INFINITY;
+
+  messages.forEach((message, index) => {
+    if (!isOptimisticUserMessage(message) || message.info.sessionID !== incomingMessage.info.sessionID) {
+      return;
+    }
+
+    if (getMessageTextContent(message) !== incomingText) {
+      return;
+    }
+
+    if (getMessageFilePartCount(message) !== incomingFileCount) {
+      return;
+    }
+
+    const timeDelta = Math.abs(message.info.time.created - incomingMessage.info.time.created);
+    if (timeDelta <= matchedTimeDelta) {
+      matchedIndex = index;
+      matchedTimeDelta = timeDelta;
+    }
+  });
+
+  return matchedIndex;
 }
 
 function getUserMessages(messages: MessageWithParts[]): MessageWithParts[] {
@@ -393,7 +445,7 @@ function getRevertDraft(message: MessageWithParts): {
 } {
   const text = message.parts
     .filter((part): part is TextPart => part.type === 'text')
-    .map((part) => part.text)
+    .map((part) => part.text ?? '')
     .join('\n')
     .trim();
   const images = message.parts
@@ -788,24 +840,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
         state.bufferedRealtimeParts[message.info.id],
       );
       const nextBufferedRealtimeParts = omitBufferedParts(state.bufferedRealtimeParts, message.info.id);
+      const replaceOptimisticMessage = (optIndex: number) => {
+        const nextMessages = [...state.messages];
+        const replacedOptimisticID = state.messages[optIndex]?.info.id;
+        nextMessages[optIndex] = normalizedMessage;
+        return {
+          messages: nextMessages,
+          ...getDerivedChatStatePatch(
+            state.currentSession,
+            nextMessages,
+            state.lastAppliedRevertMessageID,
+          ),
+          bufferedRealtimeParts: replacedOptimisticID
+            ? omitBufferedParts(nextBufferedRealtimeParts, replacedOptimisticID)
+            : nextBufferedRealtimeParts,
+          optimisticMessageID: undefined,
+        };
+      };
 
       if (index === -1) {
         const optimisticID = state.optimisticMessageID;
         if (optimisticID && normalizedMessage.info.role === 'user') {
           const optIndex = state.messages.findIndex(m => m.info.id === optimisticID);
           if (optIndex !== -1) {
-            const nextMessages = [...state.messages];
-            nextMessages[optIndex] = normalizedMessage;
-            return {
-              messages: nextMessages,
-              ...getDerivedChatStatePatch(
-                state.currentSession,
-                nextMessages,
-                state.lastAppliedRevertMessageID,
-              ),
-              bufferedRealtimeParts: nextBufferedRealtimeParts,
-              optimisticMessageID: undefined,
-            };
+            return replaceOptimisticMessage(optIndex);
+          }
+        }
+
+        if (!optimisticID && normalizedMessage.info.role === 'user') {
+          const staleOptIndex = findMatchingStaleOptimisticMessageIndex(
+            state.messages,
+            normalizedMessage,
+          );
+          if (staleOptIndex !== -1) {
+            return replaceOptimisticMessage(staleOptIndex);
           }
         }
 

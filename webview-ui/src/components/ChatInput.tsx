@@ -11,8 +11,6 @@ import {
   type ChatImageAttachment,
 } from '../stores/chatStore';
 import { postMessage } from '../utils/vscodeApi';
-import { AgentSelector } from './AgentSelector';
-import { TokenUsageBar } from './TokenUsageBar';
 import { QueuedMessageList } from './QueuedMessageList';
 import { SlashCommandMenu } from './SlashCommandMenu';
 import type { SlashCommandMenuHandle } from './SlashCommandMenu';
@@ -150,8 +148,17 @@ function isMentionEndBoundary(value: string | undefined): boolean {
   return !value || /[\s.,!?;:)\]>}'"]/.test(value);
 }
 
+function isWarningsMentionPath(mention: string): boolean {
+  const lowerMention = mention.toLowerCase();
+  return lowerMention === '@warnings' || lowerMention === '@warnings-all';
+}
+
+function getMentionToken(mention: string): string {
+  return isWarningsMentionPath(mention) ? mention : `@${mention}`;
+}
+
 function findMentionTokenIndex(text: string, mention: string): number {
-  const token = `@${mention}`;
+  const token = getMentionToken(mention);
   let start = 0;
 
   while (start < text.length) {
@@ -529,7 +536,7 @@ export function ChatInput() {
     [],
   );
 
-  /** Handle a file being selected from the mention menu. */
+  /** Handle a mention target being selected from the mention menu. */
   const handleMentionSelect = useCallback(
     (result: MentionResult) => {
       const textarea = textareaRef.current;
@@ -538,11 +545,11 @@ export function ChatInput() {
         return;
       }
 
-      // Replace `@query` with the selected file path.
+      // Replace `@query` with the selected mention reference.
       const before = inputText.slice(0, mentionTriggerIndex);
       const cursorPos = textarea.selectionStart ?? inputText.length;
       const after = inputText.slice(cursorPos);
-      const insertText = `@${result.path} `;
+      const insertText = `${getMentionToken(result.path)} `;
       const newText = before + insertText + after;
       const newCursorPos = before.length + insertText.length;
 
@@ -947,9 +954,6 @@ export function ChatInput() {
             onSelect={handleMentionSelect}
             onClose={closeMentionMenu}
           />
-          <div className="chat-input__agent-selector">
-            <AgentSelector />
-          </div>
           <div className="chat-input__shell">
             <div className="chat-input__row">
               <div className="chat-input__field">
@@ -998,7 +1002,6 @@ export function ChatInput() {
                 </button>
               </div>
             </div>
-            <div className="chat-input__context-bar"><TokenUsageBar /></div>
             {hasMeta && (
               <div className="chat-input__meta">
                 {currentSession?.revert && (

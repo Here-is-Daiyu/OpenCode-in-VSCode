@@ -131,6 +131,7 @@ export function ChatApp() {
   } | null>(null);
   const skipNextAutoScrollRef = useRef(false);
   const isProgrammaticScrollRef = useRef(false);
+  const userScrolledUpRef = useRef(false);
   const scrollRafRef = useRef(0);
   const bufferedSessionMessagesRef = useRef<Map<string, SessionScopedWebviewMessage[]>>(new Map());
 
@@ -282,10 +283,14 @@ export function ChatApp() {
   }, []);
 
   /** Scroll to the bottom of the messages container */
-  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth', userInitiated = false) => {
     const el = messagesRef.current;
-    atBottomRef.current = true;
-    setAtBottom(true);
+    if (userInitiated) {
+      userScrolledUpRef.current = false;
+      atBottomRef.current = true;
+      setAtBottom(true);
+    }
+
     if (el) {
       isProgrammaticScrollRef.current = true;
       if (behavior === 'instant') {
@@ -294,7 +299,9 @@ export function ChatApp() {
         el.scrollTo({ top: el.scrollHeight, behavior });
       }
       requestAnimationFrame(() => {
-        isProgrammaticScrollRef.current = false;
+        requestAnimationFrame(() => {
+          isProgrammaticScrollRef.current = false;
+        });
       });
     }
   }, []);
@@ -305,6 +312,12 @@ export function ChatApp() {
     const next = checkAtBottom();
     atBottomRef.current = next;
     setAtBottom(prev => (prev === next ? prev : next));
+    if (!next) {
+      userScrolledUpRef.current = true;
+    }
+    if (next) {
+      userScrolledUpRef.current = false;
+    }
   }, [checkAtBottom]);
 
   useLayoutEffect(() => {
@@ -342,7 +355,7 @@ export function ChatApp() {
     const newCount = visibleMessages.length;
     prevMessageCountRef.current = newCount;
 
-    if (!newCount || !atBottomRef.current) {
+    if (!newCount || !atBottomRef.current || userScrolledUpRef.current) {
       return;
     }
 
@@ -359,6 +372,12 @@ export function ChatApp() {
     }
   }, [pendingPermission, pendingQuestion, scrollToBottom]);
 
+  useEffect(() => {
+    if (!isStreaming) {
+      userScrolledUpRef.current = false;
+    }
+  }, [isStreaming]);
+
   // ── Extension message handler ─────────────────────────────────────────
 
   const handleExtensionMessage = useCallback(
@@ -374,6 +393,7 @@ export function ChatApp() {
           case 'session:loaded':
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
+            userScrolledUpRef.current = false;
             atBottomRef.current = true;
             setAtBottom(true);
             prevMessageCountRef.current = 0; // reset so auto-scroll triggers
@@ -388,6 +408,7 @@ export function ChatApp() {
           case 'session:created':
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
+            userScrolledUpRef.current = false;
             atBottomRef.current = true;
             setAtBottom(true);
             prevMessageCountRef.current = 0;
@@ -416,6 +437,7 @@ export function ChatApp() {
             }
             pendingHistoryPrependScrollRef.current = null;
             skipNextAutoScrollRef.current = false;
+            userScrolledUpRef.current = false;
             atBottomRef.current = true;
             setAtBottom(true);
             bufferedSessionMessagesRef.current.clear();
@@ -834,17 +856,19 @@ export function ChatApp() {
                 )}
 
                 {showScrollButton && (
-                  <button
-                    className="chat-scroll-bottom"
-                    onClick={() => scrollToBottom('smooth')}
-                    title="Scroll to bottom"
-                    aria-label="Scroll to bottom"
-                    type="button"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-                      <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
-                    </svg>
-                  </button>
+                  <div className="chat-scroll-bottom-zone">
+                    <button
+                      className="chat-scroll-bottom"
+                      onClick={() => scrollToBottom('smooth', true)}
+                      title="Scroll to bottom"
+                      aria-label="Scroll to bottom"
+                      type="button"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                        <path d="M8 12.14l-4.5-4.5 1.06-1.06L8 10.02l3.44-3.44 1.06 1.06L8 12.14z" />
+                      </svg>
+                    </button>
+                  </div>
                 )}
               </div>
 

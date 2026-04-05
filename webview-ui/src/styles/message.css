@@ -899,6 +899,32 @@
   word-break: break-word;
 }
 
+.chat-app--roomy .msg-task__header {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+
+.chat-app--roomy .msg-task__meta {
+  /* Keep inline */
+}
+
+.chat-app--roomy .msg-task__title-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.chat-app--roomy .msg-task__subtitle {
+  flex-basis: 100%;
+}
+
+.chat-app--roomy .msg-task__session {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
 /* ====================================================================
  * Context tool group — collapsible grouped tool calls
  * ==================================================================== */
@@ -1053,7 +1079,6 @@
 
 .msg-file--image {
   display: block;
-  width: min(100%, 8rem);
   padding: 0;
   overflow: hidden;
   border-radius: var(--radius-md);
@@ -1061,7 +1086,20 @@
 }
 
 .msg-bubble--user .msg-file--image {
-  width: min(100%, 8rem);
+  width: auto;
+}
+
+.msg-file-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+
+.msg-file-images .msg-file--image {
+  width: calc(25% - 5px);
+  min-width: 60px;
+  flex-shrink: 0;
 }
 
 .msg-file--image-clickable {
@@ -2064,7 +2102,7 @@
 
 .msg-bash__header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 6px;
   line-height: 18px;
   font-size: 0.875rem;
@@ -2105,10 +2143,8 @@
 .msg-bash__command {
   color: var(--text-base);
   font-weight: 500;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
+  word-break: break-all;
 }
 
 .msg-bash__spinner {

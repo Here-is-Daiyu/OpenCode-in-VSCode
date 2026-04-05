@@ -8,7 +8,7 @@
  * - Collapsible output/error details without falling back to the generic tool summary
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolStatus } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
 import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
@@ -139,7 +139,7 @@ export const TaskRenderer = React.memo(function TaskRenderer({
     }
   }, [expanded, hasError]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }

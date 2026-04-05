@@ -3,7 +3,7 @@
  * live elapsed-time timer, text cleaning and auto-expand during streaming.
  */
 
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState, useEffect } from 'react';
 import { MarkdownRenderer } from '../../MarkdownRenderer';
 import { useThrottledValue } from '../../../hooks/useThrottledValue';
 import { useElapsedTime } from '../../../hooks/useElapsedTime';
@@ -66,7 +66,7 @@ export const ReasoningPart = React.memo(function ReasoningPart({
   }, [streaming]);
 
   // --- height measurement ---
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (contentRef.current) {
       setMeasuredHeight(contentRef.current.scrollHeight);
     }

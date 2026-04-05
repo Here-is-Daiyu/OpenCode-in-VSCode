@@ -11,7 +11,7 @@
  *  - "View full session" link in expanded body
  */
 
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import type { SubtaskPart as SubtaskPartType } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
 import { hasDisplayText, toDisplayText } from '../../../utils/renderText';
@@ -89,7 +89,7 @@ export const SubtaskPartComponent = React.memo(function SubtaskPartComponent({
   const input = toDisplayText(part.input, 'subtask.input');
   const output = toDisplayText(part.output, 'subtask.output');
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }

@@ -19,10 +19,11 @@ export const TextPart = React.memo(function TextPart({
   cacheKey,
   isStreaming,
 }: TextPartProps) {
-  const value = typeof text === 'string' ? text.trim() : '';
+  const raw = typeof text === 'string' ? text : '';
+  const value = raw.trim();
   const throttled = useThrottledValue(value, undefined, !!isStreaming);
 
-  if (!throttled) return null;
+  if (!raw || !throttled) return null;
 
   return (
     <div className={`msg-text ${className ?? ''}`}>

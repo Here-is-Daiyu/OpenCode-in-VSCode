@@ -402,20 +402,6 @@ export class OpenCodeClient {
   }
 
   /**
-   * List sessions across all projects when supported by the server.
-   * Falls back to the current project's sessions on older servers.
-   *
-   * `GET /global/session`
-   */
-  async listAllSessions(): Promise<Session[]> {
-    try {
-      return await this.get<Session[]>('/global/session');
-    } catch {
-      return this.listSessions();
-    }
-  }
-
-  /**
    * Create a new session.
    *
    * `POST /session`

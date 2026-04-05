@@ -410,7 +410,7 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 0;
-  overflow-anchor: none;
+  overflow-anchor: auto;
 }
 
 .chat-messages__inner--empty {
@@ -463,8 +463,18 @@ textarea {
     color 0.15s ease;
 }
 
-.chat-message-stage:hover .chat-scroll-bottom,
-.chat-message-stage:focus-within .chat-scroll-bottom {
+.chat-scroll-bottom-zone {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 160px;
+  height: 120px;
+  z-index: 14;
+  pointer-events: auto;
+}
+
+.chat-scroll-bottom-zone:hover .chat-scroll-bottom,
+.chat-scroll-bottom-zone:focus-within .chat-scroll-bottom {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);

@@ -25,6 +25,7 @@ function HistoryIcon() {
 // ---------------------------------------------------------------------------
 
 function getBaseName(path: string): string {
+  if (!path) return '';
   const normalized = path.replace(/\\/g, '/');
   const segments = normalized.split('/').filter(Boolean);
   return segments[segments.length - 1] ?? path;

@@ -3,7 +3,7 @@
  * into a collapsible "Gathered Context" section, modeled on OpenCode Desktop.
  */
 
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState, useEffect, type CSSProperties } from 'react';
 import type { ToolPart } from '../../../types/opencode';
 import { ToolCallPart, CONTEXT_TOOLS } from './ToolCallPart';
 
@@ -47,12 +47,38 @@ export const ContextToolGroup = React.memo(function ContextToolGroup({
   const [expanded, setExpanded] = useState(!allDone);
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
+  const [settled, setSettled] = useState(expanded);
 
-  useEffect(() => {
-    if (bodyRef.current) {
-      setBodyHeight(bodyRef.current.scrollHeight);
+  // Dynamically track body height using ResizeObserver so inner tool
+  // expand/collapse keeps the outer container's maxHeight in sync.
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+
+    setBodyHeight(el.scrollHeight);
+
+    const observer = new ResizeObserver(() => {
+      setBodyHeight(el.scrollHeight);
+    });
+    observer.observe(el);
+
+    return () => observer.disconnect();
+  }, []);
+
+  // After expand transition completes, remove maxHeight constraint
+  // so inner tools can freely expand without clipping.
+  const handleTransitionEnd = useCallback(() => {
+    if (expanded) {
+      setSettled(true);
     }
-  }, [expanded, tools]);
+  }, [expanded]);
+
+  // Reset settled state when collapsing.
+  useEffect(() => {
+    if (!expanded) {
+      setSettled(false);
+    }
+  }, [expanded]);
 
   // Auto-collapse when all tools finish
   useEffect(() => {
@@ -61,7 +87,27 @@ export const ContextToolGroup = React.memo(function ContextToolGroup({
     }
   }, [allDone]);
 
-  const toggle = useCallback(() => setExpanded((v) => !v), []);
+  const headerRef = useRef<HTMLButtonElement>(null);
+
+  const toggle = useCallback(() => {
+    const el = headerRef.current;
+    if (el) {
+      const rect = el.getBoundingClientRect();
+      setExpanded((v) => !v);
+      requestAnimationFrame(() => {
+        const newRect = el.getBoundingClientRect();
+        const delta = newRect.top - rect.top;
+        if (Math.abs(delta) > 1) {
+          const scroller = el.closest('.chat-messages');
+          if (scroller) {
+            scroller.scrollTop += delta;
+          }
+        }
+      });
+    } else {
+      setExpanded((v) => !v);
+    }
+  }, []);
   const summary = buildGroupSummary(tools);
   const hasError = tools.some((t) => t.state?.status === 'error');
   const isRunning = tools.some((t) => t.state?.status === 'running' || t.state?.status === 'pending');
@@ -73,6 +119,7 @@ export const ContextToolGroup = React.memo(function ContextToolGroup({
       }`}
     >
       <button
+        ref={headerRef}
         className="msg-context-group__header"
         onClick={toggle}
         aria-expanded={expanded}
@@ -105,8 +152,11 @@ export const ContextToolGroup = React.memo(function ContextToolGroup({
       <div
         className="msg-context-group__collapse"
         style={{
-          maxHeight: expanded ? `${bodyHeight + 32}px` : '0px',
-        }}
+          maxHeight: settled ? 'none' : expanded ? `${bodyHeight + 32}px` : '0px',
+          overflow: settled ? 'visible' : 'hidden',
+          transition: settled ? 'none' : undefined,
+        } as CSSProperties}
+        onTransitionEnd={handleTransitionEnd}
       >
         <div ref={bodyRef} className="msg-context-group__body">
           {tools.map((tool) => (

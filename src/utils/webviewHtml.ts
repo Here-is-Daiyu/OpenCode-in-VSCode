@@ -75,7 +75,7 @@ export function buildWebviewHtmlShell(options: WebviewHtmlShellOptions): string 
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'none';
       style-src ${webview.cspSource} 'unsafe-inline';
-      script-src 'nonce-${nonce}';
+      script-src 'nonce-${nonce}' 'strict-dynamic';
       img-src ${webview.cspSource} data: https:;
       font-src ${webview.cspSource} data:;
       connect-src ${webview.cspSource};" />

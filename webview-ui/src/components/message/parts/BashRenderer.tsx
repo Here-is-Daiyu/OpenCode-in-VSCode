@@ -9,7 +9,7 @@
  * - Auto-expands on error
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolCallPartProps } from './ToolCallPart';
 import { toRecord, stringifyValue, formatDuration } from './ToolCallPart';
 import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
@@ -60,7 +60,7 @@ export const BashRenderer = React.memo(function BashRenderer({
     }
   }, [hasError]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (bodyRef.current) {
       setBodyHeight(bodyRef.current.scrollHeight);
     }

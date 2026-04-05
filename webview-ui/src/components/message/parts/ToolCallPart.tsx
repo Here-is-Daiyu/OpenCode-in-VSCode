@@ -10,7 +10,7 @@
  * Specialized renderers are dispatched for certain tools (task, todo, bash, edit/write).
  */
 
-import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ToolPart } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
 import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
@@ -291,8 +291,11 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
 // ---------------------------------------------------------------------------
 
 export function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.floor((ms % 60_000) / 1000);
+  return seconds > 0 ? `${minutes}m ${seconds}s` : `${minutes}m`;
 }
 
 function getToolDisplayName(tool: string): string {
@@ -336,7 +339,9 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
 }: ToolCallPartProps) {
   const [expanded, setExpanded] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLDivElement>(null);
   const [bodyHeight, setBodyHeight] = useState(0);
+  const [settled, setSettled] = useState(false);
   const tool = getToolName(part.tool);
   const input = part.state?.input;
   const rawOutput = part.state?.output;
@@ -353,13 +358,54 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
   // Only show duration if > 2000ms
   const showDuration = duration !== undefined && duration > 2000 && status === 'completed';
 
-  useEffect(() => {
-    if (bodyRef.current) {
-      setBodyHeight(bodyRef.current.scrollHeight);
-    }
-  }, [error, expanded, output]);
+  useLayoutEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
 
-  const toggle = useCallback(() => setExpanded((v) => !v), []);
+    setBodyHeight(el.scrollHeight);
+
+    const observer = new ResizeObserver(() => {
+      setBodyHeight(el.scrollHeight);
+    });
+    observer.observe(el);
+
+    return () => observer.disconnect();
+  }, []);
+
+  // After expand transition completes, remove maxHeight constraint.
+  const handleTransitionEnd = useCallback(() => {
+    if (expanded) {
+      setSettled(true);
+    }
+  }, [expanded]);
+
+  useEffect(() => {
+    if (!expanded) {
+      setSettled(false);
+    }
+  }, [expanded]);
+
+  const toggle = useCallback(() => {
+    // Anchor scroll to the title element so expanding pushes content down
+    // while the top edge stays put.
+    const titleEl = titleRef.current;
+    if (titleEl) {
+      const rect = titleEl.getBoundingClientRect();
+      setExpanded((v) => !v);
+      requestAnimationFrame(() => {
+        const newRect = titleEl.getBoundingClientRect();
+        const delta = newRect.top - rect.top;
+        if (Math.abs(delta) > 1) {
+          const scroller = titleEl.closest('.chat-messages');
+          if (scroller) {
+            scroller.scrollTop += delta;
+          }
+        }
+      });
+    } else {
+      setExpanded((v) => !v);
+    }
+  }, []);
   const summaryInfo = getArgsSummaryInfo(tool, input);
   const summaryLine = toPositiveLineNumber(summaryInfo.line);
   const childSessionId = tool === 'task'
@@ -446,6 +492,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
     <div className={`msg-tool-compact ${grouped ? 'msg-tool-compact--grouped' : ''}`}>
       {/* Title line: TOOL_NAME target */}
       <div
+        ref={titleRef}
         className="msg-tool-compact__title"
         onClick={hasContent ? toggle : undefined}
         style={hasContent ? { cursor: 'pointer' } : undefined}
@@ -542,8 +589,11 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
         <div
           className="msg-tool-compact__collapse"
           style={{
-            maxHeight: expanded ? `${Math.min(bodyHeight + 16, 500)}px` : '0px',
+            maxHeight: settled ? 'none' : expanded ? `${Math.min(bodyHeight + 16, 500)}px` : '0px',
+            overflow: settled ? 'visible' : undefined,
+            transition: settled ? 'none' : undefined,
           }}
+          onTransitionEnd={handleTransitionEnd}
         >
           <div ref={bodyRef} className="msg-tool-compact__result">
             {output.trim() && (

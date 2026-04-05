@@ -57,7 +57,8 @@ const MAX_HEIGHT_CAP = 260;
 const MIN_HEIGHT_CAP = 100;
 
 /** Get a simple file extension icon indicator. */
-function getFileIcon(name: string, type: 'file' | 'folder' | 'terminal'): string {
+function getFileIcon(name: string, type: 'file' | 'folder' | 'terminal', path: string): string {
+  if (path.startsWith('@warnings')) return '\u26A0';
   if (type === 'terminal') return '\u{1F4BB}';
   if (type === 'folder') return '\u{1F4C1}';
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
@@ -159,7 +160,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(
     if (results.length === 0) {
       return (
         <div ref={menuRef} className="mention-menu" role="status">
-          <div className="mention-menu__empty">Type to search files or type 'terminal' for recent outputs\u2026</div>
+          <div className="mention-menu__empty">Type to search files, @warn for diagnostics, or 'terminal' for recent outputs\u2026</div>
         </div>
       );
     }
@@ -179,7 +180,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(
             onMouseEnter={() => setHighlightIndex(index)}
             onClick={() => onSelect(item)}
           >
-            <span className="mention-menu__icon">{getFileIcon(item.name, item.type)}</span>
+            <span className="mention-menu__icon">{getFileIcon(item.name, item.type, item.path)}</span>
             <span className="mention-menu__name">{item.name}</span>
             <span className="mention-menu__path">{item.path}</span>
           </div>

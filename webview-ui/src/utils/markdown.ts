@@ -1,5 +1,5 @@
 import DOMPurify from 'dompurify';
-import { Marked } from 'marked';
+import { Marked, type MarkedExtension, type Token, type TokenizerStartFunction, type TokenizerThis } from 'marked';
 import markedKatex from 'marked-katex-extension';
 import markedShiki from 'marked-shiki';
 
@@ -61,6 +61,7 @@ let initPromise: Promise<void> | null = null;
 let sanitizeHooked = false;
 
 function escapeHtml(text: string): string {
+  if (typeof text !== 'string') return String(text ?? '');
   return text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -147,6 +148,29 @@ function fallbackCodeBlock(code: string, lang: string): string {
   return `${pre}<code${cls}>${escapeHtml(code)}</code></pre>`;
 }
 
+function patchKatexTokenizerStarts(extension: MarkedExtension): MarkedExtension {
+  if (!extension.extensions) {
+    return extension;
+  }
+
+  for (const ext of extension.extensions) {
+    if (!('start' in ext) || !ext.start) {
+      continue;
+    }
+
+    const originalStart: TokenizerStartFunction = ext.start;
+    ext.start = function (this: TokenizerThis, src: string): number | void {
+      if (typeof src !== 'string' || !src) {
+        return;
+      }
+
+      return originalStart.call(this, src);
+    };
+  }
+
+  return extension;
+}
+
 export async function initMarkdownRenderer(): Promise<void> {
   if (ready) {
     return;
@@ -182,11 +206,50 @@ export async function initMarkdownRenderer(): Promise<void> {
       gfm: true,
     });
 
+    const katexExt = patchKatexTokenizerStarts(markedKatex({
+      throwOnError: false,
+      nonStandard: true,
+    }));
+
+    if (katexExt.extensions) {
+      for (const ext of katexExt.extensions) {
+        const rendererExtension = ext as typeof ext & {
+          renderer?: (this: unknown, token: Record<string, unknown>) => string;
+        };
+        const origRenderer = rendererExtension.renderer;
+        if (origRenderer) {
+          rendererExtension.renderer = function (this: unknown, token: Record<string, unknown>) {
+            if (typeof token?.text !== 'string' || !token.text) {
+              return '';
+            }
+            try {
+              return origRenderer.call(this, token);
+            } catch {
+              return `<code>${escapeHtml(String(token.text))}</code>`;
+            }
+          };
+        }
+      }
+    }
+
     next.use(
+      {
+        walkTokens(token: Token) {
+          const maybeTextToken = token as Token & { text?: unknown };
+          if ('text' in maybeTextToken && typeof maybeTextToken.text !== 'string') {
+            maybeTextToken.text = maybeTextToken.text != null ? String(maybeTextToken.text) : '';
+          }
+        },
+      },
       {
         renderer: {
           link({ href, title, tokens }) {
-            const text = this.parser.parseInline(tokens);
+            let text: string;
+            try {
+              text = this.parser.parseInline(tokens ?? []);
+            } catch {
+              text = '';
+            }
             if (!href) {
               return text;
             }
@@ -203,10 +266,7 @@ export async function initMarkdownRenderer(): Promise<void> {
           },
         },
       },
-      markedKatex({
-        throwOnError: false,
-        nonStandard: true,
-      }),
+      katexExt,
       markedShiki({
         async highlight(code, lang) {
           const label = getLanguageLabel(lang);
@@ -269,7 +329,7 @@ export async function renderMarkdown(content: string, cacheKey?: string): Promis
     touch(key, { source, html });
     return html;
   } catch (error) {
-    console.warn('[markdown] Render failed, using fallback:', error);
-    return fallback(source);
+    console.warn('[markdown] Parse failed:', error);
+    return escapeHtml(source);
   }
 }

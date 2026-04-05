@@ -242,17 +242,6 @@ async function refreshSessions(ctx: CommandContext): Promise<void> {
   }
 }
 
-async function refreshGlobalSessions(ctx: CommandContext): Promise<void> {
-  if (!requireConnected(ctx)) { return; }
-  try {
-    await ctx.sessionManager.refreshGlobalSessions();
-    ctx.logger.debug('Refreshed global sessions');
-  } catch (err) {
-    ctx.logger.error('Failed to refresh global sessions', err);
-    vscode.window.showErrorMessage(`Failed to refresh global sessions: ${errorMessage(err)}`);
-  }
-}
-
 async function filterSessions(ctx: CommandContext): Promise<void> {
   if (!requireConnected(ctx)) { return; }
 
@@ -561,7 +550,6 @@ async function updateSelectedModel(
 ): Promise<void> {
   const config = await ctx.client.updateConfig({ model: `${providerID}/${modelID}` });
   syncConfig(ctx, config);
-  ctx.statusBarManager.setModel(providerID, modelID);
   ctx.logger.info(`Selected model: ${providerID}/${modelID}`);
 }
 
@@ -1203,7 +1191,6 @@ export function registerCommands(
     ['opencode.newSession', () => newSession(ctx)],
     ['opencode.deleteSession', (sessionId?: unknown) => deleteSession(ctx, sessionId as string | undefined)],
     ['opencode.refreshSessions', () => refreshSessions(ctx)],
-    ['opencode.refreshGlobalSessions', () => refreshGlobalSessions(ctx)],
     ['opencode.getConfig', async () => {
       try {
         const config = await ctx.client.getConfig();
