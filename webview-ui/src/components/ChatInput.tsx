@@ -296,6 +296,10 @@ export function ChatInput() {
   const canSend = connected
     && !optimisticMessageID
     && (inputText.trim().length > 0 || attachedImages.length > 0);
+  const hasMeta = Boolean(currentSession?.revert)
+    || (queuesFollowups && queuedMessages.length === 0)
+    || queuedMessages.length > 0
+    || shellDraft;
 
   useEffect(() => {
     nextImageMarkerIndexRef.current = getNextImageMarkerIndex(inputText, attachedImages);
@@ -1019,68 +1023,72 @@ export function ChatInput() {
                 </button>
               </div>
             </div>
-            <div className="chat-input__meta">
-              {currentSession?.revert && (
-                <div className="chat-input__hint chat-input__hint--revert" role="status" aria-live="polite">
-                  <span className="chat-input__hint-badge">Undo</span>
-                  <span className="chat-input__hint-text">
-                    {revertSteps > 1
-                      ? `Showing the session before ${revertSteps} reverted user prompts. Edit the restored draft, or redo to bring prompts back.`
-                      : 'Showing the session at an earlier point. Edit the restored draft, or redo to bring the last prompt back.'}
-                  </span>
-                  <div className="chat-input__revert-actions">
-                    <button
-                      className="chat-input__revert-btn"
-                      onClick={() => handleRedo()}
-                      disabled={!canRedo || isStreaming}
-                      type="button"
-                    >
-                      Redo
-                    </button>
-                    {revertSteps > 1 && (
+            {hasMeta && (
+              <div className="chat-input__meta">
+                {currentSession?.revert && (
+                  <div className="chat-input__hint chat-input__hint--revert" role="status" aria-live="polite">
+                    <span className="chat-input__hint-badge">Undo</span>
+                    <span className="chat-input__hint-text">
+                      {revertSteps > 1
+                        ? `Showing the session before ${revertSteps} reverted user prompts. Edit the restored draft, or redo to bring prompts back.`
+                        : 'Showing the session at an earlier point. Edit the restored draft, or redo to bring the last prompt back.'}
+                    </span>
+                    <div className="chat-input__revert-actions">
                       <button
                         className="chat-input__revert-btn"
-                        onClick={() => handleRedo(true)}
+                        onClick={() => handleRedo()}
                         disabled={!canRedo || isStreaming}
                         type="button"
                       >
-                        Restore all
+                        Redo
                       </button>
-                    )}
+                      {revertSteps > 1 && (
+                        <button
+                          className="chat-input__revert-btn"
+                          onClick={() => handleRedo(true)}
+                          disabled={!canRedo || isStreaming}
+                          type="button"
+                        >
+                          Restore all
+                        </button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              )}
-              {queuesFollowups && queuedMessages.length === 0 && (
-                <div className="chat-input__hint" role="status" aria-live="polite">
-                  <span className="chat-input__hint-badge">Queue</span>
-                  <span className="chat-input__hint-text">
-                    This session is still generating. New chat follow-ups will be queued and sent automatically.
-                  </span>
-                </div>
-              )}
-              <QueuedMessageList
-                items={queuedMessages}
-                sendingMessageID={sendingMessageID}
-                failedMessageID={failedMessageID}
-                onRecall={handleQueuedRecall}
-              />
-              {shellDraft && (
-                <div className="chat-input__hint" role="status" aria-live="polite">
-                  <span className="chat-input__hint-badge">Shell</span>
-                  <span className="chat-input__hint-text">
-                    {shellCommand
-                      ? 'Runs via the OpenCode server shell endpoint. Images and @ file references are ignored.'
-                      : 'Type a shell command after ! before sending.'}
-                  </span>
-                </div>
-              )}
-              <div className="chat-input__toolbar">
-                <div className="chat-input__selectors">
-                  <ModelSelector />
-                  <AgentSelector />
-                </div>
+                )}
+                {queuesFollowups && queuedMessages.length === 0 && (
+                  <div className="chat-input__hint" role="status" aria-live="polite">
+                    <span className="chat-input__hint-badge">Queue</span>
+                    <span className="chat-input__hint-text">
+                      This session is still generating. New chat follow-ups will be queued and sent automatically.
+                    </span>
+                  </div>
+                )}
+                <QueuedMessageList
+                  items={queuedMessages}
+                  sendingMessageID={sendingMessageID}
+                  failedMessageID={failedMessageID}
+                  onRecall={handleQueuedRecall}
+                />
+                {shellDraft && (
+                  <div className="chat-input__hint" role="status" aria-live="polite">
+                    <span className="chat-input__hint-badge">Shell</span>
+                    <span className="chat-input__hint-text">
+                      {shellCommand
+                        ? 'Runs via the OpenCode server shell endpoint. Images and @ file references are ignored.'
+                        : 'Type a shell command after ! before sending.'}
+                    </span>
+                  </div>
+                )}
               </div>
+            )}
+          </div>
 
+          <div className="chat-input__dock-tray">
+            <div className="chat-input__dock-controls">
+              <AgentSelector />
+              <ModelSelector />
+            </div>
+            <div className="chat-input__dock-status">
               <TokenUsageBar />
             </div>
           </div>

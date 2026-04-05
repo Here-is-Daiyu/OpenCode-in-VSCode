@@ -184,14 +184,6 @@ textarea {
   font-weight: 600;
 }
 
-.settings-panel__description {
-  margin: 4px 0 0;
-  max-width: 56ch;
-  color: var(--text-weak);
-  font-size: 13px;
-  line-height: 1.55;
-}
-
 .settings-header__meta {
   display: flex;
   align-items: center;
@@ -327,6 +319,7 @@ textarea {
   color: var(--text-base);
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
   transition: background-color 0.15s, border-color 0.15s, color 0.15s;
 }
 
@@ -399,28 +392,51 @@ textarea {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 0;
   padding: 18px;
   border: 1px solid var(--settings-border-soft);
   border-radius: 12px;
   background: var(--settings-surface-primary);
 }
 
-.settings-panel__header {
+.settings-section {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--settings-border-soft);
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+  scroll-margin-top: 24px;
+  padding-bottom: 24px;
 }
 
-.settings-panel__title {
-  margin: 2px 0 0;
+.settings-section + .settings-section {
+  padding-top: 24px;
+  border-top: 1px solid var(--settings-border-soft);
+}
+
+.settings-section:last-child {
+  padding-bottom: 0;
+}
+
+.settings-section__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-section__title {
+  margin: 0;
   color: var(--text-strong);
   font-size: 18px;
   font-weight: 600;
   letter-spacing: -0.02em;
+}
+
+.settings-section__description {
+  margin: 0;
+  max-width: 56ch;
+  color: var(--text-weak);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 /* =====================================================================
@@ -1939,7 +1955,6 @@ textarea {
   }
 
   .settings-header__title-row,
-  .settings-panel__header,
   .permission-rule,
   .mcp-card__header,
   .command-card__header {

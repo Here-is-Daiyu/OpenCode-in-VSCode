@@ -633,6 +633,41 @@ textarea {
   gap: 6px;
 }
 
+.chat-input__dock-tray {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 4px 4px 0;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: dock-tray;
+}
+
+.chat-input__dock-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  flex-shrink: 0;
+}
+
+.chat-input__dock-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.chat-input__dock-status:empty {
+  display: none;
+}
+
+.chat-input__dock-status .token-bar {
+  flex: 1 1 auto;
+}
+
 .chat-input__shell {
   position: relative;
   z-index: 1;
@@ -840,16 +875,6 @@ textarea {
   box-shadow: var(--shadow-xs-border-base);
 }
 
-.chat-input__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 6px 2px 0;
-  min-height: 0;
-  flex-wrap: wrap;
-}
-
 .chat-input__meta {
   display: flex;
   flex-direction: column;
@@ -936,13 +961,12 @@ textarea {
   box-shadow: 0 0 0 1px var(--border-focus-base);
 }
 
-.chat-input__selectors {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: 1 1 auto;
-  min-width: 0;
-  flex-wrap: wrap;
+.chat-input__dock-tray + .chat-input__tray {
+  margin-top: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-weak-base);
+  border-top-left-radius: var(--radius-lg);
+  border-top-right-radius: var(--radius-lg);
 }
 
 .chat-queue {
@@ -1542,12 +1566,21 @@ textarea {
     display: none;
   }
 
-  .chat-input__selectors {
-    width: 100%;
-  }
-
   .permission-card__actions {
     flex-wrap: wrap;
+  }
+}
+
+@container dock-tray (max-width: 280px) {
+  .model-selector__name {
+    display: none;
+  }
+}
+
+@container dock-tray (max-width: 240px) {
+  .agent-selector__name,
+  .agent-selector__model-badge {
+    display: none;
   }
 }
 
@@ -2021,6 +2054,7 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
   min-height: 18px;
   padding: 0 2px 0;
 }

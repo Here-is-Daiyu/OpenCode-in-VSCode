@@ -10,19 +10,136 @@ OpenCode-in-VSCode is a Visual Studio Code extension that brings [OpenCode](http
 
 ## Features
 
-- **Chat UI** — Activity bar chat panel closely matching the official OpenCode experience, with streaming text, tool call rendering, ANSI color output, KaTeX math, and code highlighting via Shiki
-- **Real-time sync** — SSE-driven session/message updates with automatic reconnection
-- **Session management** — Tree view with create, switch, delete, fork, share, and recent-first loading with batched older-history hydration
-- **Image attachments** — Via picker, drag and drop, and paste
-- **Settings webview** — VS Code settings plus OpenCode configuration (Connection, Chat, Models, Integrations, Permissions tabs)
-- **Status tree & status bar** — Connection state, model info, providers, MCP, LSP, and token usage
-- **Editor integration** — Show diffs, open terminals, add files/selections to prompts, right-click context menu (Explain/Improve Code)
-- **Slash commands** — `/` command system with server-side command discovery and caching
-- **Agent selector** — Switch between agent variants (default/fast/deep thinking modes)
-- **Virtualized scrolling** — @tanstack/react-virtual for long message lists (40-message threshold)
-- **Editor panel** — Open chat in a full editor tab via [`SessionEditorPanelProvider`](./src/providers/sessionEditorPanelProvider.ts)
-- **Reasoning traces** — Elapsed time display with spinner for streaming reasoning blocks
-- **Theme-aware** — Anti-flash theme switching, light/dark compatible with CSS variable theming
+### Chat UI
+
+- Activity bar chat panel closely matching the official OpenCode experience
+- Streaming text with `requestAnimationFrame`-based throttled updates
+- Markdown rendering via `marked` with KaTeX math, Shiki syntax highlighting, and ANSI color output
+- Clickable Markdown links (open URLs externally)
+- Virtualized scrolling (`@tanstack/react-virtual`) for long message lists (40+ messages)
+- Reasoning traces with elapsed-time spinner during streaming
+- Permission request cards (approve / deny tool permissions inline)
+- Question cards (respond to server questions inline)
+- Notification toast system
+- Error boundary for graceful crash recovery
+
+### Input System
+
+- **`@` file mentions** — fuzzy search project files, auto-attach file content to context
+- **`!` shell commands** — execute shell commands, pipe output back into AI context
+- **`/` slash commands** — server-side command discovery with caching and autocomplete menu
+- **Image attachments** — via file picker, drag-and-drop, and clipboard paste
+- **Pending message queue** — queue multiple messages, cancel individual items, auto-restore to input on cancel
+- **Code insertion from editor** — insert current editor selection/file into chat input with source annotation
+
+### Session Management
+
+- Create, switch, delete, fork, and share sessions
+- Compact sessions via `/compact` command
+- Default auto-resume into the most recent session on startup
+- Session tree view in activity bar with recent-first ordering
+- Batched older-history hydration for large session lists
+- Active session count indicator (shows how many other sessions are busy)
+
+### Message Controls
+
+- **Undo / Redo** — revert to previous user messages or restore reverted messages (Git-backed)
+- **Abort / Pause** — stop the current session mid-response (`Escape` keybinding)
+
+### Tool Call Rendering
+
+Every tool call is displayed as a compact card with collapsible results. Specialized renderers exist for:
+
+| Tool | Renderer | Interactive Features |
+|------|----------|---------------------|
+| `edit` / `write` | EditRenderer | Click to open diff in VS Code editor |
+| `bash` / `shell` | BashRenderer | ANSI-colored output, command display |
+| `read` | GenericToolCallPart | Clickable line numbers → open file at line |
+| `glob` / `grep` / `list` | ContextToolGroup | Grouped display for consecutive context lookups |
+| `webfetch` | GenericToolCallPart | Clickable URL → open in browser |
+| `task` | TaskRenderer | Open subagent session button |
+| `todowrite` | TodoRenderer | Checklist-style display |
+
+- **Context tool grouping** — consecutive read/glob/grep/list calls collapse into a single group
+- **Tool timeline** — 2+ consecutive non-context tools render in a timeline layout with connector lines
+- Step start/finish indicators, snapshot parts, patch parts, agent parts, retry parts, compaction parts
+
+### Subagent / Task Navigation
+
+- Click task tool results to enter the subagent's child session
+- Back navigation to return to the parent session
+- Subtask part rendering with session linking
+
+### Editor Integration
+
+- **Show Diff** — open file diffs from edit tool results directly in VS Code's diff editor, or view full session diff
+- **Open File at Line** — click read tool line numbers to jump to exact lines
+- **Open Terminal** — launch a terminal pre-configured with `OPENCODE_BASE_URL`
+- **CodeLens** — optional AI CodeLens suggestions (configurable)
+- **Right-click context menu** — Explain Code, Improve Code, Add Selection to Prompt, Add File to Prompt, Insert Editor Code to Chat
+
+### Editor Panel
+
+- Open any session in a full VS Code editor tab via `SessionEditorPanelProvider`
+- Open current session, new session, or pick from session tree
+- Keybinding: `Ctrl+Shift+E` / `Cmd+Shift+E`
+
+### Agent & Model Selection
+
+- **Agent selector** — switch between agent variants (e.g., build / plan modes)
+- **Model selector** — pick from all available provider models with capability badges (Reasoning, Attachments, Context size)
+- Both available as Quick Pick commands and in-chat UI dropdowns
+
+### Settings
+
+Dedicated settings webview with 5 tabs:
+
+| Tab | Features |
+|-----|----------|
+| **Connection** | Server hostname, port, auto-start, executable path |
+| **Chat** | Font size, timestamps, word wrap, max image size, tool call display mode |
+| **Models** | Browse and switch models across all providers |
+| **Integrations** | MCP server enable/disable, provider status, slash commands |
+| **Permissions** | Tool permission management |
+
+- Open project `opencode.jsonc` config file directly from status tree (follows official config resolution logic)
+
+### Status & Monitoring
+
+- **Status tree view** — connection state, server version/URL, model info, providers, MCP servers, LSP
+- **Status bar** — connection indicator, active model, busy spinner, token usage display
+- **MCP server toggle** — enable/disable MCP servers from the status tree context menu
+- **Auto-refresh** — periodic status polling
+
+### Server Management
+
+- Auto-start `opencode serve` on extension activation
+- Start / Stop / Restart server commands
+- Health check verification on connect
+- Automatic restart prompt on workspace folder change
+- Configuration change detection with restart prompt
+- Windows-compatible process management (`taskkill /T`)
+
+### Real-time Sync
+
+- SSE (Server-Sent Events) driven session, message, and status updates
+- Automatic reconnection with full data refresh on reconnect
+- Debounced updates to webview at ~60fps
+- Handles: `session.created`, `session.updated`, `session.deleted`, `session.status`, `message.updated`, `message.part.updated`, `message.part.delta`, `message.removed`, `permission.asked`, `question.asked`, `config.updated`, `todo.updated`, `file.edited`, `mcp.tools.changed`
+
+### Wide-screen Layout
+
+- When the chat panel is wide enough (> 1.5× max conversation width), a **Last API Response** side panel appears showing the most recent API response for the active session
+
+### Theme Support
+
+- Anti-flash theme switching (no white flash on dark/light toggle)
+- Full light / dark / high-contrast compatibility via CSS variable theming
+- Theme change events forwarded to all webview panels
+
+### Outline Index
+
+- Message outline navigation for long conversations
 
 ## Requirements
 
@@ -45,6 +162,16 @@ npm run package
 ```
 
 Then install the generated `.vsix` via **Extensions: Install from VSIX...** in VS Code.
+
+## Keyboard Shortcuts
+
+| Shortcut | Command |
+|----------|---------|
+| `Ctrl+Shift+O` / `Cmd+Shift+O` | Focus Chat Panel |
+| `Ctrl+Shift+N` / `Cmd+Shift+N` | New Session |
+| `Ctrl+Shift+E` / `Cmd+Shift+E` | Open Session in Editor |
+| `Ctrl+Alt+Shift+C` / `Cmd+Alt+Shift+C` | Insert Editor Code into Chat |
+| `Escape` | Abort Current Session (when busy) |
 
 ## Development
 
@@ -94,7 +221,7 @@ Extension Host (src/)           Webview (webview-ui/src/)
 ```
 src/
   extension.ts                    — Activation entry point
-  commands/index.ts               — Command registration
+  commands/index.ts               — Command registration (30+ commands)
   providers/
     chatViewProvider.ts           — Chat WebviewViewProvider
     settingsViewProvider.ts       — Settings WebviewViewProvider
@@ -118,31 +245,58 @@ src/
     opencode.ts                   — OpenCode API response types
   utils/
     webviewHtml.ts                — Webview HTML generation with nonce CSP
-
-scripts/
-  esbuild.mjs                     — Extension bundling/watch entry
-  generate-icon.js                — Icon asset generation helper
+    opencodeConfig.ts             — Config resolution helpers
 
 webview-ui/src/
   panels/
     chat/ChatApp.tsx              — Main chat panel
-    settings/SettingsApp.tsx       — Settings panel with 5 tabs
+    settings/SettingsApp.tsx      — Settings panel with 5 tabs
   components/
-    ChatInput.tsx                 — Message input with mention/slash support
+    ChatInput.tsx                 — Message input with @mention/!shell//slash support
     VirtualizedMessageList.tsx    — Virtualized message rendering
     MarkdownRenderer.tsx          — Markdown + KaTeX + Shiki rendering
     ModelSelector.tsx             — Model switching dropdown
     AgentSelector.tsx             — Agent variant selector
-    message/                      — Message bubble & 15 part renderers
-    settings/                     — Settings form components
+    LastApiResponsePanel.tsx      — Wide-screen side panel
+    MentionMenu.tsx               — @ file mention autocomplete
+    SlashCommandMenu.tsx          — / slash command autocomplete
+    QueuedMessageList.tsx         — Pending message queue display
+    PermissionCard.tsx            — Permission request UI
+    QuestionCard.tsx              — Question response UI
+    TokenUsageBar.tsx             — Token usage visualization
+    OutlineIndex.tsx              — Message outline navigation
+    NotificationToast.tsx         — Toast notifications
+    ErrorBoundary.tsx             — Crash recovery
+    message/
+      MessageBubble.tsx           — Message container
+      MessageContent.tsx          — Part dispatcher with grouping logic
+      MessageHeader.tsx           — Role/timestamp header
+      MessageFooter.tsx           — Message actions footer
+      parts/                      — 15+ specialized part renderers
+    settings/                     — Reusable settings form components
   stores/
     chatStore.ts                  — Chat state (Zustand)
     modelStore.ts                 — Model/provider state
     settingsStore.ts              — Settings state
     agentStore.ts                 — Agent state
     commandStore.ts               — Slash command state
-  hooks/                          — Custom React hooks (5)
-  utils/                          — Utility functions (ansiToHtml, markdown, etc.)
+    messageQueueStore.ts          — Pending message queue
+    notificationStore.ts          — Notification state
+  hooks/
+    useMentionSearch.ts           — File mention search
+    useQueuedMessageAutoSend.ts   — Auto-send queued messages
+    useElapsedTime.ts             — Elapsed time for streaming
+    useThrottledValue.ts          — Value throttling
+    useMessageListener.ts         — Webview message handler
+  utils/
+    ansiToHtml.ts                 — ANSI escape → HTML
+    renderText.ts                 — Text processing & image marker handling
+    markdown.ts                   — Markdown configuration
+    slashCommands.ts              — Slash command utilities
+    textCleaning.ts               — Text cleanup
+    modelUtils.ts                 — Model display helpers
+    opencodeConfig.ts             — Config utilities
+    vscodeApi.ts                  — VS Code API bridge
 ```
 
 ### Key Design Decisions
@@ -165,38 +319,6 @@ webview-ui/src/
 - Discriminated unions for message/event types
 - No `any` types except at API boundaries with proper validation
 
-## Common Development Patterns
-
-### Adding a New Command
-
-1. Define command ID in [`package.json`](./package.json) → `contributes.commands`
-2. Create handler in [`src/commands/`](./src/commands/)
-3. Register in [`src/commands/index.ts`](./src/commands/index.ts)
-4. Add keyboard shortcut if appropriate
-
-### Adding a New Webview Message Type
-
-1. Define type in [`src/types/messages.ts`](./src/types/messages.ts)
-2. Add handler in the relevant provider ([`src/providers/`](./src/providers/))
-3. Add sender in the webview component
-4. Test bidirectional communication
-
-### Adding a New Setting
-
-1. Add to [`package.json`](./package.json) → `contributes.configuration`
-2. Add to settings webview UI
-3. Add change handler if needed
-
-## Naming Conventions
-
-| Entity | Convention | Example |
-|--------|-----------|---------|
-| Files | `camelCase.ts` / `PascalCase.tsx` (components) | `eventBus.ts`, `ChatApp.tsx` |
-| Classes/Types/Interfaces | `PascalCase`, no `I` prefix | `SessionManager`, `ChatMessage` |
-| Functions/Variables | `camelCase` | `handleMessage`, `isConnected` |
-| Constants | `UPPER_SNAKE_CASE` | `MAX_RETRY_COUNT` |
-| Events | `PascalCase` with descriptive names | `SessionSwitched` |
-
 ## Performance Notes
 
 - Virtual scrolling for long message lists (40+ messages)
@@ -204,6 +326,8 @@ webview-ui/src/
 - Lazy-load Shiki languages
 - `requestAnimationFrame` for streaming text updates
 - `retainContextWhenHidden` to keep webview alive during active sessions
+- Context tool grouping reduces DOM node count
+- Tool timeline grouping for consecutive tool calls
 
 ## Known Constraints
 
@@ -244,38 +368,13 @@ The workflow in [`.github/workflows/release-vsix-on-tag.yml`](./.github/workflow
 - Tags matching `v*` / `V*` → also package into VSIX and upload as workflow artifact
 - Does **not** auto-create GitHub Releases
 
-## Research Documentation
-
-The `docs/research/` directory contains accumulated research notes:
-
-| File | Content |
-|------|---------|
-| [`opencode-api-reference.md`](./docs/research/opencode-api-reference.md) | REST API endpoints, SSE events, TypeScript types, SDK usage, message fetching caveats |
-| [`desktop-features-comparison.md`](./docs/research/desktop-features-comparison.md) | Desktop vs Extension feature matrix, Desktop UI architecture (SolidJS, part registry, throttled rendering) |
-| [`vscode-extension-api.md`](./docs/research/vscode-extension-api.md) | WebviewView API, TreeView, Configuration, postMessage patterns |
-| [`feature-gap-analysis.md`](./docs/research/feature-gap-analysis.md) | Feature gap analysis and implementation roadmap |
-| [`opencode-server-official.md`](./docs/research/opencode-server-official.md) | Server internals analysis |
-| [`openchamber-feature-reference.md`](./docs/research/openchamber-feature-reference.md) | OpenChamber feature/reference notes for extension ideas |
-| [`reference-repositories.md`](./docs/research/reference-repositories.md) | Local `vendor/` reference repositories, licenses, and recommended lookup order |
-| [`opencode-tui-tips.md`](./docs/research/opencode-tui-tips.md) | TUI interaction patterns reference |
-| [`vscode-settings-ui-research.md`](./docs/research/vscode-settings-ui-research.md) | Settings UI implementation research |
-
 ## 参考的仓库
 
 The following repositories are used for read-only comparison during development:
 
-| Repository | Local directory | License | Notes |
-|------------|-----------------|---------|-------|
-| [`anomalyco/opencode`](https://github.com/anomalyco/opencode) | [`vendor/opencode-official/`](./vendor/opencode-official/) | MIT | First stop for official behavior |
-| [`openchamber/openchamber`](https://github.com/openchamber/openchamber) | [`vendor/OpenChamber/`](./vendor/OpenChamber/) | MIT | Useful for settings, session UX, terminal, and VS Code ideas |
-| [`continuedev/continue`](https://github.com/continuedev/continue) | [`vendor/continue/`](./vendor/continue/) | Apache-2.0 | Useful for extension/webview patterns |
-| [`lehhair/OpenCodeUI`](https://github.com/lehhair/OpenCodeUI) | [`vendor/OpenCodeUI/`](./vendor/OpenCodeUI/) | GPL-3.0 | Reference only — do not copy code |
-
-## Git Workflow
-
-- Main branch: `main`
-- Feature branches: `feature/<name>`
-- Fix branches: `fix/<name>`
-- Conventional Commits: `feat:`, `fix:`, `docs:`, `refactor:`, etc.
-- Each logical change = one commit
-- Never commit directly to `main`
+| Repository | License | Notes |
+|------------|---------|-------|
+| [`anomalyco/opencode`](https://github.com/anomalyco/opencode) | MIT | First stop for official behavior |
+| [`openchamber/openchamber`](https://github.com/openchamber/openchamber) | MIT | Useful for settings, session UX, terminal, and VS Code ideas |
+| [`continuedev/continue`](https://github.com/continuedev/continue) | Apache-2.0 | Useful for extension/webview patterns |
+| [`lehhair/OpenCodeUI`](https://github.com/lehhair/OpenCodeUI) | GPL-3.0 | Reference only — do not copy code |

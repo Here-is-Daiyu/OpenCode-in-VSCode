@@ -1,9 +1,11 @@
 /**
- * Tab navigation component for the settings panel.
+ * Anchor navigation component for the settings panel.
  */
 
-import React from 'react';
+import React, { useCallback } from 'react';
 import type { SettingsTab } from '../../stores/settingsStore';
+
+const SETTINGS_SECTION_ID_PREFIX = 'settings-section-';
 
 export interface SettingsTabDef {
   id: SettingsTab;
@@ -49,20 +51,35 @@ export function getSettingsTabDef(activeTab: SettingsTab): SettingsTabDef {
   return SETTINGS_TABS.find((tab) => tab.id === activeTab) ?? SETTINGS_TABS[0];
 }
 
+export function getSettingsSectionId(tab: SettingsTab): string {
+  return `${SETTINGS_SECTION_ID_PREFIX}${tab}`;
+}
+
 interface SettingsTabProps {
   activeTab: SettingsTab;
   onTabChange: (tab: SettingsTab) => void;
 }
 
 export function SettingsTabs({ activeTab, onTabChange }: SettingsTabProps) {
+  const handleClick = useCallback((tabId: SettingsTab) => {
+    onTabChange(tabId);
+
+    const section = document.getElementById(getSettingsSectionId(tabId));
+    section?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [onTabChange]);
+
   return (
     <nav className="settings-tabs" aria-label="Settings sections">
       {SETTINGS_TABS.map((tab) => (
-        <button
+        <a
           key={tab.id}
-          type="button"
+          href={`#${getSettingsSectionId(tab.id)}`}
           className={`settings-tabs__tab ${activeTab === tab.id ? 'settings-tabs__tab--active' : ''}`}
-          onClick={() => onTabChange(tab.id)}
+          onClick={(event) => {
+            event.preventDefault();
+            handleClick(tab.id);
+          }}
+          aria-current={activeTab === tab.id ? 'location' : undefined}
         >
           <span className="settings-tabs__icon">
             <span className={`codicon codicon-${tab.icon}`} aria-hidden="true" />
@@ -74,7 +91,7 @@ export function SettingsTabs({ activeTab, onTabChange }: SettingsTabProps) {
           <span className="settings-tabs__chevron">
             <span className="codicon codicon-chevron-right" aria-hidden="true" />
           </span>
-        </button>
+        </a>
       ))}
     </nav>
   );

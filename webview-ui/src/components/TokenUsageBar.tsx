@@ -8,13 +8,19 @@
 import React, { useMemo, useState } from 'react';
 import { useChatStore } from '../stores/chatStore';
 import { useModelStore } from '../stores/modelStore';
-import type { TokenUsage, AssistantMessage } from '../types/opencode';
+import type { TokenUsage, AssistantMessage, Provider } from '../types/opencode';
 
 interface TokenSegment {
   key: string;
   label: string;
   value: number;
   color: string;
+}
+
+interface ModelStatus {
+  label: string;
+  title: string;
+  contextLimit: number;
 }
 
 function formatTokenCount(n: number): string {
@@ -55,30 +61,94 @@ function computeTotal(tokens: TokenUsage): number {
   );
 }
 
+function getLastAssistantWithTokens(
+  messages: ReturnType<typeof useChatStore.getState>['visibleMessages'],
+): { message: AssistantMessage; tokens: TokenUsage } | null {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i].info;
+    if (msg.role !== 'assistant') {
+      continue;
+    }
+
+    const assistantMsg = msg as AssistantMessage;
+    if (assistantMsg.tokens && computeTotal(assistantMsg.tokens) > 0) {
+      return { message: assistantMsg, tokens: assistantMsg.tokens };
+    }
+  }
+
+  return null;
+}
+
+function resolveModelStatus(
+  providers: Provider[],
+  providerID?: string,
+  modelID?: string,
+): ModelStatus | null {
+  const normalizedProviderID = typeof providerID === 'string' ? providerID.trim() : '';
+  const normalizedModelID = typeof modelID === 'string' ? modelID.trim() : '';
+
+  if (!normalizedProviderID && !normalizedModelID) {
+    return null;
+  }
+
+  const provider = normalizedProviderID
+    ? providers.find((candidate) => candidate.id === normalizedProviderID)
+    : undefined;
+  const model = provider && normalizedModelID ? provider.models[normalizedModelID] : undefined;
+  const providerName = provider?.name ?? normalizedProviderID;
+  const modelName = model?.name ?? normalizedModelID;
+  const label = providerName && modelName ? `${providerName} / ${modelName}` : modelName || providerName;
+  const title = normalizedProviderID && normalizedModelID
+    ? `${normalizedProviderID}/${normalizedModelID}`
+    : normalizedModelID || normalizedProviderID;
+
+  if (!label) {
+    return null;
+  }
+
+  return {
+    label,
+    title,
+    contextLimit: model?.limit?.context ?? 0,
+  };
+}
+
 export function TokenUsageBar() {
   const messages = useChatStore((s) => s.visibleMessages);
+  const providers = useModelStore((s) => s.providers);
   const getCurrentModel = useModelStore((s) => s.getCurrentModel);
   const [tooltipVisible, setTooltipVisible] = useState(false);
+  const currentModel = getCurrentModel();
 
-  // Find the last assistant message with token data
-  const lastTokens = useMemo((): TokenUsage | null => {
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i].info;
-      if (msg.role === 'assistant') {
-        const assistantMsg = msg as AssistantMessage;
-        if (assistantMsg.tokens && computeTotal(assistantMsg.tokens) > 0) {
-          return assistantMsg.tokens;
-        }
+  const tokenSource = useMemo(() => getLastAssistantWithTokens(messages), [messages]);
+
+  const contextLimit = useMemo(() => {
+    if (tokenSource) {
+      const resolved = resolveModelStatus(
+        providers,
+        tokenSource.message.providerID,
+        tokenSource.message.modelID,
+      );
+
+      if (resolved?.contextLimit) {
+        return resolved.contextLimit;
+      }
+
+      if (
+        currentModel
+        && currentModel.providerID === tokenSource.message.providerID
+        && currentModel.modelID === tokenSource.message.modelID
+      ) {
+        return currentModel.model.limit?.context ?? 0;
       }
     }
-    return null;
-  }, [messages]);
 
-  const currentModel = getCurrentModel();
-  const contextLimit = currentModel?.model.limit?.context ?? 0;
+    return currentModel?.model.limit?.context ?? 0;
+  }, [currentModel, providers, tokenSource]);
 
-  if (!lastTokens) return null;
+  if (!tokenSource) return null;
 
+  const { tokens: lastTokens } = tokenSource;
   const totalUsed = computeTotal(lastTokens);
   const segments = getTokenSegments(lastTokens);
   const limit = contextLimit > 0 ? contextLimit : totalUsed;

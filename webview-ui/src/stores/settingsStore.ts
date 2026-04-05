@@ -93,6 +93,8 @@ export interface SettingsState {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_VSCODE_SETTINGS: Record<string, unknown> = {
+  'server.mode': 'local',
+  'server.externalUrl': '',
   'server.hostname': '127.0.0.1',
   'server.port': 0,
   'server.autoStart': true,

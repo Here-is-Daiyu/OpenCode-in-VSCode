@@ -345,6 +345,8 @@ export class SettingsViewProvider {
   private readVSCodeSettings(): Record<string, unknown> {
     const cfg = vscode.workspace.getConfiguration('opencode');
     return {
+      'server.mode': cfg.get<string>('server.mode', 'local'),
+      'server.externalUrl': cfg.get<string>('server.externalUrl', ''),
       'server.hostname': cfg.get<string>('server.hostname', '127.0.0.1'),
       'server.port': cfg.get<number>('server.port', 0),
       'server.autoStart': cfg.get<boolean>('server.autoStart', true),

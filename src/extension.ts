@@ -33,7 +33,10 @@ let statusBarManager: StatusBarManager | undefined;
 let editorPanelProviderRef: SessionEditorPanelProvider | undefined;
 let sseAbort: AbortController | undefined;
 let sseStreamActive = false;
+let serverConnected = false;
 let eventUnsubscribers: Array<() => void> = [];
+
+type ServerMode = 'local' | 'external';
 
 // ---------------------------------------------------------------------------
 // activate
@@ -123,6 +126,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBarManager,
     sessionManager,
     diffService,
+    isServerConnected: () => serverConnected,
+    getServerMode,
+    getExternalServerUrl,
+    connectToServer: (baseUrl, mode) => connectToServer(cmdCtx, baseUrl, mode),
+    disconnectFromServer: (reason) => disconnectFromServer(cmdCtx, reason),
     activeSessionId: undefined,
   };
   registerCommands(context, cmdCtx);
@@ -172,14 +180,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
   );
 
-  // 13. Auto-start server if configured
+  // 13. Connect or auto-start based on server mode
+  const serverMode = getServerMode();
   const autoStart = vscode.workspace
     .getConfiguration('opencode.server')
     .get<boolean>('autoStart', true);
 
-  if (autoStart) {
+  if (serverMode === 'external') {
+    try {
+      logger.info('Connecting to external OpenCode server…');
+      statusBarManager.setConnecting('external');
+      await connectToServer(cmdCtx, getExternalServerUrl(), 'external');
+    } catch (err) {
+      logger?.error('Failed to connect to external OpenCode server', err);
+      statusBarManager?.setDisconnected();
+      vscode.window.showWarningMessage(
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  } else if (autoStart) {
     logger.info('Auto-starting OpenCode server…');
-    statusBarManager.setConnecting();
+    statusBarManager.setConnecting('local');
     serverManager.start().then(
       () => onServerStarted(cmdCtx),
       (err) => {
@@ -205,6 +226,7 @@ export async function deactivate(): Promise<void> {
     sseAbort = undefined;
   }
   sseStreamActive = false;
+  serverConnected = false;
 
   // Unsubscribe all EventBus listeners
   for (const unsub of eventUnsubscribers) {
@@ -224,6 +246,104 @@ export async function deactivate(): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Connection helpers
+// ---------------------------------------------------------------------------
+
+function getServerMode(): ServerMode {
+  const mode = vscode.workspace
+    .getConfiguration('opencode.server')
+    .get<string>('mode', 'local');
+
+  return mode === 'external' ? 'external' : 'local';
+}
+
+function getExternalServerUrl(): string {
+  const rawUrl = vscode.workspace
+    .getConfiguration('opencode.server')
+    .get<string>('externalUrl', '')
+    .trim();
+
+  if (!rawUrl) {
+    throw new Error('OpenCode external URL is empty. Set opencode.server.externalUrl to connect.');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error('OpenCode external URL must be a valid http:// or https:// URL.');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('OpenCode external URL must use the http:// or https:// protocol.');
+  }
+
+  return parsed.toString().replace(/\/+$/u, '');
+}
+
+function clearConnectionState(ctx: CommandContext): void {
+  if (sseAbort) {
+    sseAbort.abort();
+    sseAbort = undefined;
+  }
+
+  sseStreamActive = false;
+  sseReconnectRefreshing = false;
+  serverConnected = false;
+
+  ctx.activeSessionId = undefined;
+  ctx.client.setBaseUrl('');
+  // Also clears SessionManager's active-session cache and notifies the chat view.
+  ctx.sessionManager.setSessions([]);
+  ctx.sessionProvider.setSessions([], {});
+  ctx.sessionProvider.setActiveSession(undefined);
+  ctx.statusProvider.setServerInfo({ connected: false });
+  ctx.statusBarManager.clearTokenUsage();
+  ctx.statusBarManager.setDisconnected();
+  void vscode.commands.executeCommand('setContext', 'opencode.serverConnected', false);
+  void vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', false);
+}
+
+async function disconnectFromServer(
+  ctx: CommandContext,
+  reason = 'Disconnected from OpenCode server',
+): Promise<void> {
+  clearConnectionState(ctx);
+  ctx.eventBus.emit('server:disconnected', { reason });
+}
+
+async function connectToServer(
+  ctx: CommandContext,
+  baseUrl: string,
+  mode: ServerMode,
+): Promise<void> {
+  ctx.client.setBaseUrl(baseUrl);
+
+  try {
+    const health = await ctx.client.health();
+    serverConnected = true;
+    ctx.statusBarManager.setConnected(health.version, mode);
+    void vscode.commands.executeCommand('setContext', 'opencode.serverConnected', true);
+
+    ctx.eventBus.emit('server:connected', { version: health.version });
+    ctx.statusProvider.setServerInfo({
+      connected: true,
+      version: health.version,
+      url: ctx.client.getBaseUrl(),
+    });
+    ctx.logger.info(
+      `Connected to ${mode === 'external' ? 'external ' : ''}OpenCode server v${health.version}`,
+    );
+
+    await loadInitialData(ctx);
+    await startEventStream(ctx);
+  } catch (err) {
+    clearConnectionState(ctx);
+    throw err;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Server started callback
 // ---------------------------------------------------------------------------
 
@@ -235,31 +355,10 @@ async function onServerStarted(ctx: CommandContext): Promise<void> {
   }
 
   try {
-    // Point the client at the running server
-    ctx.client.setBaseUrl(ctx.serverManager.getBaseUrl());
-
-    // Verify connectivity via health check
-    const health = await ctx.client.health();
-    ctx.statusBarManager.setConnected(health.version);
-    vscode.commands.executeCommand('setContext', 'opencode.serverConnected', true);
-
-    ctx.eventBus.emit('server:connected', { version: health.version });
-    ctx.statusProvider.setServerInfo({
-      connected: true,
-      version: health.version,
-      url: ctx.serverManager.getBaseUrl(),
-    });
-    ctx.logger.info(`Connected to OpenCode server v${health.version}`);
-
-    // Load initial data
-    await loadInitialData(ctx);
-
-    // Start SSE event stream
-    startEventStream(ctx);
+    await connectToServer(ctx, ctx.serverManager.getBaseUrl(), 'local');
   } catch (err) {
     ctx.logger.error('Failed to connect after server start', err);
     ctx.statusBarManager.setDisconnected();
-    vscode.commands.executeCommand('setContext', 'opencode.serverConnected', false);
   }
 }
 
@@ -712,11 +811,13 @@ async function refreshSessionsQuietly(ctx: CommandContext): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function subscribeToEvents(ctx: CommandContext): void {
-  // When server connects, update status bar + context
+  // When server connects, notify webviews after the shared connection flow completes
   eventUnsubscribers.push(
     ctx.eventBus.on('server:connected', ({ version }) => {
-      ctx.statusBarManager.setConnected(version);
-      vscode.commands.executeCommand('setContext', 'opencode.serverConnected', true);
+      if (!serverConnected) {
+        return;
+      }
+
       const serverStatusMsg = {
         type: 'server:status' as const,
         data: { connected: true, version },
@@ -726,12 +827,13 @@ function subscribeToEvents(ctx: CommandContext): void {
     })
   );
 
-  // When server disconnects, update status bar + context
+  // When server disconnects, clear connection state and notify webviews
   eventUnsubscribers.push(
     ctx.eventBus.on('server:disconnected', () => {
-      ctx.statusBarManager.setDisconnected();
-      vscode.commands.executeCommand('setContext', 'opencode.serverConnected', false);
-      vscode.commands.executeCommand('setContext', 'opencode.sessionBusy', false);
+      if (serverConnected || ctx.client.getBaseUrl().trim() || sseAbort) {
+        clearConnectionState(ctx);
+      }
+
       const serverStatusMsg = {
         type: 'server:status' as const,
         data: { connected: false },
@@ -769,20 +871,32 @@ function handleConfigChange(
   // Server settings changed
   if (e.affectsConfiguration('opencode.server')) {
     ctx.logger.info('Server configuration changed');
-    if (
+    const nextServerMode = getServerMode();
+    const localSettingsChanged =
       e.affectsConfiguration('opencode.server.hostname') ||
       e.affectsConfiguration('opencode.server.port') ||
-      e.affectsConfiguration('opencode.server.executablePath')
-    ) {
+      e.affectsConfiguration('opencode.server.executablePath');
+    const externalSettingsChanged =
+      e.affectsConfiguration('opencode.server.mode') ||
+      (nextServerMode === 'external' && e.affectsConfiguration('opencode.server.externalUrl'));
+
+    if ((nextServerMode === 'local' && localSettingsChanged) || externalSettingsChanged) {
+      const actionLabel = nextServerMode === 'external' ? 'Reconnect' : 'Restart Server';
+      const message = nextServerMode === 'external'
+        ? 'OpenCode connection settings changed. Reconnect to the external server now?'
+        : 'OpenCode server settings changed. Restart the server to apply?';
+
       vscode.window
         .showInformationMessage(
-          'OpenCode server settings changed. Restart the server to apply?',
-          'Restart Server'
+          message,
+          actionLabel,
         )
         .then(choice => {
-          if (choice === 'Restart Server') {
-            vscode.commands.executeCommand('opencode.restartServer');
+          if (choice !== actionLabel) {
+            return;
           }
+
+          void vscode.commands.executeCommand('opencode.restartServer');
         });
     }
   }

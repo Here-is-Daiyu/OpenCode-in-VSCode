@@ -1,14 +1,18 @@
 /**
  * Settings panel — main React application component.
  *
- * Renders a tabbed settings UI that communicates with the extension host
+ * Renders a single-page settings UI that communicates with the extension host
  * via postMessage to read/write VSCode settings and OpenCode server config.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useSettingsStore, type SettingsTab } from '../../stores/settingsStore';
 import { getVsCodeApi } from '../../utils/vscodeApi';
-import { SettingsTabs, getSettingsTabDef } from '../../components/settings/SettingsTabs';
+import {
+  SettingsTabs,
+  SETTINGS_TABS,
+  getSettingsSectionId,
+} from '../../components/settings/SettingsTabs';
 import { ConnectionTab } from './tabs/ConnectionTab';
 import { ChatTab } from './tabs/ChatTab';
 import { ModelsTab } from './tabs/ModelsTab';
@@ -19,17 +23,30 @@ import type { MCPServerConfig, OpenCodeConfig } from '../../types/opencode';
 import { getConfiguredAgent, getConfiguredModel } from '../../utils/opencodeConfig';
 import '../../styles/settings.css';
 
-// Debounce timer for auto-save
-let saveTimer: ReturnType<typeof setTimeout> | undefined;
-
 function postMessage(message: SettingsToExtensionMessage): void {
   getVsCodeApi().postMessage(message);
+}
+
+const SETTINGS_TAB_IDS = new Set<SettingsTab>(SETTINGS_TABS.map((tab) => tab.id));
+
+function getObservedTab(target: Element): SettingsTab | null {
+  const tab = target.getAttribute('data-settings-tab');
+  if (!tab || !SETTINGS_TAB_IDS.has(tab as SettingsTab)) {
+    return null;
+  }
+
+  return tab as SettingsTab;
 }
 
 export function SettingsApp() {
   const store = useSettingsStore();
   const initialised = useRef(false);
-  const activeTab = getSettingsTabDef(store.activeTab);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const programmaticScrollRef = useRef(false);
+  const pendingScrollTabRef = useRef<SettingsTab | null>(null);
+  const scrollResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const visibleHeadersRef = useRef(new Map<SettingsTab, IntersectionObserverEntry>());
   const settingsSummary = useMemo(() => {
     const providerCount = store.providers.length;
     const mcpCount = Object.keys(store.mcpStatus).length;
@@ -126,8 +143,11 @@ export function SettingsApp() {
     useSettingsStore.getState().setVSCodeSetting(key, value);
 
     // Debounced save to extension
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(() => {
       postMessage({
         type: 'settings:update',
         data: { section: 'opencode', key, value },
@@ -139,8 +159,11 @@ export function SettingsApp() {
   const updateOpenCodeConfig = useCallback((partial: Partial<OpenCodeConfig>) => {
     useSettingsStore.getState().setOpenCodeConfig(partial);
 
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(() => {
       postMessage({
         type: 'settings:opencode:update',
         data: partial,
@@ -167,18 +190,116 @@ export function SettingsApp() {
     postMessage({ type: 'settings:openKeyboardShortcuts' });
   }, []);
 
-  // ------------------------------------------------------------------
-  //  Tab change
-  // ------------------------------------------------------------------
-  const handleTabChange = useCallback((tab: SettingsTab) => {
-    useSettingsStore.getState().setActiveTab(tab);
+  const clearProgrammaticScroll = useCallback(() => {
+    programmaticScrollRef.current = false;
+    pendingScrollTabRef.current = null;
+
+    if (scrollResetTimerRef.current) {
+      clearTimeout(scrollResetTimerRef.current);
+      scrollResetTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    if (scrollResetTimerRef.current) {
+      clearTimeout(scrollResetTimerRef.current);
+    }
   }, []);
 
   // ------------------------------------------------------------------
-  //  Render active tab content
+  //  Anchor navigation
   // ------------------------------------------------------------------
-  const renderTab = () => {
-    switch (store.activeTab) {
+  const handleTabChange = useCallback((tab: SettingsTab) => {
+    useSettingsStore.getState().setActiveTab(tab);
+
+    if (!document.getElementById(getSettingsSectionId(tab))) {
+      clearProgrammaticScroll();
+      return;
+    }
+
+    programmaticScrollRef.current = true;
+    pendingScrollTabRef.current = tab;
+
+    if (scrollResetTimerRef.current) {
+      clearTimeout(scrollResetTimerRef.current);
+    }
+
+    scrollResetTimerRef.current = setTimeout(() => {
+      clearProgrammaticScroll();
+    }, 1200);
+  }, [clearProgrammaticScroll]);
+
+  useEffect(() => {
+    if (!store.loaded) {
+      clearProgrammaticScroll();
+      visibleHeadersRef.current.clear();
+      return;
+    }
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const tab = getObservedTab(entry.target);
+          if (!tab) continue;
+
+          if (entry.isIntersecting) {
+            visibleHeadersRef.current.set(tab, entry);
+          } else {
+            visibleHeadersRef.current.delete(tab);
+          }
+        }
+
+        const visibleEntries = Array.from(visibleHeadersRef.current.values())
+          .filter((entry) => entry.intersectionRatio >= 0.6)
+          .sort((left, right) => left.boundingClientRect.top - right.boundingClientRect.top);
+
+        for (const entry of visibleEntries) {
+          const tab = getObservedTab(entry.target);
+          if (!tab) continue;
+
+          const pendingTab = pendingScrollTabRef.current;
+
+          if (programmaticScrollRef.current && pendingTab && tab !== pendingTab) {
+            continue;
+          }
+
+          useSettingsStore.getState().setActiveTab(tab);
+
+          if (pendingTab === tab) {
+            clearProgrammaticScroll();
+          }
+
+          break;
+        }
+      },
+      {
+        root: container,
+        rootMargin: '0px 0px -80% 0px',
+        threshold: [0, 0.6, 1],
+      }
+    );
+
+    const sectionHeaders = container.querySelectorAll<HTMLElement>('.settings-section__header');
+    sectionHeaders.forEach((sectionHeader) => observer.observe(sectionHeader));
+
+    return () => {
+      visibleHeadersRef.current.clear();
+      observer.disconnect();
+    };
+  }, [clearProgrammaticScroll, store.loaded]);
+
+  // ------------------------------------------------------------------
+  //  Render section content
+  // ------------------------------------------------------------------
+  const renderTab = (tab: SettingsTab) => {
+    switch (tab) {
       case 'connection':
         return (
           <ConnectionTab
@@ -304,17 +425,30 @@ export function SettingsApp() {
             <SettingsTabs activeTab={store.activeTab} onTabChange={handleTabChange} />
           </aside>
 
-          <div className="settings-content">
-            <section className="settings-panel">
-              <div className="settings-panel__header">
-                <div>
-                  <h2 className="settings-panel__title">{activeTab.label}</h2>
-                  <p className="settings-panel__description">{activeTab.description}</p>
-                </div>
-              </div>
-
+          <div className="settings-content" ref={scrollContainerRef}>
+            <div className="settings-panel">
               {store.loaded ? (
-                renderTab()
+                SETTINGS_TABS.map((tab) => {
+                  const sectionId = getSettingsSectionId(tab.id);
+
+                  return (
+                    <section
+                      key={tab.id}
+                      id={sectionId}
+                      className="settings-section"
+                      aria-labelledby={`${sectionId}-title`}
+                    >
+                      <div className="settings-section__header" data-settings-tab={tab.id}>
+                        <h2 id={`${sectionId}-title`} className="settings-section__title">
+                          {tab.label}
+                        </h2>
+                        <p className="settings-section__description">{tab.description}</p>
+                      </div>
+
+                      {renderTab(tab.id)}
+                    </section>
+                  );
+                })
               ) : (
                 <div className="empty-state">
                   <div className="empty-state__icon">
@@ -323,7 +457,7 @@ export function SettingsApp() {
                   <div className="empty-state__text">Loading settings…</div>
                 </div>
               )}
-            </section>
+            </div>
           </div>
         </div>
       </div>

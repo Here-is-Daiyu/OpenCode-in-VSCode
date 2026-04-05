@@ -8,6 +8,9 @@ export class StatusBarManager implements vscode.Disposable {
   private connectionItem: vscode.StatusBarItem;
   private modelItem: vscode.StatusBarItem;
   private tokenItem: vscode.StatusBarItem;
+  private connectionMode: 'local' | 'external' = 'local';
+  private connectedVersion: string | undefined;
+  private busy = false;
 
   constructor() {
     // Connection status — leftmost, highest priority
@@ -40,18 +43,20 @@ export class StatusBarManager implements vscode.Disposable {
   /**
    * Show connected state with server version.
    */
-  setConnected(version: string): void {
-    this.connectionItem.text = `$(plug) OpenCode`;
-    this.connectionItem.tooltip = `OpenCode server connected (v${version})`;
-    this.connectionItem.backgroundColor = undefined;
-    this.connectionItem.show();
-    this.modelItem.show();
+  setConnected(version: string, mode: 'local' | 'external' = 'local'): void {
+    this.connectionMode = mode;
+    this.connectedVersion = version;
+    this.busy = false;
+    this.renderConnectedState();
   }
 
   /**
    * Show disconnected state.
    */
   setDisconnected(): void {
+    this.connectionMode = 'local';
+    this.connectedVersion = undefined;
+    this.busy = false;
     this.connectionItem.text = `$(debug-disconnect) OpenCode`;
     this.connectionItem.tooltip = 'OpenCode server disconnected — click to reconnect';
     this.connectionItem.backgroundColor = new vscode.ThemeColor(
@@ -65,9 +70,15 @@ export class StatusBarManager implements vscode.Disposable {
   /**
    * Show connecting / loading state.
    */
-  setConnecting(): void {
-    this.connectionItem.text = `$(loading~spin) OpenCode`;
-    this.connectionItem.tooltip = 'Connecting to OpenCode server…';
+  setConnecting(mode: 'local' | 'external' = 'local'): void {
+    this.connectionMode = mode;
+    this.connectedVersion = undefined;
+    this.busy = false;
+    const externalSuffix = mode === 'external' ? ' (external)' : '';
+    this.connectionItem.text = `$(loading~spin) OpenCode${externalSuffix}`;
+    this.connectionItem.tooltip = mode === 'external'
+      ? 'Connecting to external OpenCode server…'
+      : 'Connecting to OpenCode server…';
     this.connectionItem.backgroundColor = undefined;
     this.connectionItem.show();
   }
@@ -111,12 +122,9 @@ export class StatusBarManager implements vscode.Disposable {
    * Toggle busy indicator on the connection item.
    */
   setBusy(busy: boolean): void {
-    if (busy) {
-      this.connectionItem.text = `$(loading~spin) OpenCode`;
-      this.connectionItem.tooltip = 'OpenCode is processing…';
-    } else {
-      // Restore normal connected state (caller should also call setConnected)
-      this.connectionItem.text = `$(plug) OpenCode`;
+    this.busy = busy;
+    if (this.connectedVersion) {
+      this.renderConnectedState();
     }
   }
 
@@ -131,5 +139,24 @@ export class StatusBarManager implements vscode.Disposable {
     this.connectionItem.dispose();
     this.modelItem.dispose();
     this.tokenItem.dispose();
+  }
+
+  private renderConnectedState(): void {
+    const external = this.connectionMode === 'external';
+    const externalSuffix = external ? ' (external)' : '';
+
+    this.connectionItem.text = this.busy
+      ? `$(loading~spin) OpenCode${externalSuffix}`
+      : `$(plug) OpenCode${externalSuffix}`;
+    this.connectionItem.tooltip = this.busy
+      ? external
+        ? 'OpenCode is processing on the external server…'
+        : 'OpenCode is processing…'
+      : external
+        ? `Connected to external OpenCode server (v${this.connectedVersion ?? 'unknown'})`
+        : `OpenCode server connected (v${this.connectedVersion ?? 'unknown'})`;
+    this.connectionItem.backgroundColor = undefined;
+    this.connectionItem.show();
+    this.modelItem.show();
   }
 }

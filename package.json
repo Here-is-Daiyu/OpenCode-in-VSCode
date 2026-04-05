@@ -351,6 +351,20 @@
           "default": "127.0.0.1",
           "description": "OpenCode server hostname"
         },
+        "opencode.server.mode": {
+          "type": "string",
+          "enum": [
+            "local",
+            "external"
+          ],
+          "default": "local",
+          "markdownDescription": "Connection mode. `local` auto-starts a local opencode server; `external` connects to an existing instance."
+        },
+        "opencode.server.externalUrl": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "URL of an external OpenCode server (e.g. `http://192.168.1.100:3456`). Only used when `#opencode.server.mode#` is `external`."
+        },
         "opencode.server.port": {
           "type": "number",
           "default": 0,

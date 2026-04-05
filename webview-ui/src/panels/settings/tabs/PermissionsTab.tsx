@@ -33,6 +33,8 @@ const PERMISSION_OPTIONS = [
 
 /** Default values for all VS Code extension settings. */
 const SETTING_DEFAULTS: Record<string, unknown> = {
+  'server.mode': 'local',
+  'server.externalUrl': '',
   'server.hostname': '127.0.0.1',
   'server.port': 0,
   'server.autoStart': true,
