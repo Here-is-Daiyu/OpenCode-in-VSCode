@@ -40,11 +40,10 @@ OpenCode-in-VSCode is a Visual Studio Code extension that brings [OpenCode](http
 - Create, switch, delete, fork, and share sessions
 - Compact sessions via `/compact` command
 - Default auto-resume into the most recent session on startup
-- Session tree view in activity bar with recent-first ordering
+- Session tree view in activity bar with time-grouped ordering (Today, Yesterday, etc.)
 - Batched older-history hydration for large session lists
 - Active session count indicator (shows how many other sessions are busy)
 - **Session search / filter** — search button in the session tree title bar; filters by title, id, or slug with persistent state
-- **Cross-project session view** — global session tree grouped by project directory, aggregating sessions across projects via SSE global events
 
 ### Message Controls
 
@@ -140,7 +139,7 @@ Dedicated settings webview with a **sticky horizontal nav bar** and 5 sections i
 - SSE (Server-Sent Events) driven session, message, and status updates
 - Automatic reconnection with full data refresh on reconnect
 - Debounced updates to webview at ~60fps
-- Handles: `session.created`, `session.updated`, `session.deleted`, `session.status`, `message.updated`, `message.part.updated`, `message.part.delta`, `message.removed`, `permission.asked`, `question.asked`, `config.updated`, `todo.updated`, `file.edited`, `mcp.tools.changed`, `pty.created`, `pty.updated`, `pty.exited`, `pty.deleted`
+- Handles: `session.created`, `session.updated`, `session.deleted`, `session.status`, `message.updated`, `message.part.updated`, `message.part.delta`, `message.removed`, `permission.asked`, `permission.responded`, `question.asked`, `question.replied`, `config.updated`, `todo.updated`, `file.edited`, `mcp.tools.changed`, `pty.created`, `pty.updated`, `pty.exited`, `pty.deleted`
 
 ### Command Palette
 
@@ -259,8 +258,7 @@ src/
   providers/
     chatViewProvider.ts           — Chat WebviewViewProvider
     settingsViewProvider.ts       — Settings WebviewViewProvider
-    sessionTreeProvider.ts        — Session TreeDataProvider (with search/filter)
-    globalSessionTreeProvider.ts  — Cross-project Session TreeDataProvider
+    sessionTreeProvider.ts        — Session TreeDataProvider (with search/filter, time grouping)
     statusTreeProvider.ts         — Status TreeDataProvider
     sessionEditorPanelProvider.ts — Full editor tab panel
     codeLensProvider.ts           — CodeLens integration
