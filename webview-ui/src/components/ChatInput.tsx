@@ -180,19 +180,6 @@ function collectMentionPaths(text: string, mentions: string[]): string[] {
     .map((entry) => entry.mention);
 }
 
-function isShellDraft(text: string): boolean {
-  return text.trimStart().startsWith('!');
-}
-
-function getShellCommand(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('!')) {
-    return undefined;
-  }
-
-  return trimmed.slice(1).trim();
-}
-
 function createImageAttachmentID(): string {
   return `image_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -273,8 +260,6 @@ export function ChatInput() {
     () => filterCommands(commands, slashQuery),
     [commands, slashQuery]
   );
-  const shellDraft = useMemo(() => isShellDraft(inputText), [inputText]);
-  const shellCommand = useMemo(() => getShellCommand(inputText), [inputText]);
   const undoTarget = useMemo(
     () => getUndoTargetMessage(messages, currentSession),
     [messages, currentSession],
@@ -290,15 +275,13 @@ export function ChatInput() {
   const canRedo = Boolean(currentSession?.revert?.messageID);
   const queuesFollowups = Boolean(currentSessionID)
     && !currentSession?.revert
-    && !shellDraft
     && (isStreaming || sessionStatus === 'active' || sessionStatus === 'retry' || sessionStatus === 'compacting');
 
   const canSend = connected
     && !optimisticMessageID
     && (inputText.trim().length > 0 || attachedImages.length > 0);
   const hasMeta = Boolean(currentSession?.revert)
-    || queuedMessages.length > 0
-    || shellDraft;
+    || queuedMessages.length > 0;
 
   useEffect(() => {
     nextImageMarkerIndexRef.current = getNextImageMarkerIndex(inputText, attachedImages);
@@ -459,19 +442,6 @@ export function ChatInput() {
       }
     }
 
-    if (shellCommand !== undefined) {
-      beginPendingSend();
-      postMessage({
-        type: 'chat:send',
-        data: { text, images, mentions: mentions.length > 0 ? mentions : undefined },
-      });
-
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
-      return;
-    }
-
     if (queuesFollowups && currentSessionID) {
       enqueueMessage(currentSessionID, {
         text,
@@ -521,7 +491,6 @@ export function ChatInput() {
     queuesFollowups,
     setAttachedImages,
     setInputText,
-    shellCommand,
     handleUndo,
     handleRedo,
   ]);
@@ -665,15 +634,6 @@ export function ChatInput() {
       const value = e.target.value;
       const cursorPos = e.target.selectionStart ?? value.length;
       setInputText(value);
-
-      if (isShellDraft(value)) {
-        setSlashOpen(false);
-        setSlashQuery('');
-        if (mentionOpen) {
-          closeMentionMenu();
-        }
-        return;
-      }
 
       // Detect slash trigger
       const trigger = detectSlashTrigger(value, cursorPos);
@@ -1002,9 +962,7 @@ export function ChatInput() {
                   onPaste={handlePaste}
                   placeholder={
                     connected
-                      ? shellDraft
-                        ? 'Run a shell command... (Shift+Enter for new line)'
-                        : 'Type your message... (Shift+Enter for new line; @ for files, / for commands, ! for shell)'
+                      ? 'Type your message... (Shift+Enter for new line; @ for files, / for commands)'
                       : 'Connecting to OpenCode...'
                   }
                   disabled={!connected}
@@ -1030,8 +988,8 @@ export function ChatInput() {
                   className="chat-input__send-btn"
                   onClick={handleSend}
                   disabled={!canSend}
-                  title={shellDraft ? 'Run shell command (Enter)' : queuesFollowups ? 'Queue message (Enter)' : 'Send message (Enter)'}
-                  aria-label={shellDraft ? 'Run shell command' : queuesFollowups ? 'Queue message' : 'Send message'}
+                  title={queuesFollowups ? 'Queue message (Enter)' : 'Send message (Enter)'}
+                  aria-label={queuesFollowups ? 'Queue message' : 'Send message'}
                   type="button"
                 >
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -1080,16 +1038,6 @@ export function ChatInput() {
                   onRecall={handleQueuedRecall}
                   onReorder={handleQueuedReorder}
                 />
-                {shellDraft && (
-                  <div className="chat-input__hint" role="status" aria-live="polite">
-                    <span className="chat-input__hint-badge">Shell</span>
-                    <span className="chat-input__hint-text">
-                      {shellCommand
-                        ? 'Runs via the OpenCode server shell endpoint. Images and @ file references are ignored.'
-                        : 'Type a shell command after ! before sending.'}
-                    </span>
-                  </div>
-                )}
               </div>
             )}
           </div>

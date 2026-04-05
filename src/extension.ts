@@ -143,6 +143,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(terminalOutputService);
 
   chatProvider.setDiagnosticsService(diagnosticsService);
+  chatProvider.setTerminalOutputService(terminalOutputService);
+  editorPanelProvider.setTerminalOutputService(terminalOutputService);
 
   // 7. Create session manager (coordinates session switching + sync)
   const sessionManager = new SessionManager(
@@ -895,6 +897,24 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       if (typeof questionSessionID === 'string') {
         ctx.editorPanelProvider.routeSessionMessage(questionSessionID, { type: 'question:asked', data: question });
       }
+      break;
+    }
+
+    case 'permission.responded': {
+      const replied = properties as unknown as { id: string; response: string };
+      if (!replied?.id) { break; }
+      ctx.eventBus.emit('permission:replied', replied);
+      ctx.chatProvider.postMessageToWebview({ type: 'permission:cleared', data: undefined });
+      ctx.editorPanelProvider.broadcastMessage({ type: 'permission:cleared', data: undefined });
+      break;
+    }
+
+    case 'question.replied': {
+      const replied = properties as unknown as { id: string; answer: string };
+      if (!replied?.id) { break; }
+      ctx.eventBus.emit('question:replied', replied);
+      ctx.chatProvider.postMessageToWebview({ type: 'question:cleared', data: undefined });
+      ctx.editorPanelProvider.broadcastMessage({ type: 'question:cleared', data: undefined });
       break;
     }
 

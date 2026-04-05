@@ -2,7 +2,7 @@
  * FilePart - Renders a file reference / attachment display.
  */
 
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import type { FilePart as FilePartType } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
 
@@ -53,14 +53,17 @@ function getOpenTarget(part: FilePartType): string | undefined {
 }
 
 export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const mimeType = part.mime ?? part.mediaType ?? '';
   const isImage = mimeType.startsWith('image/');
+  const imageUrl = isImage ? part.url : undefined;
   const fileName =
     getBaseName(part.filename) ??
     getUrlFileName(part.url) ??
     getFallbackLabel(mimeType);
   const openTarget = !isImage ? getOpenTarget(part) : undefined;
   const canOpenFile = Boolean(openTarget);
+  const canOpenLightbox = Boolean(imageUrl);
 
   const handleClick = useCallback(() => {
     if (canOpenFile && openTarget) {
@@ -82,19 +85,98 @@ export const FilePart = React.memo(function FilePart({ part }: FilePartProps) {
     [canOpenFile, handleClick],
   );
 
+  const handleLightboxOpen = useCallback(() => {
+    if (canOpenLightbox) {
+      setLightboxOpen(true);
+    }
+  }, [canOpenLightbox]);
+
+  const handleLightboxClose = useCallback(() => {
+    setLightboxOpen(false);
+  }, []);
+
+  const handleImageKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!canOpenLightbox) {
+        return;
+      }
+
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        setLightboxOpen(true);
+      }
+    },
+    [canOpenLightbox],
+  );
+
+  useEffect(() => {
+    if (!lightboxOpen) {
+      return undefined;
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setLightboxOpen(false);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [lightboxOpen]);
+
   if (isImage) {
     return (
-      <div className="msg-file msg-file--image" title={fileName}>
-        {part.url ? (
-          <img className="msg-file__image" src={part.url} alt={fileName} loading="lazy" />
-        ) : (
-          <span className="msg-file__image-fallback" aria-label={fileName}>
-            <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
-              <path d="M14 1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm0 13H2V2h12v12zM4 11l2-3 1.5 2L10 7l3 4H4z" />
-            </svg>
-          </span>
-        )}
-      </div>
+      <>
+        <div
+          className={`msg-file msg-file--image${canOpenLightbox ? ' msg-file--image-clickable' : ''}`}
+          title={fileName}
+          onClick={canOpenLightbox ? handleLightboxOpen : undefined}
+          onKeyDown={canOpenLightbox ? handleImageKeyDown : undefined}
+          role={canOpenLightbox ? 'button' : undefined}
+          tabIndex={canOpenLightbox ? 0 : undefined}
+          aria-label={canOpenLightbox ? `Open image ${fileName}` : undefined}
+        >
+          {imageUrl ? (
+            <img className="msg-file__image" src={imageUrl} alt={fileName} loading="lazy" />
+          ) : (
+            <span className="msg-file__image-fallback" aria-label={fileName}>
+              <svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor">
+                <path d="M14 1H2a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V2a1 1 0 0 0-1-1zm0 13H2V2h12v12zM4 11l2-3 1.5 2L10 7l3 4H4z" />
+              </svg>
+            </span>
+          )}
+        </div>
+        {lightboxOpen && imageUrl ? (
+          <div
+            className="msg-lightbox"
+            onClick={handleLightboxClose}
+            role="dialog"
+            aria-modal="true"
+            aria-label={fileName}
+          >
+            <button
+              type="button"
+              className="msg-lightbox__close"
+              onClick={(event) => {
+                event.stopPropagation();
+                handleLightboxClose();
+              }}
+              aria-label="Close image preview"
+            >
+              ×
+            </button>
+            <img
+              className="msg-lightbox__image"
+              src={imageUrl}
+              alt={fileName}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>
+        ) : null}
+      </>
     );
   }
 

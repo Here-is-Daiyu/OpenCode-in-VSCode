@@ -1,9 +1,9 @@
 /**
- * useMentionSearch - Hook for @-mention file search.
+ * useMentionSearch - Hook for @-mention search.
  *
  * Manages mention search state, debounces search requests, and
  * communicates with the extension host via postMessage to search
- * for files/folders.
+ * for files, folders, and terminal results.
  */
 
 import { useState, useCallback, useRef, useEffect } from 'react';
@@ -14,8 +14,8 @@ export interface MentionResult {
   name: string;
   /** Full file path */
   path: string;
-  /** 'file' or 'folder' */
-  type: 'file' | 'folder';
+  /** 'file', 'folder', or 'terminal' */
+  type: 'file' | 'folder' | 'terminal';
 }
 
 /** Debounce delay in milliseconds for search queries. */

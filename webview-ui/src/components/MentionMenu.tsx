@@ -57,7 +57,8 @@ const MAX_HEIGHT_CAP = 260;
 const MIN_HEIGHT_CAP = 100;
 
 /** Get a simple file extension icon indicator. */
-function getFileIcon(name: string, type: 'file' | 'folder'): string {
+function getFileIcon(name: string, type: 'file' | 'folder' | 'terminal'): string {
+  if (type === 'terminal') return '\u{1F4BB}';
   if (type === 'folder') return '\u{1F4C1}';
   const ext = name.split('.').pop()?.toLowerCase() ?? '';
   switch (ext) {
@@ -158,7 +159,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(
     if (results.length === 0) {
       return (
         <div ref={menuRef} className="mention-menu" role="status">
-          <div className="mention-menu__empty">Type to search files\u2026</div>
+          <div className="mention-menu__empty">Type to search files or type 'terminal' for recent outputs\u2026</div>
         </div>
       );
     }

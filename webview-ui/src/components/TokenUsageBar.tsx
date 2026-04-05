@@ -2,7 +2,7 @@
  * TokenUsageBar - Thin horizontal bar showing token distribution
  *
  * Displays colored segments for input/output/reasoning/cache tokens
- * with a tooltip breakdown on hover, and a label showing used/limit.
+ * with a tooltip breakdown and usage summary on hover.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -161,6 +161,7 @@ export function TokenUsageBar() {
       : contextLimit > 0 && usagePercent >= 70
         ? 'token-bar__track token-bar__track--warning'
         : 'token-bar__track';
+  const usageSummary = `${formatTokenCount(totalUsed)}${contextLimit > 0 ? ` / ${formatTokenCount(contextLimit)}` : ''}${contextLimit > 0 ? ` (${Math.round(usagePercent)}%)` : ''}`;
 
   return (
     <div
@@ -180,18 +181,13 @@ export function TokenUsageBar() {
           />
         ))}
       </div>
-      <span className="token-bar__label">
-        {formatTokenCount(totalUsed)}
-        {contextLimit > 0 ? ` / ${formatTokenCount(contextLimit)}` : ''}
-        {contextLimit > 0 && (
-          <span className="token-bar__pct">
-            {` (${Math.round(usagePercent)}%)`}
-          </span>
-        )}
-      </span>
 
       {tooltipVisible && (
         <div className="token-bar__tooltip">
+          <div className="token-bar__tooltip-row token-bar__tooltip-row--summary">
+            <span className="token-bar__tooltip-label">Usage</span>
+            <span className="token-bar__tooltip-value">{usageSummary}</span>
+          </div>
           {segments.map((seg) => (
             <div key={seg.key} className="token-bar__tooltip-row">
               <span

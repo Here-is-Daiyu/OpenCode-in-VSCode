@@ -20,7 +20,7 @@ import type {
   MessageError,
 } from '../../types/opencode';
 import { useChatStore } from '../../stores/chatStore';
-import { MessageHeader } from './MessageHeader';
+import { MessageHeader, toSafeDateFromEpoch } from './MessageHeader';
 import { MessageContent } from './MessageContent';
 import { MessageFooter } from './MessageFooter';
 import { stripImageMarkers } from '../../utils/renderText';
@@ -60,6 +60,42 @@ export const MessageBubble = React.memo(function MessageBubble({
     if (nextMessage.info.role !== 'assistant') return true;
     return (nextMessage.info as AssistantMessage).parentID !== (info as AssistantMessage).parentID;
   }, [messages, info, isUser]);
+  const turnMeta = useMemo(() => {
+    if (info.role !== 'assistant') {
+      return { agentName: undefined, turnDuration: undefined };
+    }
+
+    const assistantInfo = info as AssistantMessage;
+    const parentID = assistantInfo.parentID;
+    const userMessage = messages.find(
+      (message) => message.info.role === 'user' && message.info.id === parentID,
+    );
+    const assistantMessages = messages.filter(
+      (message): message is MessageWithParts & { info: AssistantMessage } =>
+        message.info.role === 'assistant' &&
+        (message.info as AssistantMessage).parentID === parentID,
+    );
+
+    const lastCompletedAt = assistantMessages.reduce<number | undefined>((latest, message) => {
+      const completedAt = message.info.time.completed;
+      if (typeof completedAt !== 'number') {
+        return latest;
+      }
+      return latest == null || completedAt > latest ? completedAt : latest;
+    }, undefined);
+
+    const createdAt = toSafeDateFromEpoch(userMessage?.info.time.created);
+    const completedAt = toSafeDateFromEpoch(lastCompletedAt);
+    const turnDuration =
+      createdAt && completedAt
+        ? Math.max(0, (completedAt.getTime() - createdAt.getTime()) / 1000)
+        : undefined;
+
+    return {
+      agentName: assistantInfo.agent,
+      turnDuration,
+    };
+  }, [messages, info]);
 
   // --- Collapsible user messages ---
   const isLongUserMessage = useMemo(() => {
@@ -141,7 +177,11 @@ export const MessageBubble = React.memo(function MessageBubble({
 
       {/* Footer for the last assistant message in a turn (non-streaming) */}
       {!isUser && !showStreamingEffects && isLastInTurn && (
-        <MessageFooter info={info as AssistantMessage} />
+        <MessageFooter
+          info={info as AssistantMessage}
+          agentName={turnMeta.agentName}
+          turnDuration={turnMeta.turnDuration}
+        />
       )}
     </div>
   );

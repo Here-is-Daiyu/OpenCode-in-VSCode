@@ -56,15 +56,6 @@ function getBufferedPartKey(sessionID: string, messageID: string, partID: string
   return `${sessionID}:${messageID}:${partID}`;
 }
 
-function getShellCommand(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('!')) {
-    return undefined;
-  }
-
-  return trimmed.slice(1).trim();
-}
-
 function coalesceBufferedSessionMessages(
   messages: SessionScopedWebviewMessage[]
 ): SessionScopedWebviewMessage[] {
@@ -172,7 +163,6 @@ export function ChatApp() {
   const confirmOptimisticMessage = useChatStore((s) => s.confirmOptimisticMessage);
   const rollbackQueuedOptimisticMessage = useChatStore((s) => s.rollbackQueuedOptimisticMessage);
   const confirmQueuedOptimisticMessage = useChatStore((s) => s.confirmQueuedOptimisticMessage);
-  const beginPendingSend = useChatStore((s) => s.beginPendingSend);
   const queueInputInsertion = useChatStore((s) => s.queueInputInsertion);
 
   useQueuedMessageAutoSend();
@@ -438,6 +428,11 @@ export function ChatApp() {
             if (message.data.status.status === 'error') {
               useNotificationStore.getState().push('error', 'Session Error', message.data.status.error || 'An error occurred');
             }
+            // Clear stale question/permission when session finishes
+            if (message.data.status.status === 'idle' || message.data.status.status === 'error') {
+              setPermission(undefined);
+              setQuestion(undefined);
+            }
             break;
 
           case 'message:updated':
@@ -461,8 +456,16 @@ export function ChatApp() {
             useNotificationStore.getState().push('permission', 'Permission Required', message.data.description || 'A tool is requesting permission');
             break;
 
+          case 'permission:cleared':
+            setPermission(undefined);
+            break;
+
           case 'question:asked':
             setQuestion(message.data);
+            break;
+
+          case 'question:cleared':
+            setQuestion(undefined);
             break;
 
           case 'error':
@@ -533,11 +536,7 @@ export function ChatApp() {
             if (autoSendText) {
               // Clear current session so handleChatSend creates a fresh one
               clearSession();
-              if (getShellCommand(autoSendText)) {
-                beginPendingSend();
-              } else {
-                useChatStore.getState().addOptimisticMessage(autoSendText);
-              }
+              useChatStore.getState().addOptimisticMessage(autoSendText);
               postMessage({
                 type: 'chat:send',
                 data: {
@@ -575,7 +574,6 @@ export function ChatApp() {
       confirmOptimisticMessage,
       rollbackQueuedOptimisticMessage,
       confirmQueuedOptimisticMessage,
-      beginPendingSend,
       queueInputInsertion,
     ]
   );
@@ -816,16 +814,6 @@ export function ChatApp() {
                         ))
                       )}
 
-                      {/* Permission request card */}
-                      {pendingPermission && (
-                        <PermissionCard permission={pendingPermission} />
-                      )}
-
-                      {/* Question card */}
-                      {pendingQuestion && (
-                        <QuestionCard question={pendingQuestion} />
-                      )}
-
                       {/* Streaming indicator — hidden when a queued message is already displayed */}
                       {isStreaming && !optimisticMessageID && (
                         <div className="chat-streaming-indicator">
@@ -860,8 +848,18 @@ export function ChatApp() {
                 )}
               </div>
 
-              {/* Input */}
-              <ChatInput />
+              {/* Input area — question/permission cards overlay the input when active */}
+              <div className="chat-input-area">
+                {pendingPermission && (
+                  <PermissionCard permission={pendingPermission} />
+                )}
+                {pendingQuestion && (
+                  <QuestionCard question={pendingQuestion} />
+                )}
+                {!pendingPermission && !pendingQuestion && (
+                  <ChatInput />
+                )}
+              </div>
             </div>
 
             {showLastApiResponse && (

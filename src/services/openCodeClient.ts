@@ -17,7 +17,6 @@ import type {
   ProviderInfoResponse,
   FormatterStatus,
   PathInfo,
-  ModelRef,
 } from '../types/opencode';
 import { Logger } from './logger';
 
@@ -86,13 +85,6 @@ export interface SendMessageData {
   parts: PromptPart[];
   agent?: string;
   model?: string;
-}
-
-/** Payload for executing a shell command. */
-export interface ExecuteShellData {
-  command: string;
-  agent: string;
-  model?: ModelRef;
 }
 
 /** Backward-compatible alias for file prompt parts. */
@@ -654,16 +646,6 @@ export class OpenCodeClient {
     if (agent !== undefined) { body.agent = agent; }
     if (model !== undefined) { body.model = model; }
     return this.post<MessageWithParts>(`/session/${enc(sessionID)}/command`, body);
-  }
-
-  /**
-   * Execute a shell command within a session.
-   *
-   * `POST /session/:id/shell`
-   */
-  async executeShell(sessionID: string, data: ExecuteShellData): Promise<MessageWithParts> {
-    this.requireId(sessionID, 'Session ID');
-    return this.post<MessageWithParts>(`/session/${enc(sessionID)}/shell`, data);
   }
 
   // ---------------------------------------------------------------------------

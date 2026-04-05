@@ -75,6 +75,10 @@ export class TerminalOutputService implements vscode.Disposable {
     return this.recentOutputs.slice(-count);
   }
 
+  getOutputByTimestamp(timestamp: number): TerminalOutputEntry | undefined {
+    return this.recentOutputs.find(entry => entry.timestamp === timestamp);
+  }
+
   formatOutputForChat(entry: TerminalOutputEntry): string {
     const exitInfo = entry.exitCode !== undefined ? ` (exit code: ${entry.exitCode})` : '';
     const command = entry.command || '(unknown command)';

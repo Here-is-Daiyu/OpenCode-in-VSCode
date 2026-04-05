@@ -648,6 +648,24 @@ textarea {
 }
 
 /* ====================================================================
+ * Chat input area (wraps ChatInput, or question/permission cards)
+ * ==================================================================== */
+
+.chat-input-area {
+  position: relative;
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.chat-input-area > .permission-card,
+.chat-input-area > .question-card {
+  max-width: min(100%, var(--chat-column-max-width));
+  margin: 0 auto 10px;
+  padding: 0 var(--chat-column-padding);
+  box-sizing: border-box;
+}
+
+/* ====================================================================
  * Chat input
  * ==================================================================== */
 
@@ -2115,17 +2133,14 @@ textarea {
 
 .token-bar {
   position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: block;
   min-width: 0;
-  min-height: 14px;
-  padding: 0;
+  padding: 4px 0;
 }
 
 .token-bar__track {
-  flex: 1 1 auto;
   display: flex;
+  width: 100%;
   height: 3px;
   border-radius: 999px;
   background: var(--surface-base);
@@ -2148,15 +2163,6 @@ textarea {
 
 .token-bar__segment:only-child {
   border-radius: 999px;
-}
-
-.token-bar__label {
-  flex-shrink: 0;
-  color: var(--text-weaker);
-  font-size: 10px;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-  white-space: nowrap;
 }
 
 /* Tooltip */
@@ -2193,6 +2199,12 @@ textarea {
   gap: 5px;
   padding: 1px 0;
   font-size: 10px;
+}
+
+.token-bar__tooltip-row--summary {
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-weaker-base);
 }
 
 .token-bar__tooltip-row--total {
@@ -2421,11 +2433,6 @@ textarea {
 
 .token-bar__track--danger {
   background: color-mix(in srgb, var(--icon-critical-base) 15%, var(--surface-base));
-}
-
-.token-bar__pct {
-  color: inherit;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ====================================================================

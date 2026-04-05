@@ -8,12 +8,13 @@ import type { MessageWithParts } from '../types/opencode';
 import type {
   OpenCodeClient,
   PromptFilePart,
+  PromptPart,
   SendMessageData,
 } from '../services/openCodeClient';
 import type { DiagnosticsService } from '../services/diagnosticsService';
 import type { Logger } from '../services/logger';
 import { ModelPreferencesService } from '../services/modelPreferences';
-import { getConfiguredAgent, parseConfiguredModel } from '../utils/opencodeConfig';
+import type { TerminalOutputEntry, TerminalOutputService } from '../services/terminalOutputService';
 import { getWebviewHtml } from '../utils/webviewHtml';
 
 type ServerStatusMessage = Extract<ExtensionToWebviewMessage, { type: 'server:status' }>;
@@ -24,11 +25,13 @@ type ChatInsertTextMessage = Extract<ExtensionToWebviewMessage, { type: 'chat:in
 type ConfigUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'config:updated' }>;
 type ProvidersUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'providers:updated' }>;
 type AgentsUpdatedMessage = Extract<ExtensionToWebviewMessage, { type: 'agents:updated' }>;
+type MentionSearchResult = Extract<ExtensionToWebviewMessage, { type: 'mention:results' }>['data']['results'][number];
 
 const DEFAULT_IMAGE_MIME = 'image/png';
 const DATA_URL_PREFIX = /^data:/i;
 const DATA_URL_MIME_PATTERN = /^data:([^;,]+)(?:;[^,]*)?,/i;
 const BASE64_PATTERN = /^[A-Za-z0-9+/=\s]+$/;
+const TERMINAL_MENTION_PREFIX = 'terminal:';
 
 /**
  * Provides the chat WebviewView for the sidebar panel.
@@ -44,6 +47,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private diagnosticsService?: DiagnosticsService;
   private logger?: Logger;
   private modelPrefs?: ModelPreferencesService;
+  private terminalOutputService?: TerminalOutputService;
   private modelPrefsBaseUrlLogged = false;
   private ready = false;
   private queuedInsertMessages: ChatInsertTextMessage['data'][] = [];
@@ -62,6 +66,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   setClient(client: OpenCodeClient): void { this.client = client; }
   setDiagnosticsService(diagnosticsService: DiagnosticsService): void { this.diagnosticsService = diagnosticsService; }
   setLogger(logger: Logger): void { this.logger = logger; }
+  setTerminalOutputService(terminalOutputService: TerminalOutputService): void {
+    this.terminalOutputService = terminalOutputService;
+  }
 
   /**
    * Called by VS Code when the webview view is first made visible
@@ -583,43 +590,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    const shellCommand = parseShellCommand(text);
-    if (shellCommand !== undefined) {
-      if (!shellCommand) {
-        this.postMessage({
-          type: 'chat:sendResult',
-          data: { success: false, error: 'Please enter a shell command after ! before sending.' },
-        });
-        return;
-      }
-
-      let sessionId = this.currentSessionID;
-      if (!sessionId) {
-        try {
-          const session = await this.client.createSession();
-          sessionId = session.id;
-          this.currentSessionID = session.id;
-          this.postMessage({ type: 'session:created', data: session });
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          this.logger?.error('Failed to create session for chat:send', err);
-          this.postMessage({ type: 'chat:sendResult', data: { success: false, error: errMsg } });
-          return;
-        }
-      }
-
-      try {
-        const shell = await this.resolveShellPayload(shellCommand);
-        await this.client.executeShell(sessionId, shell);
-        this.postMessage({ type: 'chat:sendResult', data: { success: true, streaming: false } });
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        this.logger?.error('Failed to execute shell command', err);
-        this.postMessage({ type: 'chat:sendResult', data: { success: false, error: errMsg } });
-      }
-      return;
-    }
-
     const payload = await this.buildPromptPayload(text, images, mentions, attachDiagnostics);
     if (!payload) {
       this.postMessage({
@@ -687,30 +657,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * Search for files matching a query and send results back to the webview.
+   * Search for mention targets matching a query and send results back to the webview.
    */
   private async handleMentionSearch(query: string): Promise<void> {
-    if (!this.client) {
-      this.postMessage({ type: 'mention:results', data: { query, results: [] } });
-      return;
-    }
-
     try {
-      const paths = await this.client.searchFiles(query);
-      const results = paths.map((filePath) => {
-        const segments = filePath.replace(/\\/g, '/').split('/');
-        const name = segments[segments.length - 1] || filePath;
-        // Heuristic: treat entries ending with / or without an extension containing a dot as folders
-        const isFolder = filePath.endsWith('/') || filePath.endsWith('\\');
-        return {
-          name,
-          path: filePath,
-          type: (isFolder ? 'folder' : 'file') as 'file' | 'folder',
-        };
-      });
+      const results: MentionSearchResult[] = [];
+
+      if (isTerminalMentionQuery(query)) {
+        const entries = this.terminalOutputService?.getRecentOutputs(10) ?? [];
+        for (let index = entries.length - 1; index >= 0; index -= 1) {
+          results.push(toTerminalMentionSearchResult(entries[index]));
+        }
+      } else {
+        if (!this.client) {
+          this.postMessage({ type: 'mention:results', data: { query, results: [] } });
+          return;
+        }
+
+        const paths = await this.client.searchFiles(query);
+        for (const filePath of paths) {
+          const segments = filePath.replace(/\\/g, '/').split('/');
+          const name = segments[segments.length - 1] || filePath;
+          const isFolder = filePath.endsWith('/') || filePath.endsWith('\\');
+          results.push({
+            name,
+            path: filePath,
+            type: isFolder ? 'folder' : 'file',
+          });
+        }
+      }
+
       this.postMessage({ type: 'mention:results', data: { query, results } });
     } catch (err) {
-      this.logger?.warn('Failed to search files for mention', err);
+      this.logger?.warn('Failed to search mention results', err);
       this.postMessage({ type: 'mention:results', data: { query, results: [] } });
     }
   }
@@ -772,29 +751,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     return this.diagnosticsService?.getActiveEditorDiagnosticsText();
   }
 
-  private async resolveShellPayload(command: string) {
-    const config = this.lastConfig ?? await this.client?.getConfig();
-    if (!config) {
-      throw new Error('OpenCode config is not available');
-    }
-
-    this.lastConfig = config;
-    const agent = getConfiguredAgent(config);
-    if (!agent) {
-      throw new Error('No OpenCode agent is configured for shell execution');
-    }
-
-    return {
-      command,
-      agent,
-      model: parseConfiguredModel(config),
-    };
-  }
-
-  private async resolveMentionParts(mentions: string[]): Promise<PromptFilePart[]> {
+  private async resolveMentionParts(mentions: string[]): Promise<PromptPart[]> {
     const refs = Array.from(new Set(
       mentions
-        .map((mention) => stripWrappingQuotes(mention).replace(/^@+/, '').trim())
+        .map((mention) => normalizeMentionReference(mention))
         .filter((mention) => mention.length > 0),
     ));
 
@@ -802,13 +762,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       return [];
     }
 
-    const roots = await this.getMentionRoots();
+    const roots = refs.some((mention) => !isTerminalMentionReference(mention))
+      ? await this.getMentionRoots()
+      : [];
     const parts = await Promise.all(refs.map((mention) => this.normalizeMentionPart(mention, roots)));
-    const valid = parts.filter((part): part is PromptFilePart => part !== undefined);
+    const valid = parts.filter((part): part is PromptPart => part !== undefined);
 
     if (valid.length !== refs.length) {
       this.logger?.warn(
-        `Skipped ${refs.length - valid.length} invalid file mention(s) while building prompt payload`,
+        `Skipped ${refs.length - valid.length} invalid mention(s) while building prompt payload`,
       );
     }
 
@@ -845,7 +807,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async normalizeMentionPart(
     mention: string,
     roots: string[],
-  ): Promise<PromptFilePart | undefined> {
+  ): Promise<PromptPart | undefined> {
+    if (isTerminalMentionReference(mention)) {
+      return this.resolveTerminalMentionPart(mention);
+    }
+
     const filePath = await resolveMentionPath(mention, roots);
     if (!filePath) {
       return undefined;
@@ -856,6 +822,23 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       mime: 'text/plain',
       filename: path.basename(filePath),
       url: vscode.Uri.file(filePath).toString(),
+    };
+  }
+
+  private resolveTerminalMentionPart(mention: string): PromptPart | undefined {
+    const timestamp = parseTerminalMentionTimestamp(mention);
+    if (timestamp === undefined) {
+      return undefined;
+    }
+
+    const entry = this.terminalOutputService?.getOutputByTimestamp(timestamp);
+    if (!entry) {
+      return undefined;
+    }
+
+    return {
+      type: 'text',
+      text: formatTerminalOutputPrompt(entry),
     };
   }
 
@@ -952,15 +935,6 @@ function prependUniqueMessages(
   return [...uniqueOlderMessages, ...existingMessages];
 }
 
-function parseShellCommand(text: string): string | undefined {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith('!')) {
-    return undefined;
-  }
-
-  return trimmed.slice(1).trim();
-}
-
 function stripWrappingQuotes(value: string): string {
   const trimmed = value.trim();
   if (trimmed.length < 2) {
@@ -974,6 +948,10 @@ function stripWrappingQuotes(value: string): string {
   }
 
   return trimmed;
+}
+
+function normalizeMentionReference(value: string): string {
+  return stripWrappingQuotes(value).replace(/^@+/, '').trim();
 }
 
 function extractMimeFromDataUrl(value: string): string | undefined {
@@ -1002,7 +980,7 @@ function extensionForMime(mime: string): string {
 }
 
 async function resolveMentionPath(reference: string, roots: string[]): Promise<string | undefined> {
-  const value = stripWrappingQuotes(reference).replace(/^@+/, '').trim();
+  const value = normalizeMentionReference(reference);
   if (!value) {
     return undefined;
   }
@@ -1035,6 +1013,69 @@ async function resolveMentionPath(reference: string, roots: string[]): Promise<s
   }
 
   return undefined;
+}
+
+function isTerminalMentionQuery(query: string): boolean {
+  const lowerQuery = query.trim().toLowerCase();
+  return lowerQuery === 'terminal'
+    || lowerQuery.startsWith('terminal ')
+    || lowerQuery.startsWith(TERMINAL_MENTION_PREFIX);
+}
+
+function isTerminalMentionReference(reference: string): boolean {
+  return normalizeMentionReference(reference).toLowerCase().startsWith(TERMINAL_MENTION_PREFIX);
+}
+
+function parseTerminalMentionTimestamp(reference: string): number | undefined {
+  const normalized = normalizeMentionReference(reference);
+  if (!normalized.toLowerCase().startsWith(TERMINAL_MENTION_PREFIX)) {
+    return undefined;
+  }
+
+  const rawTimestamp = normalized.slice(TERMINAL_MENTION_PREFIX.length).trim();
+  if (!/^\d+$/.test(rawTimestamp)) {
+    return undefined;
+  }
+
+  const timestamp = Number.parseInt(rawTimestamp, 10);
+  return Number.isSafeInteger(timestamp) ? timestamp : undefined;
+}
+
+function toTerminalMentionSearchResult(entry: TerminalOutputEntry): MentionSearchResult {
+  const command = entry.command || '(unknown)';
+  const exitInfo = entry.exitCode !== undefined && entry.exitCode !== 0
+    ? ` ✗ exit ${entry.exitCode}`
+    : '';
+
+  return {
+    name: `$ ${command}${exitInfo}`,
+    path: `${TERMINAL_MENTION_PREFIX}${entry.timestamp}`,
+    type: 'terminal',
+  };
+}
+
+function formatTerminalOutputPrompt(entry: TerminalOutputEntry): string {
+  const terminal = escapeXmlAttribute(entry.terminal || '(unknown terminal)');
+  const command = escapeXmlAttribute(entry.command || '(unknown)');
+  const exitCode = escapeXmlAttribute(entry.exitCode?.toString() ?? 'unknown');
+  const output = escapeXmlText(entry.output.trimEnd());
+
+  return `<terminal_output terminal="${terminal}" command="${command}" exit_code="${exitCode}">\n${output}\n</terminal_output>`;
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function escapeXmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
 }
 
 function toFileUri(filePath: string): vscode.Uri {

@@ -113,10 +113,16 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
       this.filterText.length > 0,
     );
 
-    // Session created/updated/deleted are already handled by
-    // refreshSessionsQuietly() in extension.ts which calls setSessions().
-    // We only need to react to session:status (lightweight, no server fetch).
+    // Session created/updated are handled by refreshSessionsQuietly() in
+    // extension.ts which calls setSessions(). We still react to session:deleted
+    // to immediately drop stale orphan statuses, and to session:status as a
+    // lightweight update that does not require a server fetch.
     this.unsubscribers.push(
+      eventBus.on('session:deleted', ({ id }) => {
+        if (!(id in this.sessionStatuses)) return;
+        delete this.sessionStatuses[id];
+        this._onDidChangeTreeData.fire(undefined);
+      }),
       eventBus.on('session:status', (payload) => {
         this.sessionStatuses[payload.sessionID] = payload.status;
         this._onDidChangeTreeData.fire(undefined);
@@ -170,13 +176,23 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
    */
   getActiveSessionCount(excludeSessionId?: string): number {
     let count = 0;
+    const counted = new Set<string>();
+
     for (const session of this.sessions) {
       const id = session.id;
       const status = this.sessionStatuses[id];
       if (!status) continue;
       if (id === excludeSessionId) continue;
+      counted.add(id);
       if (status.status === 'active' || status.status === 'retry') count++;
     }
+
+    for (const [id, status] of Object.entries(this.sessionStatuses)) {
+      if (counted.has(id)) continue;
+      if (id === excludeSessionId) continue;
+      if (status.status === 'active' || status.status === 'retry') count++;
+    }
+
     return count;
   }
 
@@ -207,6 +223,13 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeE
     this.sessions = sessions;
 
     const nextStatuses: Record<string, SessionStatus> = {};
+
+    for (const [id, status] of Object.entries(this.sessionStatuses)) {
+      if (status.status === 'active' || status.status === 'retry') {
+        nextStatuses[id] = status;
+      }
+    }
+
     for (const session of sessions) {
       const status = statuses?.[session.id] ?? this.sessionStatuses[session.id];
       if (status) {

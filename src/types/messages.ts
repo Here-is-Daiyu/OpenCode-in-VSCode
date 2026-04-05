@@ -19,7 +19,9 @@ export type ExtensionToWebviewMessage =
   | { type: 'message:partDelta'; data: { sessionID: string; messageID: string; partID: string; field?: string; delta: string } }
   | { type: 'message:removed'; data: { sessionID: string; messageID: string } }
   | { type: 'permission:asked'; data: PermissionRequest }
+  | { type: 'permission:cleared'; data: undefined }
   | { type: 'question:asked'; data: Question }
+  | { type: 'question:cleared'; data: undefined }
   | { type: 'config:updated'; data: OpenCodeConfig }
   | { type: 'providers:updated'; data: { providers: Provider[]; connected: string[] } }
   | { type: 'agents:updated'; data: Agent[] }
@@ -34,7 +36,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'chat:autoSend'; data: { text: string; attachDiagnostics?: boolean } }
   | { type: 'chat:insertText'; data: { text: string; focus?: boolean } }
   | { type: 'model-prefs:loaded'; data: { recent: Array<{ providerID: string; modelID: string }>; favorite: Array<{ providerID: string; modelID: string }>; variant: Record<string, string | undefined> } }
-  | { type: 'mention:results'; data: { query: string; results: Array<{ name: string; path: string; type: 'file' | 'folder' }> } }
+  | { type: 'mention:results'; data: { query: string; results: Array<{ name: string; path: string; type: 'file' | 'folder' | 'terminal' }> } }
   | { type: 'activeSessions:updated'; data: { count: number } };
 
 // Webview → Extension messages
