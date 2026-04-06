@@ -725,7 +725,7 @@ textarea {
   align-items: center;
   gap: 6px;
   min-height: 24px;
-  padding: 4px 4px 0;
+  padding: 0 4px 4px;
   min-width: 0;
   container-type: inline-size;
   container-name: dock-tray;
@@ -1847,7 +1847,7 @@ textarea {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   z-index: 50;
   max-height: 320px;
   overflow-y: auto;
@@ -2351,7 +2351,7 @@ textarea {
 .agent-selector__dropdown {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 4px);
+  top: calc(100% + 4px);
   z-index: 60;
   min-width: 200px;
   max-width: 280px;

@@ -2,7 +2,7 @@
  * Number input with an optional slider.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Field } from './Field';
 
 interface NumberInputProps {
@@ -26,15 +26,61 @@ export function NumberInput({
   showSlider,
   onChange,
 }: NumberInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [displayValue, setDisplayValue] = useState(String(value));
+
+  const clampValue = useCallback(
+    (n: number) => Math.min(Math.max(n, min ?? -Infinity), max ?? Infinity),
+    [max, min],
+  );
+
+  useEffect(() => {
+    if (document.activeElement !== inputRef.current) {
+      setDisplayValue(String(value));
+    }
+  }, [value]);
+
   const handleFieldChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const n = Number(e.target.value);
-      if (!isNaN(n)) {
-        onChange(n);
-      }
+      const raw = e.target.value;
+      setDisplayValue(raw);
+
+      if (raw === '' || raw === '-') return;
+
+      const n = Number(raw);
+      if (Number.isNaN(n)) return;
+
+      onChange(clampValue(n));
     },
-    [onChange],
+    [clampValue, onChange],
   );
+
+  const handleBlur = useCallback(() => {
+    if (displayValue.trim() === '' || displayValue === '-') {
+      const fallback = min !== undefined ? min : 0;
+      setDisplayValue(String(fallback));
+      if (fallback !== value) {
+        onChange(fallback);
+      }
+      return;
+    }
+
+    const n = Number(displayValue);
+    if (Number.isNaN(n)) {
+      const fallback = min !== undefined ? min : 0;
+      setDisplayValue(String(fallback));
+      if (fallback !== value) {
+        onChange(fallback);
+      }
+      return;
+    }
+
+    const clamped = clampValue(n);
+    setDisplayValue(String(clamped));
+    if (clamped !== value) {
+      onChange(clamped);
+    }
+  }, [clampValue, displayValue, min, onChange, value]);
 
   const handleSliderChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -53,13 +99,15 @@ export function NumberInput({
       <div className="setting-number-input">
         <div className="setting-number-input__field-row">
           <input
+            ref={inputRef}
             type="number"
             className="setting-number-input__field"
-            value={value}
+            value={displayValue}
             min={min}
             max={max}
             step={step}
             onChange={handleFieldChange}
+            onBlur={handleBlur}
           />
           {showSlider && (
             <span className="setting-number-input__value">{value}</span>
