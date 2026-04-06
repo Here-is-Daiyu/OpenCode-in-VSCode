@@ -541,6 +541,9 @@ function syncConfig(ctx: CommandContext, config: OpenCodeConfig): void {
   const message = { type: 'config:updated' as const, data: config };
   ctx.chatProvider.postMessageToWebview(message);
   ctx.editorPanelProvider.broadcastMessage(message);
+  void ctx.settingsProvider.refreshAll().catch((err) => {
+    ctx.logger.warn('Failed to refresh settings panel after config sync', err);
+  });
 }
 
 async function updateSelectedModel(
@@ -999,13 +1002,12 @@ async function openConfigFile(ctx: CommandContext): Promise<void> {
     const path = await import('path');
     const fs = await import('fs');
 
-    // Try common global config locations
+    // Match upstream OpenCode global config resolution order.
     const homeDir = os.homedir();
     const candidates = [
+      path.join(homeDir, '.config', 'opencode', 'opencode.jsonc'),
+      path.join(homeDir, '.config', 'opencode', 'opencode.json'),
       path.join(homeDir, '.config', 'opencode', 'config.json'),
-      path.join(homeDir, '.config', 'opencode', 'config.jsonc'),
-      path.join(homeDir, '.opencode', 'config.json'),
-      path.join(homeDir, '.opencode', 'config.jsonc'),
     ];
 
     let configPath: string | undefined;
@@ -1020,10 +1022,14 @@ async function openConfigFile(ctx: CommandContext): Promise<void> {
     }
 
     if (!configPath) {
-      // Default: create at ~/.config/opencode/config.json
+      // Default: create the preferred upstream config file.
       configPath = candidates[0];
       await fs.promises.mkdir(path.dirname(configPath), { recursive: true });
-      await fs.promises.writeFile(configPath, '{\n  "$schema": "https://opencode.ai/config.json"\n}\n', 'utf-8');
+      await fs.promises.writeFile(
+        configPath,
+        '// OpenCode configuration — https://opencode.ai/docs/config\n{\n}\n',
+        'utf-8',
+      );
     }
 
     const doc = await vscode.workspace.openTextDocument(configPath);

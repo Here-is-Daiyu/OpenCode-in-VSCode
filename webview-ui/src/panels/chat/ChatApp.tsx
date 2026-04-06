@@ -133,6 +133,7 @@ export function ChatApp() {
   const isProgrammaticScrollRef = useRef(false);
   const userScrolledUpRef = useRef(false);
   const scrollRafRef = useRef(0);
+  const optimisticMessageTimeoutRef = useRef<number | undefined>(undefined);
   const bufferedSessionMessagesRef = useRef<Map<string, SessionScopedWebviewMessage[]>>(new Map());
 
   // Store state
@@ -502,6 +503,19 @@ export function ChatApp() {
               } else {
                 confirmOptimisticMessage(message.data.streaming);
               }
+              // Safety net: if SSE message.updated never arrives to replace the
+              // optimistic message (and clear optimisticMessageID), force-clear
+              // after 10s so the input doesn't stay permanently blocked.
+              if (optimisticMessageTimeoutRef.current !== undefined) {
+                window.clearTimeout(optimisticMessageTimeoutRef.current);
+              }
+              optimisticMessageTimeoutRef.current = window.setTimeout(() => {
+                const s = useChatStore.getState();
+                if (s.optimisticMessageID) {
+                  useChatStore.setState({ optimisticMessageID: undefined });
+                }
+                optimisticMessageTimeoutRef.current = undefined;
+              }, 10_000);
               if (queuedSend) {
                 useMessageQueueStore.getState().finishSending(queuedSend.sessionID, queuedSend.messageID);
               }
@@ -601,6 +615,24 @@ export function ChatApp() {
   );
 
   useMessageListener(handleExtensionMessage);
+
+  useEffect(() => {
+    if (optimisticMessageID) {
+      return;
+    }
+
+    if (optimisticMessageTimeoutRef.current !== undefined) {
+      window.clearTimeout(optimisticMessageTimeoutRef.current);
+      optimisticMessageTimeoutRef.current = undefined;
+    }
+  }, [optimisticMessageID]);
+
+  useEffect(() => () => {
+    if (optimisticMessageTimeoutRef.current !== undefined) {
+      window.clearTimeout(optimisticMessageTimeoutRef.current);
+      optimisticMessageTimeoutRef.current = undefined;
+    }
+  }, []);
 
   // Send ready signal to extension on mount
   useEffect(() => {

@@ -298,7 +298,7 @@ export interface ModelCapabilities {
 
 // Config types
 
-/** Model definition within a provider config (as stored in opencode.json). */
+/** Model definition within a provider config (as stored in opencode.jsonc). */
 export interface ProviderModelConfig {
   name: string;
   attachment?: boolean;
@@ -309,7 +309,7 @@ export interface ProviderModelConfig {
   modalities?: { input: string[]; output: string[] };
 }
 
-/** Provider configuration as stored in the opencode.json `provider` map. */
+/** Provider configuration as stored in the opencode.jsonc `provider` map. */
 export interface ProviderConfig {
   name: string;
   npm: string;
@@ -398,11 +398,24 @@ export interface PermissionRequest {
 }
 
 // Question
-export interface Question {
+export interface QuestionOption {
+  label: string;
+  description: string;
+}
+
+export interface QuestionInfo {
+  question: string;
+  header: string;
+  options: QuestionOption[];
+  multiple?: boolean;
+  custom?: boolean;
+}
+
+export interface QuestionRequest {
   id: string;
-  text: string;
-  options?: string[];
-  type: 'text' | 'choice';
+  sessionID: string;
+  questions: QuestionInfo[];
+  tool?: { messageID: string; callID: string };
 }
 
 // MCP Status

@@ -330,11 +330,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'question:respond':
-        vscode.commands.executeCommand(
-          'opencode.respondQuestion',
-          message.data.id,
-          message.data.answer
-        );
+        this.handleQuestionReply(message.data.id, message.data.answers);
         break;
 
       case 'config:get':
@@ -379,7 +375,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
 
       case 'command:execute':
-        vscode.commands.executeCommand(message.data.command, message.data.args);
+        this.handleCommandExecute(message.data.command, message.data.args);
         break;
 
       case 'model-prefs:get':
@@ -653,6 +649,41 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       this.logger?.warn('Failed to fetch commands from server', err);
       this.postMessage({ type: 'command:listed', data: { commands: [] } });
+    }
+  }
+
+  private async handleCommandExecute(command: string, args?: string): Promise<void> {
+    if (!this.client) {
+      return;
+    }
+
+    const sessionId = this.currentSessionID;
+    if (!sessionId) {
+      this.logger?.warn('No active session for command execution');
+      return;
+    }
+
+    try {
+      await this.client.executeCommand(sessionId, command, args);
+    } catch (err) {
+      this.logger?.error(`Failed to execute command /${command}`, err);
+    }
+  }
+
+  private async handleQuestionReply(requestId: string, answers: string[][]): Promise<void> {
+    if (!this.client) {
+      this.logger?.error('Client not available for question:respond');
+      void vscode.window.showErrorMessage('OpenCode client is not available.');
+      return;
+    }
+
+    try {
+      await this.client.replyQuestion(requestId, answers);
+    } catch (err) {
+      this.logger?.error('Failed to reply to question', err);
+      void vscode.window.showErrorMessage(
+        `Failed to reply to question: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

@@ -566,6 +566,11 @@ export class OpenCodeClient {
     return true;
   }
 
+  async replyQuestion(requestId: string, answers: string[][]): Promise<void> {
+    this.requireId(requestId, 'Question request ID');
+    await this.post(`/question/${enc(requestId)}/reply`, { answers });
+  }
+
   // ---------------------------------------------------------------------------
   //  Messages
   // ---------------------------------------------------------------------------

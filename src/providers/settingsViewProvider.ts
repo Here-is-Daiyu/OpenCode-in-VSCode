@@ -23,6 +23,8 @@ export class SettingsViewProvider {
   private logger?: Logger;
   private mcpPollTimer: ReturnType<typeof setInterval> | undefined;
   private mcpStatusInFlight = false;
+  private refreshAllInFlight: Promise<void> | undefined;
+  private refreshAllQueued = false;
 
   constructor(private readonly extensionUri: vscode.Uri) {}
 
@@ -99,6 +101,34 @@ export class SettingsViewProvider {
   async refreshMCPStatus(): Promise<void> {
     if (!this.panel) return; // Settings panel not open — skip
     await this.sendMCPStatus();
+  }
+
+  /**
+   * Re-fetch and push all data (config, providers, MCP) to the settings webview.
+   * Called when the server (re)connects to ensure the panel has fresh data.
+   */
+  public async refreshAll(): Promise<void> {
+    if (!this.panel) return; // Panel not open, skip
+
+    if (this.refreshAllInFlight) {
+      this.refreshAllQueued = true;
+      await this.refreshAllInFlight;
+      return;
+    }
+
+    this.refreshAllInFlight = (async () => {
+      do {
+        this.refreshAllQueued = false;
+        await this.handleReady();
+      } while (this.panel && this.refreshAllQueued);
+    })();
+
+    try {
+      await this.refreshAllInFlight;
+    } finally {
+      this.refreshAllInFlight = undefined;
+      this.refreshAllQueued = false;
+    }
   }
 
   // ---------------------------------------------------------------------------

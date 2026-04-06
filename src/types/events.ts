@@ -8,7 +8,7 @@ import type {
   SessionStatus,
   Part,
   PermissionRequest,
-  Question,
+  QuestionRequest,
   Todo,
   OpenCodeConfig,
   Pty,
@@ -56,8 +56,8 @@ export interface EventPayloads {
   'message:removed': { sessionID: string; messageID: string };
   'permission:asked': PermissionRequest;
   'permission:replied': { id: string; response: string };
-  'question:asked': Question;
-  'question:replied': { id: string; answer: string };
+  'question:asked': QuestionRequest;
+  'question:replied': { id: string; answers: string[][] };
   'todo:updated': { sessionID: string; todos: Todo[] };
   'config:updated': OpenCodeConfig;
   'file:edited': { path: string; content: string };

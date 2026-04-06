@@ -26,7 +26,7 @@ import type {
   MessageWithParts,
   Part,
   PermissionRequest,
-  Question,
+  QuestionRequest,
   OpenCodeConfig,
   Todo,
   Pty,
@@ -496,6 +496,12 @@ async function loadInitialData(ctx: CommandContext): Promise<void> {
     ctx.logger.error('Failed to reconnect PTY terminals', err);
   }
 
+  try {
+    await ctx.settingsProvider.refreshAll();
+  } catch (err) {
+    ctx.logger.error('Failed to refresh settings panel data', err);
+  }
+
   void ctx.statusProvider.refresh();
 }
 
@@ -567,8 +573,23 @@ function normalizeMessageUpdatedPayload(
     return undefined;
   }
 
+  const info = { ...payload.info } as MessageWithParts['info'] & Record<string, unknown>;
+  if (info.role === 'assistant' && info.error && typeof info.error === 'object') {
+    const rawError = info.error as Record<string, unknown>;
+    if (typeof rawError.name === 'string' && !("type" in rawError)) {
+      const data =
+        rawError.data && typeof rawError.data === 'object'
+          ? (rawError.data as Record<string, unknown>)
+          : {};
+      info.error = {
+        type: rawError.name,
+        message: typeof data.message === 'string' ? data.message : rawError.name,
+      };
+    }
+  }
+
   return {
-    info: payload.info,
+    info,
     parts: Array.isArray(payload.parts) ? payload.parts : [],
   };
 }
@@ -851,14 +872,16 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
     }
 
     case 'question.asked': {
-      const question = properties as unknown as Question;
+      const question = properties as unknown as QuestionRequest;
       if (!question?.id) { break; }
       ctx.eventBus.emit('question:asked', question);
-      ctx.chatProvider.postMessageToWebview({ type: 'question:asked', data: question });
-      // Question events may carry a sessionID in the raw payload
-      const questionSessionID = (properties as Record<string, unknown>).sessionID;
-      if (typeof questionSessionID === 'string') {
-        ctx.editorPanelProvider.routeSessionMessage(questionSessionID, { type: 'question:asked', data: question });
+      if (!question.sessionID || ctx.activeSessionId === question.sessionID) {
+        ctx.chatProvider.postMessageToWebview({ type: 'question:asked', data: question });
+      }
+      if (typeof question.sessionID === 'string') {
+        ctx.editorPanelProvider.routeSessionMessage(question.sessionID, { type: 'question:asked', data: question });
+      } else {
+        ctx.editorPanelProvider.broadcastMessage({ type: 'question:asked', data: question });
       }
       break;
     }
@@ -873,11 +896,24 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
     }
 
     case 'question.replied': {
-      const replied = properties as unknown as { id: string; answer: string };
-      if (!replied?.id) { break; }
-      ctx.eventBus.emit('question:replied', replied);
-      ctx.chatProvider.postMessageToWebview({ type: 'question:cleared', data: undefined });
-      ctx.editorPanelProvider.broadcastMessage({ type: 'question:cleared', data: undefined });
+      const payload = properties as { id?: string; sessionID?: string; answers?: string[][]; answer?: string };
+      if (!payload?.id) { break; }
+      ctx.eventBus.emit('question:replied', {
+        id: payload.id,
+        answers: Array.isArray(payload.answers)
+          ? payload.answers
+          : typeof payload.answer === 'string'
+            ? [[payload.answer]]
+            : [],
+      });
+      if (!payload.sessionID || ctx.activeSessionId === payload.sessionID) {
+        ctx.chatProvider.postMessageToWebview({ type: 'question:cleared', data: undefined });
+      }
+      if (typeof payload.sessionID === 'string') {
+        ctx.editorPanelProvider.routeSessionMessage(payload.sessionID, { type: 'question:cleared', data: undefined });
+      } else {
+        ctx.editorPanelProvider.broadcastMessage({ type: 'question:cleared', data: undefined });
+      }
       break;
     }
 
@@ -887,6 +923,9 @@ function routeSSEEvent(ctx: CommandContext, event: ServerEvent): void {
       ctx.eventBus.emit('config:updated', config);
       ctx.chatProvider.postMessageToWebview({ type: 'config:updated', data: config });
       ctx.editorPanelProvider.broadcastMessage({ type: 'config:updated', data: config });
+      void ctx.settingsProvider.refreshAll().catch((err) => {
+        ctx.logger.warn('Failed to refresh settings panel after config update', err);
+      });
       break;
     }
 
@@ -969,16 +1008,16 @@ function subscribeToEvents(ctx: CommandContext): void {
   // When server connects, notify webviews after the shared connection flow completes
   eventUnsubscribers.push(
     ctx.eventBus.on('server:connected', ({ version }) => {
-      if (!serverConnected) {
-        return;
-      }
-
       const serverStatusMsg = {
         type: 'server:status' as const,
         data: { connected: true, version },
       };
       ctx.chatProvider.postMessageToWebview(serverStatusMsg);
       ctx.editorPanelProvider.broadcastMessage(serverStatusMsg);
+      // Safe to trigger unconditionally; refreshAll() no-ops when the panel is closed.
+      void ctx.settingsProvider.refreshAll().catch((err) => {
+        ctx.logger.warn('Failed to refresh settings panel after server connect', err);
+      });
     })
   );
 

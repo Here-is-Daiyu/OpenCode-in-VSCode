@@ -1,83 +1,223 @@
 /**
- * QuestionCard - Shows a question prompt with text input or choice options
+ * QuestionCard - Shows one or more structured questions
  */
 
-import React, { useState } from 'react';
-import type { Question } from '../types/opencode';
+import React, { useEffect, useState } from 'react';
+import type { QuestionInfo, QuestionRequest } from '../types/opencode';
 import { postMessage } from '../utils/vscodeApi';
-import { useChatStore } from '../stores/chatStore';
 
 interface QuestionCardProps {
-  question: Question;
+  question: QuestionRequest;
+}
+
+function createEmptySelections(question: QuestionRequest): string[][] {
+  return question.questions.map(() => []);
+}
+
+function createEmptyInputs(question: QuestionRequest): string[] {
+  return question.questions.map(() => '');
 }
 
 export function QuestionCard({ question }: QuestionCardProps) {
-  const [answer, setAnswer] = useState('');
-  const setQuestionState = useChatStore((s) => s.setQuestion);
+  const [selectedAnswers, setSelectedAnswers] = useState<string[][]>(() => createEmptySelections(question));
+  const [inputValues, setInputValues] = useState<string[]>(() => createEmptyInputs(question));
 
-  const handleSubmit = (value: string) => {
-    if (!value.trim()) return;
+  useEffect(() => {
+    setSelectedAnswers(createEmptySelections(question));
+    setInputValues(createEmptyInputs(question));
+  }, [question]);
+
+  const buildAnswers = (
+    nextSelectedAnswers: string[][] = selectedAnswers,
+    nextInputValues: string[] = inputValues,
+  ): string[][] => question.questions.map((item, index) => {
+    const inputValue = nextInputValues[index]?.trim() ?? '';
+
+    if (item.multiple) {
+      return nextSelectedAnswers[index] ?? [];
+    }
+
+    if (item.options.length === 0) {
+      return inputValue ? [inputValue] : [];
+    }
+
+    if (item.custom && inputValue) {
+      return [inputValue];
+    }
+
+    return nextSelectedAnswers[index]?.slice(0, 1) ?? [];
+  });
+
+  const canSubmit = (answers: string[][]): boolean => (
+    answers.length > 0
+    && answers.length === question.questions.length
+    && answers.every((answerGroup) => (
+      answerGroup.length > 0
+      && answerGroup.every((answer) => answer.trim().length > 0)
+    ))
+  );
+
+  const requiresManualSubmit = question.questions.some(
+    (item) => item.multiple || item.custom || item.options.length === 0,
+  );
+
+  const submitAnswers = (
+    nextSelectedAnswers: string[][] = selectedAnswers,
+    nextInputValues: string[] = inputValues,
+  ): void => {
+    const answers = buildAnswers(nextSelectedAnswers, nextInputValues);
+    if (!canSubmit(answers)) {
+      return;
+    }
+
     postMessage({
       type: 'question:respond',
-      data: { id: question.id, answer: value.trim() },
+      data: { id: question.id, answers },
     });
-    setQuestionState(undefined);
   };
+
+  const handleSingleOptionSelect = (questionIndex: number, value: string): void => {
+    const nextSelectedAnswers = selectedAnswers.map((answers, index) => (
+      index === questionIndex ? [value] : answers
+    ));
+    const nextInputValues = inputValues.map((inputValue, index) => (
+      index === questionIndex ? '' : inputValue
+    ));
+
+    setSelectedAnswers(nextSelectedAnswers);
+    setInputValues(nextInputValues);
+
+    if (!requiresManualSubmit && canSubmit(buildAnswers(nextSelectedAnswers, nextInputValues))) {
+      submitAnswers(nextSelectedAnswers, nextInputValues);
+    }
+  };
+
+  const handleMultipleOptionToggle = (
+    item: QuestionInfo,
+    questionIndex: number,
+    value: string,
+  ): void => {
+    const currentSelection = new Set(selectedAnswers[questionIndex] ?? []);
+    if (currentSelection.has(value)) {
+      currentSelection.delete(value);
+    } else {
+      currentSelection.add(value);
+    }
+
+    const nextAnswerGroup = item.options
+      .map((option) => option.label)
+      .filter((label) => currentSelection.has(label));
+
+    const nextSelectedAnswers = selectedAnswers.map((answers, index) => (
+      index === questionIndex ? nextAnswerGroup : answers
+    ));
+
+    setSelectedAnswers(nextSelectedAnswers);
+  };
+
+  const handleInputChange = (questionIndex: number, value: string): void => {
+    const nextInputValues = inputValues.map((inputValue, index) => (
+      index === questionIndex ? value : inputValue
+    ));
+    const nextSelectedAnswers = selectedAnswers.map((answers, index) => (
+      index === questionIndex && value.trim().length > 0 ? [] : answers
+    ));
+
+    setInputValues(nextInputValues);
+    setSelectedAnswers(nextSelectedAnswers);
+  };
+
+  const handleInputSubmit = (questionIndex: number): void => {
+    const nextInputValues = inputValues.map((inputValue, index) => (
+      index === questionIndex ? inputValue.trim() : inputValue
+    ));
+
+    setInputValues(nextInputValues);
+    submitAnswers(selectedAnswers, nextInputValues);
+  };
+
+  const canSubmitCurrentAnswers = canSubmit(buildAnswers());
 
   return (
     <div className="question-card">
-      <div className="question-card__header">
-        <span className="question-card__icon">
-          <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
-            <path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1zm0 11a1 1 0 1 1 0-2 1 1 0 0 1 0 2zm1.5-4.5c-.5.5-1 .7-1 1.5H7c0-1.3.8-2 1.5-2.5C9 6 9.5 5.5 9.5 5 9.5 4.2 8.8 3.5 8 3.5S6.5 4.2 6.5 5H5c0-1.7 1.3-3 3-3s3 1.3 3 3c0 1.2-.8 1.8-1.5 2.5z" />
-          </svg>
-        </span>
-        <span className="question-card__title">Question</span>
-      </div>
+      {question.questions.map((item, index) => {
+        const hasOptions = item.options.length > 0;
+        const selectedValues = selectedAnswers[index] ?? [];
+        const inputValue = inputValues[index] ?? '';
+        const showInput = !item.multiple && (!hasOptions || Boolean(item.custom));
 
-      <div className="question-card__body">
-        <p className="question-card__text">{question.text}</p>
+        return (
+          <section className="question-card__item" key={`${question.id}-${index}`}>
+            <strong className="question-card__header">{item.header}</strong>
+            <p className="question-card__body">{item.question}</p>
 
-        {question.type === 'choice' && question.options ? (
-          <div className="question-card__options">
-            {question.options.map((option, index) => (
+            {hasOptions && (
+              <div className="question-card__options">
+                {item.options.map((option) => {
+                  const isSelected = selectedValues.includes(option.label);
+
+                  return (
+                    <button
+                      key={option.label}
+                      className={[
+                        'question-card__option',
+                        isSelected ? 'question-card__option--selected' : '',
+                      ].filter(Boolean).join(' ')}
+                      onClick={() => (
+                        item.multiple
+                          ? handleMultipleOptionToggle(item, index, option.label)
+                          : handleSingleOptionSelect(index, option.label)
+                      )}
+                      aria-pressed={isSelected}
+                      title={option.description || undefined}
+                      type="button"
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {showInput && (
+              <div className="question-card__controls">
+                <input
+                  type="text"
+                  className="question-card__input"
+                  value={inputValue}
+                  onChange={(event) => handleInputChange(index, event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      handleInputSubmit(index);
+                    }
+                  }}
+                  placeholder={hasOptions ? 'Type a custom answer...' : 'Type your answer...'}
+                />
+                <button
+                  className="question-card__submit"
+                  onClick={() => handleInputSubmit(index)}
+                  disabled={!canSubmitCurrentAnswers}
+                  type="button"
+                >
+                  Submit
+                </button>
+              </div>
+            )}
+
+            {item.multiple && (
               <button
-                key={index}
-                className="question-card__option-btn"
-                onClick={() => handleSubmit(option)}
+                className="question-card__submit"
+                onClick={() => submitAnswers()}
+                disabled={!canSubmitCurrentAnswers}
                 type="button"
               >
-                {option}
+                Submit
               </button>
-            ))}
-          </div>
-        ) : (
-          <div className="question-card__input-row">
-            <input
-              type="text"
-              className="question-card__input"
-              value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleSubmit(answer);
-                }
-              }}
-              placeholder="Type your answer..."
-              autoFocus
-            />
-            <button
-              className="question-card__submit-btn"
-              onClick={() => handleSubmit(answer)}
-              disabled={!answer.trim()}
-              type="button"
-            >
-              Submit
-            </button>
-          </div>
-        )}
-      </div>
+            )}
+          </section>
+        );
+      })}
     </div>
   );
 }

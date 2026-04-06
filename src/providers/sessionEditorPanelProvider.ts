@@ -333,11 +333,7 @@ export class SessionEditorPanelProvider {
         break;
 
       case 'question:respond':
-        vscode.commands.executeCommand(
-          'opencode.respondQuestion',
-          message.data.id,
-          message.data.answer,
-        );
+        this.handleQuestionReply(message.data.id, message.data.answers);
         break;
 
       case 'config:get':
@@ -386,7 +382,7 @@ export class SessionEditorPanelProvider {
         break;
 
       case 'command:execute':
-        vscode.commands.executeCommand(message.data.command, message.data.args);
+        this.handleCommandExecute(panelId, message.data.command, message.data.args);
         break;
 
       case 'model-prefs:get':
@@ -607,6 +603,40 @@ export class SessionEditorPanelProvider {
     } catch (err) {
       this.logger?.warn('Failed to fetch commands from server', err);
       this.doPostMessage(state, { type: 'command:listed', data: { commands: [] } });
+    }
+  }
+
+  private async handleCommandExecute(panelId: string, command: string, args?: string): Promise<void> {
+    const state = this.panels.get(panelId);
+    if (!state || !this.client) { return; }
+
+    const sessionId = state.sessionId;
+    if (!sessionId) {
+      this.logger?.warn('No active session for command execution');
+      return;
+    }
+
+    try {
+      await this.client.executeCommand(sessionId, command, args);
+    } catch (err) {
+      this.logger?.error(`Failed to execute command /${command}`, err);
+    }
+  }
+
+  private async handleQuestionReply(requestId: string, answers: string[][]): Promise<void> {
+    if (!this.client) {
+      this.logger?.error('Client not available for question:respond');
+      void vscode.window.showErrorMessage('OpenCode client is not available.');
+      return;
+    }
+
+    try {
+      await this.client.replyQuestion(requestId, answers);
+    } catch (err) {
+      this.logger?.error('Failed to reply to question', err);
+      void vscode.window.showErrorMessage(
+        `Failed to reply to question: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

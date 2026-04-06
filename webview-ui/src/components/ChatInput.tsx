@@ -20,6 +20,7 @@ import { AgentSelector } from './AgentSelector';
 import { detectSlashTrigger, filterCommands } from '../utils/slashCommands';
 import { useCommandStore } from '../stores/commandStore';
 import { useMessageQueueStore, type QueuedChatMessage } from '../stores/messageQueueStore';
+import { useNotificationStore } from '../stores/notificationStore';
 import { useMentionSearch } from '../hooks/useMentionSearch';
 import type { MentionResult } from '../hooks/useMentionSearch';
 
@@ -395,6 +396,12 @@ export function ChatInput() {
     },
     [currentSession, redoTarget],
   );
+  const notifyNothingToUndo = useCallback(() => {
+    useNotificationStore.getState().push('info', 'Nothing to Undo', 'No messages to undo in this session.');
+  }, []);
+  const notifyNothingToRedo = useCallback(() => {
+    useNotificationStore.getState().push('info', 'Nothing to Redo', 'No messages to redo in this session.');
+  }, []);
 
   const handleSend = useCallback(() => {
     if (!canSend) return;
@@ -426,10 +433,18 @@ export function ChatInput() {
               postMessage({ type: 'session:create' });
               break;
             case 'undo':
-              handleUndo();
+              if (!undoTarget) {
+                notifyNothingToUndo();
+              } else {
+                handleUndo();
+              }
               break;
             case 'redo':
-              handleRedo();
+              if (!canRedo) {
+                notifyNothingToRedo();
+              } else {
+                handleRedo();
+              }
               break;
             case 'compact':
               if (currentSession?.revert) {
@@ -493,6 +508,7 @@ export function ChatInput() {
     currentSession,
     currentSessionID,
     addOptimisticMessage,
+    canRedo,
     beginPendingSend,
     enqueueMessage,
     mentionPaths,
@@ -501,6 +517,9 @@ export function ChatInput() {
     setInputText,
     handleUndo,
     handleRedo,
+    notifyNothingToUndo,
+    notifyNothingToRedo,
+    undoTarget,
   ]);
 
   const handleStop = useCallback(() => {
@@ -693,10 +712,18 @@ export function ChatInput() {
             postMessage({ type: 'session:create' });
             break;
           case 'undo':
-            handleUndo();
+            if (!undoTarget) {
+              notifyNothingToUndo();
+            } else {
+              handleUndo();
+            }
             break;
           case 'redo':
-            handleRedo();
+            if (!canRedo) {
+              notifyNothingToRedo();
+            } else {
+              handleRedo();
+            }
             break;
           case 'compact':
             if (!currentSession?.revert) {
@@ -721,7 +748,7 @@ export function ChatInput() {
         }
       }
     },
-    [setInputText, currentSession, addOptimisticMessage, handleUndo, handleRedo]
+    [setInputText, currentSession, addOptimisticMessage, canRedo, handleUndo, handleRedo, notifyNothingToUndo, notifyNothingToRedo, undoTarget]
   );
 
   const handleSlashClose = useCallback(() => {

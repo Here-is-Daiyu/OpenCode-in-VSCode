@@ -3,7 +3,7 @@
  * These are the typed messages sent via postMessage
  */
 
-import type { Session, MessageWithParts, OpenCodeConfig, Provider, Agent, Todo, PermissionRequest, Question, MCPStatus, SessionStatus } from './opencode';
+import type { Session, MessageWithParts, OpenCodeConfig, Provider, Agent, Todo, PermissionRequest, QuestionRequest, MCPStatus, SessionStatus } from './opencode';
 
 // Extension → Webview messages
 export type ExtensionToWebviewMessage =
@@ -20,7 +20,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'message:removed'; data: { sessionID: string; messageID: string } }
   | { type: 'permission:asked'; data: PermissionRequest }
   | { type: 'permission:cleared'; data: undefined }
-  | { type: 'question:asked'; data: Question }
+  | { type: 'question:asked'; data: QuestionRequest }
   | { type: 'question:cleared'; data: undefined }
   | { type: 'config:updated'; data: OpenCodeConfig }
   | { type: 'providers:updated'; data: { providers: Provider[]; connected: string[] } }
@@ -51,7 +51,7 @@ export type WebviewToExtensionMessage =
   | { type: 'session:revert'; data: { messageID: string; partID?: string } }
   | { type: 'session:unrevert' }
   | { type: 'permission:respond'; data: { id: string; response: string; remember?: boolean } }
-  | { type: 'question:respond'; data: { id: string; answer: string } }
+  | { type: 'question:respond'; data: { id: string; answers: string[][] } }
   | { type: 'config:get' }
   | { type: 'config:update'; data: Partial<OpenCodeConfig> }
   | { type: 'model:select'; data: { providerID: string; modelID: string } }

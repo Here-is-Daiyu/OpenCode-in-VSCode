@@ -164,7 +164,18 @@ export const MessageBubble = React.memo(function MessageBubble({
       {/* Error display */}
       {!isUser && (info as AssistantMessage).error && (() => {
         const err = (info as AssistantMessage).error as MessageError;
-        const errMsg = err.message ?? 'Unknown error';
+        const errMsg =
+          err.message ??
+          (err as unknown as { data?: { message?: string } }).data?.message ??
+          'Unknown error';
+        const isAbort =
+          err.type === 'MessageAbortedError' ||
+          (err as unknown as { name?: string }).name === 'MessageAbortedError';
+
+        if (isAbort) {
+          return null;
+        }
+
         return (
           <div className="msg-bubble__error">
             <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">

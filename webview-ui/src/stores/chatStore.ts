@@ -10,7 +10,7 @@ import type {
   Part,
   FilePart,
   PermissionRequest,
-  Question,
+  QuestionRequest,
   TextPart,
   Agent,
 } from '../types/opencode';
@@ -593,7 +593,7 @@ export interface ChatState {
 
   // Prompts
   pendingPermission?: PermissionRequest;
-  pendingQuestion?: Question;
+  pendingQuestion?: QuestionRequest;
 
   // Active sessions (other sessions that are busy)
   activeSessionCount: number;
@@ -627,7 +627,7 @@ export interface ChatState {
   queueInputInsertion: (text: string, focus?: boolean) => void;
   consumeInputInsertion: (id: string) => void;
   setPermission: (permission?: PermissionRequest) => void;
-  setQuestion: (question?: Question) => void;
+  setQuestion: (question?: QuestionRequest) => void;
   setAgents: (agents: Agent[]) => void;
   setSelectedAgent: (agent: string) => void;
   addOptimisticMessage: (text: string, images?: string[]) => string;
@@ -1134,7 +1134,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   confirmOptimisticMessage: (streaming = true) =>
     set((state) => ({
-      optimisticMessageID: undefined,
+      // Keep optimisticMessageID so updateMessage can still match the SSE-pushed
+      // real message against the optimistic placeholder. It will be cleared by
+      // replaceOptimisticMessage inside updateMessage.
       savedInputText: undefined,
       savedAttachedImages: undefined,
       sessionStatus: streaming ? 'active' : state.sessionStatus,
@@ -1163,7 +1165,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   confirmQueuedOptimisticMessage: (streaming = true) =>
     set((state) => ({
-      optimisticMessageID: undefined,
+      // Keep optimisticMessageID so updateMessage can still match the SSE-pushed
+      // real message against the optimistic placeholder. It will be cleared by
+      // replaceOptimisticMessage inside updateMessage.
       savedInputText: undefined,
       savedAttachedImages: undefined,
       sessionStatus: streaming ? 'active' : state.sessionStatus,
