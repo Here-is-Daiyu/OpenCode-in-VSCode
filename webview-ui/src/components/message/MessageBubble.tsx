@@ -13,7 +13,7 @@
  * a "Show more / Show less" toggle.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   MessageWithParts,
   AssistantMessage,
@@ -24,6 +24,7 @@ import { MessageHeader, toSafeDateFromEpoch } from './MessageHeader';
 import { MessageContent } from './MessageContent';
 import { MessageFooter } from './MessageFooter';
 import { stripImageMarkers } from '../../utils/renderText';
+import { postMessage } from '../../utils/vscodeApi';
 
 /** Character threshold after which user messages are collapsible. */
 const COLLAPSE_CHAR_THRESHOLD = 300;
@@ -39,6 +40,7 @@ export const MessageBubble = React.memo(function MessageBubble({
 }: MessageBubbleProps) {
   const { info, parts } = message;
   const isUser = info.role === 'user';
+  const cwd = !isUser ? (info as AssistantMessage).path?.cwd : undefined;
 
   const optimisticMessageID = useChatStore((s) => s.optimisticMessageID);
   const isOptimistic = info.id === optimisticMessageID;
@@ -115,6 +117,95 @@ export const MessageBubble = React.memo(function MessageBubble({
   }, [isUser, parts]);
 
   const [collapsed, setCollapsed] = useState(true);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [contextMenuPosition, setContextMenuPosition] = useState<{ top: number; left: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
+  const menuItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const handleContextMenu = useCallback((e: React.MouseEvent) => {
+    if (!isUser) return;
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  }, [isUser]);
+
+  const closeContextMenu = useCallback(() => setContextMenu(null), []);
+
+  const handleCopy = useCallback(() => {
+    const text = parts
+      .filter((p) => p.type === 'text')
+      .map((p) => (p.type === 'text' ? p.text : ''))
+      .join('\n');
+    void navigator.clipboard.writeText(text).catch((error: unknown) => {
+      console.error('Failed to copy message text', error);
+    });
+    setContextMenu(null);
+  }, [parts]);
+
+  const handleUndoTo = useCallback(() => {
+    postMessage({ type: 'session:revert', data: { messageID: info.id } });
+    setContextMenu(null);
+  }, [info.id]);
+
+  useEffect(() => {
+    if (!contextMenu) {
+      setContextMenuPosition(null);
+      return undefined;
+    }
+
+    const menuElement = contextMenuRef.current;
+    const viewportPadding = 8;
+
+    if (menuElement) {
+      const left = Math.max(
+        viewportPadding,
+        Math.min(contextMenu.x, window.innerWidth - menuElement.offsetWidth - viewportPadding),
+      );
+      const top = Math.max(
+        viewportPadding,
+        Math.min(contextMenu.y, window.innerHeight - menuElement.offsetHeight - viewportPadding),
+      );
+
+      setContextMenuPosition({ top, left });
+    }
+
+    menuItemRefs.current[0]?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [contextMenu, closeContextMenu]);
+
+  const handleMenuKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') {
+      return;
+    }
+
+    event.preventDefault();
+
+    const menuItems = menuItemRefs.current.filter(
+      (item): item is HTMLButtonElement => item !== null,
+    );
+    if (menuItems.length === 0) {
+      return;
+    }
+
+    const currentIndex = menuItems.findIndex((item) => item === document.activeElement);
+    const nextIndex =
+      currentIndex === -1
+        ? 0
+        : (currentIndex + (event.key === 'ArrowDown' ? 1 : -1) + menuItems.length) %
+          menuItems.length;
+
+    menuItems[nextIndex]?.focus();
+  }, []);
 
   const roleClass = isUser ? 'msg-bubble--user' : 'msg-bubble--assistant';
   const optimisticClass = isOptimistic ? 'msg-bubble--optimistic' : '';
@@ -123,6 +214,7 @@ export const MessageBubble = React.memo(function MessageBubble({
     <div
       className={`msg-bubble ${roleClass} ${optimisticClass}`}
       data-message-id={info.id}
+      onContextMenu={handleContextMenu}
     >
       <MessageHeader info={info} />
 
@@ -137,6 +229,7 @@ export const MessageBubble = React.memo(function MessageBubble({
               parts={parts}
               isUser={isUser}
               isStreaming={false}
+              cwd={cwd}
             />
           </div>
           <button
@@ -153,6 +246,7 @@ export const MessageBubble = React.memo(function MessageBubble({
           parts={parts}
           isUser={isUser}
           isStreaming={showStreamingEffects}
+          cwd={cwd}
         />
       )}
 
@@ -193,6 +287,48 @@ export const MessageBubble = React.memo(function MessageBubble({
           agentName={turnMeta.agentName}
           turnDuration={turnMeta.turnDuration}
         />
+      )}
+
+      {contextMenu && (
+        <>
+          <div
+            aria-hidden="true"
+            className="msg-context-menu__backdrop"
+            onClick={closeContextMenu}
+            role="presentation"
+          />
+          <div
+            aria-label="Context menu"
+            className="msg-context-menu"
+            onKeyDown={handleMenuKeyDown}
+            ref={contextMenuRef}
+            role="menu"
+            style={contextMenuPosition ?? { top: contextMenu.y, left: contextMenu.x }}
+          >
+            <button
+              className="msg-context-menu__item"
+              onClick={handleCopy}
+              ref={(element) => {
+                menuItemRefs.current[0] = element;
+              }}
+              role="menuitem"
+              type="button"
+            >
+              Copy
+            </button>
+            <button
+              className="msg-context-menu__item"
+              onClick={handleUndoTo}
+              ref={(element) => {
+                menuItemRefs.current[1] = element;
+              }}
+              role="menuitem"
+              type="button"
+            >
+              Undo to this message
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

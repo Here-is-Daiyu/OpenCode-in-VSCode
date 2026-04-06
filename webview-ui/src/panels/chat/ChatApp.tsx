@@ -746,6 +746,12 @@ export function ChatApp() {
   const showScrollButton = hasMessages && !atBottom;
   const isTooNarrow = panelWidth > 0 && panelWidth < MIN_CHAT_PANEL_WIDTH;
   const showLastApiResponse = panelWidth >= LAST_API_RESPONSE_PANEL_WIDTH;
+  const chatMessagesClassName = [
+    'chat-messages',
+    isStreaming ? 'chat-messages--streaming' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
 
   return (
     <div ref={appRef} className={chatAppClassName}>
@@ -850,7 +856,7 @@ export function ChatApp() {
                   </div>
                 ) : (
                   <div
-                    className="chat-messages"
+                    className={chatMessagesClassName}
                     ref={messagesRef}
                     onScroll={handleScroll}
                   >

@@ -436,6 +436,10 @@ textarea {
   contain: layout paint;
 }
 
+.chat-messages__virtual > [data-index] {
+  contain: layout style paint;
+}
+
 .chat-scroll-bottom {
   position: absolute;
   right: calc(var(--chat-column-padding) + 2px);

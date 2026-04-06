@@ -158,27 +158,27 @@
       },
       {
         "command": "opencode.addFileToPrompt",
-        "title": "Context: Add File",
+        "title": "Context: Add Entire File to Chat",
         "category": "OpenCode"
       },
       {
         "command": "opencode.addSelectionToPrompt",
-        "title": "Context: Add Selection",
+        "title": "Context: Add Selection to Chat",
         "category": "OpenCode"
       },
       {
         "command": "opencode.insertEditorCodeToChat",
-        "title": "Context: Insert Editor Code",
+        "title": "Context: Insert Code into Chat Input",
         "category": "OpenCode"
       },
       {
         "command": "opencode.explainCode",
-        "title": "AI: Explain Code",
+        "title": "AI: Explain Selected Code",
         "category": "OpenCode"
       },
       {
         "command": "opencode.improveCode",
-        "title": "AI: Improve Code",
+        "title": "AI: Improve Selected Code",
         "category": "OpenCode"
       },
       {
@@ -193,7 +193,7 @@
       },
       {
         "command": "opencode.fixDiagnostics",
-        "title": "AI: Fix Diagnostics",
+        "title": "AI: Fix Errors && Warnings",
         "category": "OpenCode",
         "icon": "$(lightbulb-autofix)"
       },
@@ -570,22 +570,22 @@
         "opencode.editor.showInlineDiffs": {
           "type": "boolean",
           "default": true,
-          "description": "Show inline diff decorations in editor"
+          "markdownDescription": "Highlight AI-made changes directly in the editor with colored line backgrounds (green for additions, red for deletions). Decorations appear while the AI edits files and clear when the session finishes."
         },
         "opencode.editor.codeLensEnabled": {
           "type": "boolean",
           "default": false,
-          "description": "Show AI CodeLens suggestions"
+          "markdownDescription": "Show clickable AI action links (**Explain**, **Improve**, **Add Tests**) above function and class declarations. Supports JavaScript, TypeScript, Python, Rust, Go, Java, C#, and Kotlin."
         },
         "opencode.editor.attachDiagnostics": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically attach current file diagnostics (errors/warnings) when sending messages"
+          "markdownDescription": "Automatically include the active file's errors and warnings as context when sending a chat message. You can also use `@warnings` mentions to attach diagnostics manually."
         },
         "opencode.editor.attachGitContext": {
           "type": "boolean",
           "default": false,
-          "description": "Automatically attach git diff context when sending messages"
+          "markdownDescription": "Automatically include unstaged and staged git diffs as context when sending a chat message. This lets the AI see your recent changes without running a review command."
         }
       }
     }

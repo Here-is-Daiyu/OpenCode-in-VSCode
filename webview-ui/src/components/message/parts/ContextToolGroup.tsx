@@ -9,6 +9,7 @@ import { ToolCallPart, CONTEXT_TOOLS } from './ToolCallPart';
 
 interface ContextToolGroupProps {
   tools: ToolPart[];
+  cwd?: string;
 }
 
 function getToolName(value: unknown): string {
@@ -41,6 +42,7 @@ function buildGroupSummary(tools: ToolPart[]): string {
 
 export const ContextToolGroup = React.memo(function ContextToolGroup({
   tools,
+  cwd,
 }: ContextToolGroupProps) {
   // Default collapsed if all completed
   const allDone = tools.every((t) => t.state?.status === 'completed' || t.state?.status === 'error');
@@ -160,7 +162,7 @@ export const ContextToolGroup = React.memo(function ContextToolGroup({
       >
         <div ref={bodyRef} className="msg-context-group__body">
           {tools.map((tool) => (
-            <ToolCallPart key={tool.id} part={tool} grouped />
+            <ToolCallPart key={tool.id} part={tool} grouped cwd={cwd} />
           ))}
         </div>
       </div>

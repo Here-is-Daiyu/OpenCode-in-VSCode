@@ -221,14 +221,16 @@ export const TaskRenderer = React.memo(function TaskRenderer({
 
       {sessionId && (
         <div className="msg-task__session">
-          <span className="msg-task__session-label">Session</span>
+          <div className="msg-task__session-id-row">
+            <span className="msg-task__session-label">Session</span>
+            <span className="msg-task__session-id">{sessionLabel ?? sessionId}</span>
+          </div>
           <button
             className="msg-task__session-link"
             onClick={handleSessionClick}
             title={`Open subagent session ${sessionId}`}
             type="button"
           >
-            <span className="msg-task__session-id">{sessionLabel ?? sessionId}</span>
             <span className="msg-task__session-text">Open subagent session</span>
             <svg width="11" height="11" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
               <path d="M6 3.5 10.5 8 6 12.5" />

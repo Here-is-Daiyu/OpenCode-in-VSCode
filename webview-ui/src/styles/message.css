@@ -48,6 +48,43 @@
   text-transform: uppercase;
 }
 
+.msg-context-menu__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+.msg-context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 160px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  padding: 4px 0;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--surface-base);
+  border: 1px solid var(--border-weaker-base);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.msg-context-menu__item {
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  color: var(--text-base);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.msg-context-menu__item:hover {
+  background: var(--surface-inset-base);
+}
+
 /* Error block */
 .msg-bubble__error {
   width: min(100%, 40rem);
@@ -815,6 +852,12 @@
   background: color-mix(in srgb, var(--surface-base) 80%, transparent);
 }
 
+.msg-task__session-id-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .msg-task__session-link {
   display: inline-flex;
   align-items: center;
@@ -829,8 +872,8 @@
   text-align: left;
 }
 
-.msg-task__session-link:hover .msg-task__session-id,
-.msg-task__session-link:focus-visible .msg-task__session-id {
+.msg-task__session:hover .msg-task__session-id,
+.msg-task__session:focus-within .msg-task__session-id {
   border-color: var(--border-hover);
   background: color-mix(in srgb, var(--surface-info-weak) 92%, transparent);
 }
@@ -1927,6 +1970,16 @@
   transition: max-height 0.2s ease;
 }
 
+/* Disable height transitions during streaming to prevent jitter */
+.chat-messages--streaming .msg-reasoning__collapse,
+.chat-messages--streaming .msg-tool-compact__collapse,
+.chat-messages--streaming .msg-context-group__collapse,
+.chat-messages--streaming .msg-subtask__collapse,
+.chat-messages--streaming .msg-bubble__collapse-wrapper,
+.chat-messages--streaming .msg-compaction__collapse {
+  transition: none !important;
+}
+
 .msg-compaction__body {
   padding: 0 10px 10px;
   border-top: 1px solid var(--border-weaker-base);
@@ -2493,13 +2546,13 @@
   white-space: nowrap;
 }
 
-/* Session: right column, vertically centered */
+/* Session: stacked below the header */
 .chat-app--roomy .msg-task__session {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: center;
-  flex-direction: row;
-  align-items: center;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  align-self: start;
+  flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
   padding: 6px 10px;
 }

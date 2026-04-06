@@ -13,6 +13,7 @@ import React, { useCallback, useLayoutEffect, useMemo, useRef, useState } from '
 import type { ToolCallPartProps } from './ToolCallPart';
 import { getToolName, toRecord, stringifyValue } from './ToolCallPart';
 import { postMessage } from '../../../utils/vscodeApi';
+import { toRelativePath } from '../../../utils/pathUtils';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +107,7 @@ function MiniDiff({ oldStr, newStr }: { oldStr: string; newStr: string }) {
 
 export const EditRenderer = React.memo(function EditRenderer({
   part,
+  cwd,
   grouped,
 }: ToolCallPartProps) {
   const tool = getToolName(part.tool);
@@ -172,7 +174,8 @@ export const EditRenderer = React.memo(function EditRenderer({
   }, [filePath, newString, oldString]);
 
   const baseName = filePath ? getBaseName(filePath) : '';
-  const displayPath = filePath ? shortenPath(filePath, 60) : '';
+  const relativePath = filePath && cwd ? toRelativePath(filePath, cwd) : filePath;
+  const displayPath = relativePath ? shortenPath(relativePath, 60) : '';
   const toolLabel = isWrite ? 'WRITE' : 'EDIT';
   const hasPreview = !isWrite && (hasOldString || hasNewString);
   const canShowDiff = !isWrite && !!filePath && hasOldString && hasNewString && status === 'completed' && !hasError;

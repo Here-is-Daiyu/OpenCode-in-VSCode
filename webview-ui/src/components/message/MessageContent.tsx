@@ -38,6 +38,7 @@ interface MessageContentProps {
   parts: Part[];
   isUser: boolean;
   isStreaming?: boolean;
+  cwd?: string;
 }
 
 /** Represents a renderable chunk after grouping. */
@@ -316,6 +317,7 @@ export const MessageContent = React.memo(function MessageContent({
   parts,
   isUser,
   isStreaming,
+  cwd,
 }: MessageContentProps) {
   const filtered = useMemo(() => filterParts(parts ?? []), [parts]);
   const hideImageMarkers = useMemo(
@@ -350,7 +352,7 @@ export const MessageContent = React.memo(function MessageContent({
               />
             );
           case 'tool':
-            return <ToolCallPart key={chunk.id} part={chunk.part} />;
+            return <ToolCallPart key={chunk.id} part={chunk.part} cwd={cwd} />;
           case 'tool-group':
             return (
               <div key={chunk.id} className="msg-tool-timeline">
@@ -358,6 +360,7 @@ export const MessageContent = React.memo(function MessageContent({
                   <ToolCallPart
                     key={tool.id}
                     part={tool}
+                    cwd={cwd}
                     isFirst={i === 0}
                     isLast={i === chunk.tools.length - 1}
                     timelineMode
@@ -366,7 +369,7 @@ export const MessageContent = React.memo(function MessageContent({
               </div>
             );
           case 'context-group':
-            return <ContextToolGroup key={chunk.id} tools={chunk.tools} />;
+            return <ContextToolGroup key={chunk.id} tools={chunk.tools} cwd={cwd} />;
           case 'step-start':
             return <StepStartIndicator key={chunk.id} part={chunk.part} />;
           case 'step-finish':

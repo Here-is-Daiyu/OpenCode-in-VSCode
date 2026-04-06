@@ -34,11 +34,18 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
   messages,
   scrollElementRef,
 }) => {
+  const measuredHeights = React.useRef<Map<number, number>>(new Map());
+
   const virtualizer = useVirtualizer({
     count: messages.length,
     getScrollElement: () => scrollElementRef.current,
     getItemKey: (index) => getMessageItemId(messages[index], index),
     estimateSize: (index) => {
+      const cached = measuredHeights.current.get(index);
+      if (cached !== undefined) {
+        return cached;
+      }
+
       const msg = messages[index];
       // User messages are typically shorter
       if (msg?.info?.role === 'user') return 100;
@@ -46,8 +53,19 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
       const partsCount = msg?.parts?.length ?? 1;
       return Math.min(800, 120 + partsCount * 80);
     },
-    overscan: 10,
+    overscan: 15,
   });
+
+  const measureElementWithCache = React.useCallback((node: HTMLElement | null) => {
+    if (node) {
+      const index = Number(node.dataset.index);
+      if (!Number.isNaN(index)) {
+        measuredHeights.current.set(index, node.getBoundingClientRect().height);
+      }
+    }
+
+    virtualizer.measureElement(node);
+  }, [virtualizer]);
 
   const virtualItems = virtualizer.getVirtualItems();
 
@@ -75,7 +93,7 @@ export const VirtualizedMessageList: React.FC<VirtualizedMessageListProps> = ({
           <div
             key={virtualItem.key}
             data-index={virtualItem.index}
-            ref={virtualizer.measureElement}
+            ref={measureElementWithCache}
             style={{
               position: 'absolute',
               top: 0,

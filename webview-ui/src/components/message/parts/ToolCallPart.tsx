@@ -14,6 +14,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { ToolPart } from '../../../types/opencode';
 import { postMessage } from '../../../utils/vscodeApi';
 import { ansiToHtml, containsAnsi } from '../../../utils/ansiToHtml';
+import { toRelativePath } from '../../../utils/pathUtils';
 import { TodoRenderer } from './TodoRenderer';
 import { BashRenderer } from './BashRenderer';
 import { EditRenderer } from './EditRenderer';
@@ -209,7 +210,7 @@ function parseReadOutput(value: unknown): ReadOutputInfo | undefined {
   };
 }
 
-export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInfo {
+export function getArgsSummaryInfo(tool: string, input: unknown, cwd?: string): ArgsSummaryInfo {
   const name = tool.toLowerCase();
   const value = toRecord(input);
 
@@ -227,7 +228,8 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
 
   if (name === 'read' && filePath) {
     const fp = filePath;
-    const short = fp.length > 50 ? '...' + fp.slice(-47) : fp;
+    const displayPath = cwd ? toRelativePath(fp, cwd) : fp;
+    const short = displayPath.length > 50 ? '...' + displayPath.slice(-47) : displayPath;
     const offset = toPositiveLineNumber(value.offset);
     const limit = toPositiveLineNumber(value.limit);
     const range =
@@ -249,16 +251,18 @@ export function getArgsSummaryInfo(tool: string, input: unknown): ArgsSummaryInf
 
   if (name === 'edit' && filePath) {
     const fp = filePath;
+    const displayPath = cwd ? toRelativePath(fp, cwd) : fp;
     return {
-      text: fp.length > 60 ? '...' + fp.slice(-57) : fp,
+      text: displayPath.length > 60 ? '...' + displayPath.slice(-57) : displayPath,
       filePath: fp,
     };
   }
 
   if (name === 'write' && filePath) {
     const fp = filePath;
+    const displayPath = cwd ? toRelativePath(fp, cwd) : fp;
     return {
-      text: fp.length > 60 ? '...' + fp.slice(-57) : fp,
+      text: displayPath.length > 60 ? '...' + displayPath.slice(-57) : displayPath,
       filePath: fp,
     };
   }
@@ -322,6 +326,7 @@ function getToolDisplayName(tool: string): string {
 
 export interface ToolCallPartProps {
   part: ToolPart;
+  cwd?: string;
   /** If true, rendered inside a context group (minimal chrome). */
   grouped?: boolean;
   /** If true, render in timeline layout with rail + connector lines. */
@@ -335,6 +340,7 @@ export interface ToolCallPartProps {
 /** Generic renderer — used for all tools without a specialized renderer. */
 const GenericToolCallPart = React.memo(function GenericToolCallPart({
   part,
+  cwd,
   grouped,
 }: ToolCallPartProps) {
   const [expanded, setExpanded] = useState(false);
@@ -406,7 +412,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
       setExpanded((v) => !v);
     }
   }, []);
-  const summaryInfo = getArgsSummaryInfo(tool, input);
+  const summaryInfo = getArgsSummaryInfo(tool, input, cwd);
   const summaryLine = toPositiveLineNumber(summaryInfo.line);
   const childSessionId = tool === 'task'
     ? (() => {
@@ -644,6 +650,7 @@ const GenericToolCallPart = React.memo(function GenericToolCallPart({
 
 export const ToolCallPart = React.memo(function ToolCallPart({
   part,
+  cwd,
   grouped,
   timelineMode,
   isFirst,
@@ -667,10 +674,10 @@ export const ToolCallPart = React.memo(function ToolCallPart({
       break;
     case 'edit':
     case 'write':
-      inner = <EditRenderer part={part} grouped={grouped} />;
+      inner = <EditRenderer part={part} grouped={grouped} cwd={cwd} />;
       break;
     default:
-      inner = <GenericToolCallPart part={part} grouped={grouped} />;
+      inner = <GenericToolCallPart part={part} grouped={grouped} cwd={cwd} />;
       break;
   }
 
